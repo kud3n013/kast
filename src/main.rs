@@ -236,7 +236,6 @@ fn install_signal_handlers() {
         if let Some(sig) = signals.forever().next() {
             report::kill_child(std::time::Duration::from_secs(2));
             ctx::cleanup_temp_state();
-            ui::cleanup_terminal();
             tui::restore_terminal();
             std::process::exit(if sig == SIGINT { 130 } else { 143 });
         }
@@ -271,7 +270,7 @@ fn main() -> ExitCode {
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| dispatch(cli.cmd)));
     ctx::cleanup_temp_state();
-    ui::cleanup_terminal();
+    tui::restore_terminal();
     match result {
         Ok(Ok(())) => ExitCode::SUCCESS,
         Ok(Err(e)) => {

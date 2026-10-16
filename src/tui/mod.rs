@@ -1,9 +1,6 @@
 //! Full-screen interface (Ratatui + crossterm). `run` owns the terminal from launch to quit:
 //! one event loop on the UI thread, input read on a helper thread, slow work on job threads.
 
-// Pieces used by screens that are still being ported
-#![allow(dead_code)]
-
 mod app;
 mod event;
 mod job;
@@ -13,7 +10,7 @@ mod widgets;
 
 use std::collections::HashMap;
 use std::io::{self, Stdout};
-use std::panic::{self, AssertUnwindSafe};
+use std::panic;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -26,11 +23,9 @@ use ratatui::crossterm::event::{self as ct, DisableBracketedPaste, DisableMouseC
 use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
 use ratatui::crossterm::{cursor, execute};
 
-use crate::ctx::{self, Reported, ctx};
+use crate::ctx::{self, ctx};
 use crate::report;
-use crate::ui::C_RED;
-use crate::ui::C_RESET;
-use app::{App, Command, Header, ToastKind, update, view};
+use app::{App, Command, Header, update, view};
 use event::Event;
 use screens::menu::Action;
 
@@ -116,6 +111,9 @@ fn spawn_input(tx: Sender<Event>) {
 }
 
 /// Leave the full-screen UI, run `f` on the real terminal, then come back with a full redraw.
+/// For programs that must own the terminal themselves (e.g. an interactive `howdy add`).
+/// Nothing needs it today: every action runs inside the app.
+#[allow(dead_code)]
 fn suspend<T>(term: &mut Term, f: impl FnOnce() -> T) -> T {
     INPUT_PAUSED.store(true, Ordering::SeqCst);
     while !INPUT_IDLE.load(Ordering::SeqCst) {
@@ -171,7 +169,7 @@ pub fn run(start: Start) -> Result<()> {
         Start::Export => app::activate(&mut app, Action::Export),
     };
     if let Some(cmd) = first {
-        execute_command(&mut app, &mut term, cmd, &tx, &replies);
+        execute_command(cmd, &tx, &replies);
     }
     loop {
         app.now = crate::ui::now();
@@ -180,7 +178,7 @@ pub fn run(start: Start) -> Result<()> {
         let Some(ev) = next_event(&rx, app.animating()) else { break };
         app.now_ms = started.elapsed().as_millis() as u64;
         if let Some(cmd) = update(&mut app, ev) {
-            execute_command(&mut app, &mut term, cmd, &tx, &replies);
+            execute_command(cmd, &tx, &replies);
         }
         if app.quit {
             break;
@@ -237,7 +235,7 @@ impl Replies {
     }
 }
 
-fn execute_command(app: &mut App, term: &mut Term, cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>) {
+fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>) {
     match cmd {
         Command::Start(kind) => job::spawn(kind, tx.clone(), replies.clone()),
         Command::Answer { id, yes } => replies.answer(id, yes),
@@ -276,58 +274,5 @@ fn execute_command(app: &mut App, term: &mut Term, cmd: Command, tx: &Sender<Eve
         Command::OpenLog => {
             let _ = tx.send(Event::Loaded(event::Loaded::Log(read_log_tail())));
         }
-        Command::Legacy(action) => {
-            let result = suspend(term, || legacy_action(action));
-            match result {
-                Ok(()) => {}
-                Err(msg) => app.toast(ToastKind::Error, msg),
-            }
-        }
     }
-}
-
-/// Actions not yet ported to the full-screen UI run on the plain terminal.
-fn legacy_action(action: Action) -> std::result::Result<(), String> {
-    use crate::{interactive, setup, ui, vault};
-    ui::init_terminal();
-    let result = panic::catch_unwind(AssertUnwindSafe(|| match action {
-        Action::Auto => setup::run_automatic(),
-        Action::Partition => setup::setup_data_partition(false, 0, 1, 1),
-        Action::Repo => setup::add_kud3n_repo(false, 0, 1, 1),
-        Action::Packages => {
-            setup::install_packages(false, 0, 1, 1);
-            Ok(())
-        }
-        Action::Services => setup::setup_services(false, 0, 1, 1),
-        Action::Import => interactive::import_data(),
-        Action::Export => interactive::export_data(),
-        Action::Status => {
-            ui::clear_screen();
-            vault::status::cmd_status();
-            ui::read_choice("\nPress Enter to return to menu...");
-            Ok(())
-        }
-        Action::Info => {
-            ui::clear_screen();
-            let p = ui::read_choice("Archive to inspect: ");
-            let r = vault::info::cmd_info(Some(std::path::Path::new(&p)));
-            ui::read_choice("\nPress Enter to return to menu...");
-            r
-        }
-        Action::Quit => Ok(()),
-    }));
-    ctx::cleanup_temp_state();
-    let msg = match result {
-        Ok(Ok(())) => {
-            ui::cleanup_terminal();
-            return Ok(());
-        }
-        Ok(Err(e)) if e.is::<Reported>() => String::new(),
-        Ok(Err(e)) => format!(": {e:#}"),
-        Err(_) => " (internal error)".into(),
-    };
-    println!("\n{C_RED}[ERROR]{C_RESET} Action failed{msg}. See {}", ctx().log_file.display());
-    ui::read_choice("Press Enter to return to menu...");
-    ui::cleanup_terminal();
-    Err(format!("Action failed{msg}"))
 }

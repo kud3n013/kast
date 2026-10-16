@@ -90,8 +90,6 @@ pub enum Command {
     Answer { id: u64, yes: bool },
     /// Stop the running job
     Cancel,
-    /// Run a menu action that has no full-screen version yet on the plain terminal
-    Legacy(Action),
     /// Read the log file (answered with `Loaded::Log`)
     OpenLog,
     /// Find backups (answered with `Loaded::Candidates`)

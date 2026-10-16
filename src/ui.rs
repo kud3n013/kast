@@ -1,14 +1,14 @@
-//! Terminal handling, dual/single progress dashboards and monitored command execution.
+//! Plain-terminal output: line prompts, the text dashboards of scripted runs, monitored
+//! command execution, and the progress math shared with the full-screen UI.
 
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsFd;
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use nix::sys::termios::{self, InputFlags, LocalFlags, SetArg, Termios};
+use nix::sys::termios::{self, InputFlags, LocalFlags, SetArg};
 
 use crate::ctx::{ctx, log, log_stdio};
 use crate::report::{self, Progress};
@@ -36,10 +36,8 @@ const BOX_VR: &str = "┤";
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 static SPINNER_IDX: AtomicUsize = AtomicUsize::new(0);
 
-// --- Terminal state ----------------------------------------------------------------
-
-static TUI_ACTIVE: AtomicBool = AtomicBool::new(false);
-static SAVED_TERMIOS: Mutex<Option<Termios>> = Mutex::new(None);
+// --- Plain terminal (scripted subcommands and the line-based fallbacks) ----------------
+// The full-screen UI lives in `tui`; this only serves output that scrolls.
 
 fn out(s: &str) {
     let mut o = io::stdout().lock();
@@ -57,34 +55,8 @@ fn termios_restore_cooked() {
     }
 }
 
-pub fn init_terminal() {
-    TUI_ACTIVE.store(true, Ordering::SeqCst);
-    out("\x1b[?1049h\x1b[?25l");
-    let stdin = io::stdin();
-    if let Ok(t) = termios::tcgetattr(stdin.as_fd()) {
-        SAVED_TERMIOS.lock().unwrap().get_or_insert(t.clone());
-        let mut t = t;
-        t.local_flags.remove(LocalFlags::ECHO);
-        t.input_flags.remove(InputFlags::IXON);
-        let _ = termios::tcsetattr(stdin.as_fd(), SetArg::TCSANOW, &t);
-    }
-    out("\x1b[H\x1b[2J");
-}
-
-/// Only undo terminal changes if the TUI made them; otherwise leaving the alternate
-/// screen can clobber plain CLI output.
-pub fn cleanup_terminal() {
-    if !TUI_ACTIVE.swap(false, Ordering::SeqCst) {
-        return;
-    }
-    termios_restore_cooked();
-    out("\x1b[?25h\x1b[?1049l");
-}
-
+/// Visible cursor and a cooked terminal, ready for a line prompt.
 pub fn restore_terminal_interactive() {
-    if TUI_ACTIVE.swap(false, Ordering::SeqCst) {
-        out("\x1b[?1049l");
-    }
     out("\x1b[?25h");
     termios_restore_cooked();
 }
