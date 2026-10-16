@@ -82,9 +82,7 @@ pub fn cmd_status() {
         perms = output("stat", &["-c", "%a %U:%G", &model_s]).unwrap_or_default().trim().to_string();
     } else if !c.is_root && have("sudo") && ok("sudo", &["-n", "test", "-f", &model_s]) {
         exists = true;
-        size = output("sudo", &["-n", "du", "-sh", &model_s])
-            .and_then(|o| o.split('\t').next().map(str::to_string))
-            .unwrap_or_else(|| "unknown".into());
+        size = output("sudo", &["-n", "du", "-sh", &model_s]).and_then(|o| o.split('\t').next().map(str::to_string)).unwrap_or_else(|| "unknown".into());
         perms = output("sudo", &["-n", "stat", "-c", "%a %U:%G", &model_s]).unwrap_or_default().trim().to_string();
     }
     if exists {

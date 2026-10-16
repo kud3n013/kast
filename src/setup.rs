@@ -2,7 +2,7 @@
 //! automatic run that chains them.
 
 use std::fs;
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 
 use crate::ctx::{self, add_issue, ctx, have, log, ok, ok_logged, output, run_as_user};
-use crate::ui::{self, Dash, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW};
+use crate::ui::{self, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW, Dash};
 
 pub const MOUNT_POINT: &str = "/media/data";
 const DEFAULT_DATA_UUID: &str = "6C62ADEA62ADB96A";
@@ -56,9 +56,7 @@ pub fn system_upgrade(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
 // --- State 2: Universal data partition --------------------------------------------------
 
 pub fn fstab_line(uuid: &str, uid: u32, gid: u32) -> String {
-    format!(
-        "UUID={uuid}                     {MOUNT_POINT}    ntfs3   defaults,nofail,uid={uid},gid={gid},rw,windows_names,iocharset=utf8,umask=000,exec 0 0"
-    )
+    format!("UUID={uuid}                     {MOUNT_POINT}    ntfs3   defaults,nofail,uid={uid},gid={gid},rw,windows_names,iocharset=utf8,umask=000,exec 0 0")
 }
 
 fn mount_regex() -> Regex {
@@ -72,11 +70,7 @@ pub fn patch_fstab(content: &str, uuid: &str, uid: u32, gid: u32) -> Option<Stri
     match content.lines().rfind(|l| re.is_match(l)) {
         Some(cur) if cur.contains(uuid) && cur.contains("umask=000") && cur.contains(&format!("uid={uid}")) => None,
         Some(_) => {
-            let mut res: String = content
-                .lines()
-                .map(|l| if re.is_match(l) { line.as_str() } else { l })
-                .collect::<Vec<_>>()
-                .join("\n");
+            let mut res: String = content.lines().map(|l| if re.is_match(l) { line.as_str() } else { l }).collect::<Vec<_>>().join("\n");
             if content.ends_with('\n') {
                 res.push('\n');
             }
@@ -107,9 +101,10 @@ pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64)
     step(0, "Initializing", "Verifying configuration...");
     let mut uuid = DEFAULT_DATA_UUID.to_string();
     if let Some(part) = output("blkid", &["-L", "Data"]).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-        && let Some(u) = output("blkid", &["-s", "UUID", "-o", "value", &part]).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
-            uuid = u;
-        }
+        && let Some(u) = output("blkid", &["-s", "UUID", "-o", "value", &part]).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    {
+        uuid = u;
+    }
 
     step(1, "Mount Directory", &format!("Ensuring {MOUNT_POINT} exists..."));
     fs::create_dir_all(MOUNT_POINT).with_context(|| format!("creating {MOUNT_POINT}"))?;
@@ -181,10 +176,7 @@ pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64)
     }
     let cfg = c.target_home.join(".config/user-dirs.dirs");
     ctx::mkdir_user(cfg.parent().unwrap())?;
-    let body: String = xdg_pairs
-        .iter()
-        .map(|(key, dir)| format!("XDG_{key}_DIR=\"{MOUNT_POINT}/{dir}\"\n"))
-        .collect();
+    let body: String = xdg_pairs.iter().map(|(key, dir)| format!("XDG_{key}_DIR=\"{MOUNT_POINT}/{dir}\"\n")).collect();
     fs::write(&cfg, body).with_context(|| format!("writing {}", cfg.display()))?;
     ctx::chown_path(&cfg, c.target_uid, c.target_gid);
 
@@ -290,20 +282,45 @@ pub fn add_kud3n_repo(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 // --- State 4: Packages ----------------------------------------------------------------
 
 const PKGS_OFFICIAL: &[&str] = &[
-    "zen-browser-bin", "zotero", "proton-vpn-cli", "inkscape", "chromium", "obsidian", "fcitx5",
-    "fcitx5-configtool", "fcitx5-gtk", "fcitx5-qt", "fcitx5-unikey", "vesktop-bin", "valkey",
-    "kdenlive", "steam", "zed-globalmenu", "wine", "wine-gecko", "wine-mono", "gwenview", "haruna",
-    "libreoffice-fresh", "libreoffice-fresh-vi",
+    "zen-browser-bin",
+    "zotero",
+    "proton-vpn-cli",
+    "inkscape",
+    "chromium",
+    "obsidian",
+    "fcitx5",
+    "fcitx5-configtool",
+    "fcitx5-gtk",
+    "fcitx5-qt",
+    "fcitx5-unikey",
+    "vesktop-bin",
+    "valkey",
+    "kdenlive",
+    "steam",
+    "zed-globalmenu",
+    "wine",
+    "wine-gecko",
+    "wine-mono",
+    "gwenview",
+    "haruna",
+    "libreoffice-fresh",
+    "libreoffice-fresh-vi",
 ];
 const PKGS_KUD3N: &[&str] = &[
-    "zalo-for-linux", "beeper", "howdy-next", "antigravity", "gdlauncher-carbon", "searxng",
-    "archrepo/proton-mail", "archrepo/proton-pass", "archrepo/freedownloadmanager", "archrepo/sine",
+    "zalo-for-linux",
+    "beeper",
+    "howdy-next",
+    "antigravity",
+    "gdlauncher-carbon",
+    "searxng",
+    "archrepo/proton-mail",
+    "archrepo/proton-pass",
+    "archrepo/freedownloadmanager",
+    "archrepo/sine",
     "archrepo/hyprmod",
 ];
-const PKGS_ADDONS: &[&str] = &[
-    "freedownloadmanager-elephant", "zotero-better-bibtex", "zotmoov", "zotero-better-notes",
-    "zotero-ocr", "zotero-pdf-translate", "zotero-mcp",
-];
+const PKGS_ADDONS: &[&str] =
+    &["freedownloadmanager-elephant", "zotero-better-bibtex", "zotmoov", "zotero-better-notes", "zotero-ocr", "zotero-pdf-translate", "zotero-mcp"];
 
 /// Ensure archrepo versions are used instead of legacy/AUR packages.
 fn canonical_pkg(pkg: &str) -> &str {
@@ -368,18 +385,15 @@ pub fn install_packages(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
             continue;
         }
 
-        let install = if pkg == "vesktop-bin" && !ok("pacman", &["-Si", "vesktop-bin"]) && ok("pacman", &["-Si", "vesktop"]) {
-            "vesktop"
-        } else {
-            pkg
-        };
+        let install = if pkg == "vesktop-bin" && !ok("pacman", &["-Si", "vesktop-bin"]) && ok("pacman", &["-Si", "vesktop"]) { "vesktop" } else { pkg };
 
         let mut rc = d.exec_monitored(idx - 1, s_total, &format!("Installing {install} (pacman)"), pacman(&["-S", "--needed", "--noconfirm", install]));
         let (mut status, mut mark) = (format!("[SUCCESS] {install} installed"), "✔");
         if rc != 0 {
             if c.target_user != "root" && have("yay") && ctx::grant_yay_sudo() {
                 log("WARN", &format!("pacman failed for {install}, attempting fallback with yay as {}...", c.target_user));
-                let yay = run_as_user(&["yay", "-S", "--needed", "--noconfirm", "--answerclean", "None", "--answerdiff", "None", "--answeredit", "None", install]);
+                let yay =
+                    run_as_user(&["yay", "-S", "--needed", "--noconfirm", "--answerclean", "None", "--answerdiff", "None", "--answeredit", "None", install]);
                 rc = d.exec_monitored(idx - 1, s_total, &format!("Building {install} (yay)"), yay);
                 ctx::revoke_yay_sudo();
                 if rc == 0 {
@@ -470,18 +484,12 @@ esac
 /// First /dev/video* node offering an IR format (GREY / Y16), else /dev/video2.
 fn find_ir_camera() -> String {
     let mut devs: Vec<PathBuf> = fs::read_dir("/dev")
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.path())
-                .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("video")))
-                .collect()
-        })
+        .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("video"))).collect())
         .unwrap_or_default();
     devs.sort();
     devs.iter()
         .find(|dev| {
-            output("v4l2-ctl", &[&format!("--device={}", dev.display()), "--list-formats"])
-                .is_some_and(|o| o.contains("'GREY'") || o.contains("'Y16 '"))
+            output("v4l2-ctl", &[&format!("--device={}", dev.display()), "--list-formats"]).is_some_and(|o| o.contains("'GREY'") || o.contains("'Y16 '"))
         })
         .map(|d| d.display().to_string())
         .unwrap_or_else(|| "/dev/video2".into())
@@ -526,9 +534,8 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 
     // Referencing a PAM module that does not exist breaks the whole auth stack
     // (sudo/login fail with "Module is unknown"), so only patch PAM once Howdy is installed.
-    let module = ["/usr/lib/security/pam_howdy.so", "/lib/security/pam_howdy.so", "/usr/lib64/security/pam_howdy.so"]
-        .into_iter()
-        .find(|m| Path::new(m).exists());
+    let module =
+        ["/usr/lib/security/pam_howdy.so", "/lib/security/pam_howdy.so", "/usr/lib64/security/pam_howdy.so"].into_iter().find(|m| Path::new(m).exists());
     if module.is_none() {
         log("WARN", "pam_howdy.so not found (howdy-next not installed?). Skipping PAM patching and resume hook.");
         add_issue("Howdy not installed; face authentication was not configured");

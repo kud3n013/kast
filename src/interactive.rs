@@ -7,10 +7,10 @@ use serde_json::Value;
 use walkdir::WalkDir;
 
 use crate::ctx::{self, ctx, log, reported};
-use crate::ui::{self, read_choice, C_BLUE, C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RESET, C_YELLOW};
+use crate::ui::{self, C_BLUE, C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RESET, C_YELLOW, read_choice};
 use crate::vault::archive::read_zip_manifest;
-use crate::vault::backup::{cmd_backup, BackupOpts};
-use crate::vault::import::{cmd_import, ImportOpts};
+use crate::vault::backup::{BackupOpts, cmd_backup};
+use crate::vault::import::{ImportOpts, cmd_import};
 use crate::vault::{format_bytes, info::cmd_info};
 
 fn glob_match(name: &str, pattern: &str) -> bool {
@@ -256,18 +256,11 @@ pub fn export_data() -> Result<()> {
         include_media = !read_choice("Include large media/attachments? (Y/n): ").eq_ignore_ascii_case("n");
     }
 
-    let def_dest = if Path::new("/media/data").is_dir() {
-        PathBuf::from("/media/data/backups")
-    } else {
-        c.target_home.join(".local/share/app-vault-sync/backups")
-    };
+    let def_dest =
+        if Path::new("/media/data").is_dir() { PathBuf::from("/media/data/backups") } else { c.target_home.join(".local/share/app-vault-sync/backups") };
     ctx::mkdir_user(&def_dest)?;
     let ts = ctx::now_str("%Y-%m-%d_%H%M%S");
-    let out = if is_dat {
-        def_dest.join(format!("{}_face_model_{ts}.dat", c.target_user))
-    } else {
-        def_dest.join(format!("{target}_backup_{ts}.zip"))
-    };
+    let out = if is_dat { def_dest.join(format!("{}_face_model_{ts}.dat", c.target_user)) } else { def_dest.join(format!("{target}_backup_{ts}.zip")) };
 
     println!("\nDestination: {C_BOLD}{}{C_RESET}", out.display());
     read_choice("Press Enter to start backup (or Ctrl+C to abort)...");

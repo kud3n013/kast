@@ -4,11 +4,11 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::fd::AsFd;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
-use nix::sys::termios::{self, LocalFlags, InputFlags, SetArg, Termios};
+use nix::sys::termios::{self, InputFlags, LocalFlags, SetArg, Termios};
 
 use crate::ctx::{ctx, log, log_stdio};
 
@@ -178,7 +178,7 @@ pub fn read_key() -> Key {
 }
 
 fn poll_stdin(ms: u16) -> bool {
-    use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+    use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
     let stdin = io::stdin();
     let mut fds = [PollFd::new(stdin.as_fd(), PollFlags::POLLIN)];
     matches!(poll(&mut fds, PollTimeout::from(ms)), Ok(n) if n > 0)
@@ -251,11 +251,7 @@ pub fn now() -> i64 {
 pub fn format_seconds(s: i64) -> String {
     let s = s.max(0);
     let (m, sec) = (s / 60, s % 60);
-    if m >= 60 {
-        format!("{:02}:{:02}:{:02}", m / 60, m % 60, sec)
-    } else {
-        format!("{m:02}:{sec:02}")
-    }
+    if m >= 60 { format!("{:02}:{:02}:{:02}", m / 60, m % 60, sec) } else { format!("{m:02}:{sec:02}") }
 }
 
 pub fn calc_eta_countdown(start: i64, current: i64, total: i64, baseline: i64) -> String {
@@ -264,11 +260,7 @@ pub fn calc_eta_countdown(start: i64, current: i64, total: i64, baseline: i64) -
         return "00:00".into();
     }
     let remaining = total - current;
-    let est = if current <= 0 {
-        (remaining * baseline - elapsed).max(5)
-    } else {
-        remaining * (elapsed / current).max(1)
-    };
+    let est = if current <= 0 { (remaining * baseline - elapsed).max(5) } else { remaining * (elapsed / current).max(1) };
     format_seconds(est)
 }
 
@@ -418,11 +410,7 @@ impl Dash {
 }
 
 fn describe(cmd: &Command) -> String {
-    std::iter::once(cmd.get_program())
-        .chain(cmd.get_args())
-        .map(|a| a.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(" ")
+    std::iter::once(cmd.get_program()).chain(cmd.get_args()).map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>().join(" ")
 }
 
 /// Last non-blank line of the log (progress bars rewrite with \r, so the last
@@ -434,11 +422,7 @@ fn last_log_line() -> Option<String> {
     let mut bytes = Vec::new();
     f.read_to_end(&mut bytes).ok()?;
     let text = String::from_utf8_lossy(&bytes);
-    let line = text
-        .split(['\n', '\r'])
-        .rev()
-        .find(|l| !l.trim().is_empty())?
-        .to_string();
+    let line = text.split(['\n', '\r']).rev().find(|l| !l.trim().is_empty())?.to_string();
     let mut line = line.as_str();
     for tag in ["[INFO] ", "[WARN] ", "[ERROR] "] {
         if let Some(i) = line.find(tag) {

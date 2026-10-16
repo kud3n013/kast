@@ -11,8 +11,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use anyhow::{bail, Context, Result};
-use nix::sys::signal::{kill, Signal};
+use anyhow::{Context, Result, bail};
+use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 
 use crate::ctx::{self, ctx, have, ok, ok_logged, output};
@@ -113,38 +113,115 @@ pub fn find_howdy_model(user: &str) -> Option<PathBuf> {
 // Akonadi/Baloo databases and non-KDE application configs.
 
 pub const KDE_CONFIG_ENTRIES: &[&str] = &[
-    "gtk-2.0", "gtk-3.0", "gtk-4.0", "gtkrc", "gtkrc-2.0", "xsettingsd",
-    "kate", "Kvantum", "latte", "fontconfig",
-    "dolphinrc", "katerc", "konsolerc", "konsolesshconfig",
-    "kcminputrc", "kdeglobals", "kglobalshortcutsrc", "kxkbrc", "touchpadrc",
-    "klipperrc", "krunnerrc", "kscreenlockerrc", "ksmserverrc",
-    "kwinrc", "kwinrulesrc", "kwinoutputconfig.json",
-    "plasma-org.kde.plasma.desktop-appletsrc", "plasmarc", "plasmashellrc",
-    "lattedockrc", "breezerc", "oxygenrc", "lightlyrc", "ksplashrc", "khotkeysrc",
-    "systemsettingsrc", "kdedrc", "kded5rc", "kded6rc", "kconf_updaterc", "kscreenrc",
-    "plasma-systemmonitorrc", "spectaclerc", "plasmanotifyrc",
-    "plasma-localerc", "plasma_calendar_holiday_regions", "plasma_calendar_alternatecalendar",
-    "plasmacamerarc", "plasma-welcomerc",
-    "xdg-desktop-portal-kderc", "kactivitymanagerdrc", "kactivitymanagerd-statsrc", "kactivitymanagerd",
-    "baloofilerc", "mimeapps.list", "filetypesrc", "Trolltech.conf",
-    "powermanagementprofilesrc", "powerdevilrc", "kcmdisplayrc", "plasmawindowedrc",
-    "bluedevilglobalrc", "kiorc", "kioworkerrc", "kmenueditrc", "kwalletrc",
-    "arkrc", "gwenviewrc", "kaccessrc", "klaunchrc", "kalarmrc", "kclockrc", "kclockdrc", "trashrc",
-    "kdedefaults", "plasma-workspace", "autostart", "session",
+    "gtk-2.0",
+    "gtk-3.0",
+    "gtk-4.0",
+    "gtkrc",
+    "gtkrc-2.0",
+    "xsettingsd",
+    "kate",
+    "Kvantum",
+    "latte",
+    "fontconfig",
+    "dolphinrc",
+    "katerc",
+    "konsolerc",
+    "konsolesshconfig",
+    "kcminputrc",
+    "kdeglobals",
+    "kglobalshortcutsrc",
+    "kxkbrc",
+    "touchpadrc",
+    "klipperrc",
+    "krunnerrc",
+    "kscreenlockerrc",
+    "ksmserverrc",
+    "kwinrc",
+    "kwinrulesrc",
+    "kwinoutputconfig.json",
+    "plasma-org.kde.plasma.desktop-appletsrc",
+    "plasmarc",
+    "plasmashellrc",
+    "lattedockrc",
+    "breezerc",
+    "oxygenrc",
+    "lightlyrc",
+    "ksplashrc",
+    "khotkeysrc",
+    "systemsettingsrc",
+    "kdedrc",
+    "kded5rc",
+    "kded6rc",
+    "kconf_updaterc",
+    "kscreenrc",
+    "plasma-systemmonitorrc",
+    "spectaclerc",
+    "plasmanotifyrc",
+    "plasma-localerc",
+    "plasma_calendar_holiday_regions",
+    "plasma_calendar_alternatecalendar",
+    "plasmacamerarc",
+    "plasma-welcomerc",
+    "xdg-desktop-portal-kderc",
+    "kactivitymanagerdrc",
+    "kactivitymanagerd-statsrc",
+    "kactivitymanagerd",
+    "baloofilerc",
+    "mimeapps.list",
+    "filetypesrc",
+    "Trolltech.conf",
+    "powermanagementprofilesrc",
+    "powerdevilrc",
+    "kcmdisplayrc",
+    "plasmawindowedrc",
+    "bluedevilglobalrc",
+    "kiorc",
+    "kioworkerrc",
+    "kmenueditrc",
+    "kwalletrc",
+    "arkrc",
+    "gwenviewrc",
+    "kaccessrc",
+    "klaunchrc",
+    "kalarmrc",
+    "kclockrc",
+    "kclockdrc",
+    "trashrc",
+    "kdedefaults",
+    "plasma-workspace",
+    "autostart",
+    "session",
 ];
 pub const KDE_SHARE_ENTRIES: &[&str] = &[
-    "plasma", "kwin", "konsole", "fonts", "color-schemes", "aurorae", "icons", "wallpapers", "yakuake",
-    "kxmlgui5", "kxmlgui6", "knewstuff3", "kactivitymanagerd", "palettes", "iconthemes",
-    "user-places.xbel", "krunnerstaterc", "dolphin", "plasma-systemmonitor",
-    "gwenview", "haruna", "kate", "themes",
+    "plasma",
+    "kwin",
+    "konsole",
+    "fonts",
+    "color-schemes",
+    "aurorae",
+    "icons",
+    "wallpapers",
+    "yakuake",
+    "kxmlgui5",
+    "kxmlgui6",
+    "knewstuff3",
+    "kactivitymanagerd",
+    "palettes",
+    "iconthemes",
+    "user-places.xbel",
+    "krunnerstaterc",
+    "dolphin",
+    "plasma-systemmonitor",
+    "gwenview",
+    "haruna",
+    "kate",
+    "themes",
 ];
 pub const KDE_HOME_ENTRIES: &[&str] = &[".fonts", ".themes", ".icons"];
 
 pub fn kde_has_settings() -> bool {
     let cfg = &ctx().config_home;
-    ["kdeglobals", "kwinrc", "plasmashellrc", "plasma-org.kde.plasma.desktop-appletsrc"]
-        .iter()
-        .any(|f| cfg.join(f).is_file())
+    ["kdeglobals", "kwinrc", "plasmashellrc", "plasma-org.kde.plasma.desktop-appletsrc"].iter().any(|f| cfg.join(f).is_file())
 }
 
 /// Curated entries that exist, plus any plasma*, k*rc and *rc file in the config root.
@@ -156,15 +233,9 @@ pub fn kde_config_entries() -> Vec<String> {
             entries.push(e.to_string());
         }
     }
-    let mut names: Vec<String> = fs::read_dir(cfg)
-        .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
-        .unwrap_or_default();
+    let mut names: Vec<String> = fs::read_dir(cfg).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
     names.sort();
-    let globs: [&dyn Fn(&str) -> bool; 3] = [
-        &|n| n.starts_with("plasma"),
-        &|n| n.starts_with('k') && n.ends_with("rc"),
-        &|n| n.ends_with("rc"),
-    ];
+    let globs: [&dyn Fn(&str) -> bool; 3] = [&|n| n.starts_with("plasma"), &|n| n.starts_with('k') && n.ends_with("rc"), &|n| n.ends_with("rc")];
     for glob in globs {
         // Like a shell glob: no dotfiles
         for n in names.iter().filter(|n| !n.starts_with('.') && glob(n) && cfg.join(n).is_file()) {
@@ -224,12 +295,7 @@ pub fn kde_copy_named(src_root: &Path, dest_root: &Path, dry_run: bool, names: &
 
 /// `rsync <opts> <src> <dest>`; fails on a non-zero exit.
 pub fn rsync(opts: &[&str], src: &Path, dest: &str) -> Result<()> {
-    let status = std::process::Command::new("rsync")
-        .args(opts)
-        .arg(src)
-        .arg(dest)
-        .status()
-        .context("running rsync")?;
+    let status = std::process::Command::new("rsync").args(opts).arg(src).arg(dest).status().context("running rsync")?;
     if !status.success() {
         bail!("rsync {} -> {dest} failed ({status})", src.display());
     }
@@ -253,12 +319,7 @@ fn pgrep_specs(app: &str) -> Vec<Vec<&'static str>> {
         // -f patterns use [^ ]* so a match stays inside one /usr or /opt path instead of
         // spanning arguments (".*zen" also matched e.g. "vim /usr/share/doc/citizen.txt").
         "vesktop" => vec![vec!["-x", "vesktop"], vec!["-f", "/(usr|opt)/[^ ]*/vesktop(/| |$)"]],
-        "zen" => vec![
-            vec!["-x", "zen-bin"],
-            vec!["-x", "zen"],
-            vec!["-x", "zen-browser"],
-            vec!["-f", "/(usr|opt)/([^ ]*/)?zen[^ /]*/zen[^ /]*( |$)"],
-        ],
+        "zen" => vec![vec!["-x", "zen-bin"], vec!["-x", "zen"], vec!["-x", "zen-browser"], vec!["-f", "/(usr|opt)/([^ ]*/)?zen[^ /]*/zen[^ /]*( |$)"]],
         "obsidian" => vec![vec!["-x", "obsidian"], vec!["-f", "/(usr|opt)/(lib|bin|share)/obsidian"]],
         "fcitx5" => vec![vec!["-x", "fcitx5"], vec!["-x", "fcitx5-daemon"]],
         "antigravity" => vec![vec!["-x", "antigravity"], vec!["-f", "/(usr|opt)/[^ ]*/antigravity(/| |$)"]],
@@ -343,10 +404,7 @@ pub fn format_bytes(path: &Path) -> String {
         return "0B".into();
     }
     let out = std::process::Command::new("du").arg("-sh").arg(path).stderr(std::process::Stdio::null()).output();
-    out.ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).split('\t').next().map(str::to_string))
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "0B".into())
+    out.ok().and_then(|o| String::from_utf8_lossy(&o.stdout).split('\t').next().map(str::to_string)).filter(|s| !s.is_empty()).unwrap_or_else(|| "0B".into())
 }
 
 // --- Staging directories (kept off tmpfs/RAM) ----------------------------------------------
@@ -355,12 +413,7 @@ const STAGING_PREFIXES: [&str; 2] = ["app-vault-sync-backup-", "app-vault-sync-r
 
 fn cleanup_stale_staging() {
     let cutoff = SystemTime::now() - Duration::from_secs(15 * 60);
-    let dirs = [
-        PathBuf::from("/tmp"),
-        PathBuf::from("/var/tmp"),
-        PathBuf::from("/media/data/.vault-tmp"),
-        ctx().cache_home.join("app-vault-sync"),
-    ];
+    let dirs = [PathBuf::from("/tmp"), PathBuf::from("/var/tmp"), PathBuf::from("/media/data/.vault-tmp"), ctx().cache_home.join("app-vault-sync")];
     for d in dirs.iter().filter(|d| d.is_dir() && ctx::is_writable(d)) {
         let Ok(rd) = fs::read_dir(d) else { continue };
         for e in rd.flatten() {

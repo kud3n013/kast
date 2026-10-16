@@ -2,11 +2,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde_json::Value;
 
 use crate::ctx::{self, ctx, have, ok, ok_priv, reported, run_as_user};
-use crate::ui::{read_choice, C_BOLD, C_RESET};
+use crate::ui::{C_BOLD, C_RESET, read_choice};
 
 use super::archive::{extract_zip_archive, read_zip_manifest};
 use super::info::jq_str;
@@ -300,9 +300,10 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
     if app == "zalo" {
         let flags_dest = c.config_home.join("zalo-flags.conf");
         if let Some(f) = ["zalo-flags.conf", "zalo/extra/zalo-flags.conf"].iter().map(|f| staging.join(f)).find(|p| p.is_file())
-            && !ok("cp", &["-p", &f.to_string_lossy(), &flags_dest.to_string_lossy()]) {
-                bail!("copying {} failed", f.display());
-            }
+            && !ok("cp", &["-p", &f.to_string_lossy(), &flags_dest.to_string_lossy()])
+        {
+            bail!("copying {} failed", f.display());
+        }
     }
     if app == "hypr" {
         if have("hyprctl") && process_running("Hyprland", None) {
@@ -432,11 +433,13 @@ fn hand_back_ownership(apps: &[String], rollback: &Path) {
         uid = Some(c.target_uid.to_string());
         gid = Some(c.target_gid.to_string());
     }
-    if uid.as_deref().is_none_or(|u| u == "0") && c.target_user != "root"
-        && let Ok(Some(u)) = nix::unistd::User::from_name(&c.target_user) {
-            uid = Some(u.uid.to_string());
-            gid = Some(u.gid.to_string());
-        }
+    if uid.as_deref().is_none_or(|u| u == "0")
+        && c.target_user != "root"
+        && let Ok(Some(u)) = nix::unistd::User::from_name(&c.target_user)
+    {
+        uid = Some(u.uid.to_string());
+        gid = Some(u.gid.to_string());
+    }
     let Some(uid) = uid.filter(|u| u != "0") else { return };
     let owner = format!("{uid}:{}", gid.unwrap_or_default());
     let chown_if = |p: PathBuf| {

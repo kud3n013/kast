@@ -3,12 +3,12 @@ use std::io::IsTerminal;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::ctx::{self, ctx, have, ok, ok_priv, reported};
-use crate::ui::{read_choice, C_BOLD, C_RESET};
+use crate::ui::{C_BOLD, C_RESET, read_choice};
 
-use super::archive::{create_zip_archive, MANIFEST};
+use super::archive::{MANIFEST, create_zip_archive};
 use super::*;
 
 pub struct BackupOpts {
@@ -21,8 +21,20 @@ pub struct BackupOpts {
 }
 
 const COMMON_EXCLUDES: &[&str] = &[
-    "Cache", "Code Cache", "GPUCache", "DawnCache", "DawnGraphiteCache", "DawnWebGPUCache", "Crashpad",
-    "blob_storage", "SingletonCookie", "SingletonLock", "SingletonSocket", "*.log", "dumps", "shader-cache",
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+    "Crashpad",
+    "blob_storage",
+    "SingletonCookie",
+    "SingletonLock",
+    "SingletonSocket",
+    "*.log",
+    "dumps",
+    "shader-cache",
     "startupCache",
 ];
 
@@ -119,8 +131,7 @@ fn howdy_available(dry_run: bool) -> bool {
         ok("pacman", &["-Q", "howdy-next"]) || ok("pacman", &["-Q", "howdy-next-bin"]) || have("howdy") || sudo_n()
     } else if !c.is_root && have("sudo") {
         // Interactive sudo is allowed here: a real backup may ask for the password
-        sudo_n()
-            || (std::io::stdin().is_terminal() && (ok("sudo", &["test", "-d", &dir_s]) || ok("sudo", &["test", "-f", &file_s])))
+        sudo_n() || (std::io::stdin().is_terminal() && (ok("sudo", &["test", "-d", &dir_s]) || ok("sudo", &["test", "-f", &file_s])))
     } else {
         false
     }
@@ -168,7 +179,9 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
     if !running.is_empty() && (!o.force || o.kill) {
         let list = running.join(" ");
         if o.dry_run {
-            log_warn(&format!("Notice: Running applications detected ({list}). During a live backup, you will be prompted to close/kill them or use -k/--kill."));
+            log_warn(&format!(
+                "Notice: Running applications detected ({list}). During a live backup, you will be prompted to close/kill them or use -k/--kill."
+            ));
         } else if o.kill {
             if !terminate_apps(&running) {
                 log_error("Could not terminate all running applications. Backup aborted to protect data.");

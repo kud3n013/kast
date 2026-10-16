@@ -58,10 +58,7 @@ pub fn init() {
     } else if let Some(su) = sudo_user.clone().filter(|u| u != "root") {
         Some(su)
     } else if let Some(pk) = env_nonempty("PKEXEC_UID") {
-        pk.parse::<u32>()
-            .ok()
-            .and_then(|uid| User::from_uid(Uid::from_raw(uid)).ok().flatten())
-            .map(|u| u.name)
+        pk.parse::<u32>().ok().and_then(|uid| User::from_uid(Uid::from_raw(uid)).ok().flatten()).map(|u| u.name)
     } else {
         None
     };
@@ -76,17 +73,9 @@ pub fn init() {
     let pw = User::from_name(&target_user).ok().flatten();
     let target_uid = pw.as_ref().map(|u| u.uid.as_raw()).unwrap_or(1000);
     let target_gid = pw.as_ref().map(|u| u.gid.as_raw()).unwrap_or(1000);
-    let target_home = pw
-        .as_ref()
-        .map(|u| u.dir.clone())
-        .filter(|d| d.is_dir())
-        .unwrap_or_else(|| PathBuf::from(format!("/home/{target_user}")));
+    let target_home = pw.as_ref().map(|u| u.dir.clone()).filter(|d| d.is_dir()).unwrap_or_else(|| PathBuf::from(format!("/home/{target_user}")));
 
-    let log_file = if is_root {
-        PathBuf::from("/var/log/kas.log")
-    } else {
-        target_home.join(".local/state/kas.log")
-    };
+    let log_file = if is_root { PathBuf::from("/var/log/kas.log") } else { target_home.join(".local/state/kas.log") };
     if let Some(dir) = log_file.parent() {
         let _ = fs::create_dir_all(dir);
     }
@@ -105,19 +94,7 @@ pub fn init() {
     let state_home = xdg("XDG_STATE_HOME", ".local/state");
     let cache_home = xdg("XDG_CACHE_HOME", ".cache");
 
-    let _ = CTX.set(Ctx {
-        is_root,
-        target_user,
-        target_uid,
-        target_gid,
-        target_home,
-        sudo_user,
-        log_file,
-        config_home,
-        data_home,
-        state_home,
-        cache_home,
-    });
+    let _ = CTX.set(Ctx { is_root, target_user, target_uid, target_gid, target_home, sudo_user, log_file, config_home, data_home, state_home, cache_home });
 }
 
 pub fn now_str(fmt: &str) -> String {
@@ -132,12 +109,7 @@ pub fn log(level: &str, msg: &str) {
 
 /// Open the log file for a child's stdout/stderr.
 pub fn log_stdio() -> Stdio {
-    OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&ctx().log_file)
-        .map(Stdio::from)
-        .unwrap_or_else(|_| Stdio::null())
+    OpenOptions::new().create(true).append(true).open(&ctx().log_file).map(Stdio::from).unwrap_or_else(|_| Stdio::null())
 }
 
 // --- Small process helpers -------------------------------------------------------
@@ -148,43 +120,22 @@ pub fn have(tool: &str) -> bool {
 
 pub fn which(tool: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|d| d.join(tool))
-        .find(|p| fs::metadata(p).map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false))
+    std::env::split_paths(&path).map(|d| d.join(tool)).find(|p| fs::metadata(p).map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false))
 }
 
 /// Run quietly, true on exit status 0.
 pub fn ok(prog: &str, args: &[&str]) -> bool {
-    Command::new(prog)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    Command::new(prog).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map(|s| s.success()).unwrap_or(false)
 }
 
 /// Run with output appended to the log, true on exit status 0.
 pub fn ok_logged(prog: &str, args: &[&str]) -> bool {
-    Command::new(prog)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(log_stdio())
-        .stderr(log_stdio())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    Command::new(prog).args(args).stdin(Stdio::null()).stdout(log_stdio()).stderr(log_stdio()).status().map(|s| s.success()).unwrap_or(false)
 }
 
 /// Run and capture stdout (stderr discarded); None if it failed to start or exited non-zero.
 pub fn output(prog: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new(prog)
-        .args(args)
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
+    let out = Command::new(prog).args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
@@ -241,14 +192,7 @@ pub fn chown_path(path: &Path, uid: u32, gid: u32) -> bool {
 
 /// Change the owner of a symlink itself (`chown -h`).
 pub fn lchown_path(path: &Path, uid: u32, gid: u32) -> bool {
-    nix::unistd::fchownat(
-        nix::fcntl::AT_FDCWD,
-        path,
-        Some(Uid::from_raw(uid)),
-        Some(Gid::from_raw(gid)),
-        nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
-    )
-    .is_ok()
+    nix::unistd::fchownat(nix::fcntl::AT_FDCWD, path, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid)), nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW).is_ok()
 }
 
 /// `chown -R uid:gid path`, errors ignored.
@@ -313,9 +257,10 @@ pub fn is_writable(p: &Path) -> bool {
 pub fn user_in_group(user: &str, group: &str) -> bool {
     let Some(pw) = User::from_name(user).ok().flatten() else { return false };
     if let Ok(Some(g)) = Group::from_gid(pw.gid)
-        && g.name == group {
-            return true;
-        }
+        && g.name == group
+    {
+        return true;
+    }
     Group::from_name(group).ok().flatten().is_some_and(|g| g.mem.iter().any(|m| m == user))
 }
 

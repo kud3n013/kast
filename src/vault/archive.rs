@@ -3,11 +3,11 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Write};
-use std::os::unix::fs::{symlink, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use filetime::FileTime;
 use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
@@ -33,12 +33,7 @@ pub fn create_zip_archive(src_dir: &Path, zip_file: &Path) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let _ = fs::remove_file(zip_file);
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(zip_file)
-        .with_context(|| format!("creating {}", zip_file.display()))?;
+    let file = OpenOptions::new().write(true).create_new(true).mode(0o600).open(zip_file).with_context(|| format!("creating {}", zip_file.display()))?;
     let mut zw = ZipWriter::new(BufWriter::new(file)).set_auto_large_file();
 
     for entry in WalkDir::new(src_dir).min_depth(1).follow_links(false).sort_by_file_name() {
@@ -153,11 +148,7 @@ pub fn extract_zip_archive(zip_file: &Path, dest: &Path) -> Result<()> {
 pub fn read_zip_manifest(zip_file: &Path) -> Option<String> {
     let mut ar = ZipArchive::new(BufReader::new(File::open(zip_file).ok()?)).ok()?;
     let names: Vec<String> = ar.file_names().filter_map(|n| n.ok().map(|n| n.into_owned())).collect();
-    let pick = names
-        .iter()
-        .find(|n| n.trim_start_matches("./") == MANIFEST)
-        .or_else(|| names.iter().find(|n| n.ends_with(&format!("/{MANIFEST}"))))?
-        .clone();
+    let pick = names.iter().find(|n| n.trim_start_matches("./") == MANIFEST).or_else(|| names.iter().find(|n| n.ends_with(&format!("/{MANIFEST}"))))?.clone();
     let mut s = String::new();
     ar.by_name(&pick).ok()?.read_to_string(&mut s).ok()?;
     Some(s)

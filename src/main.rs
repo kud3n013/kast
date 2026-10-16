@@ -15,10 +15,10 @@ use std::process::{Command, ExitCode};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 
-use crate::ctx::{ctx, Reported};
-use crate::ui::{Key, C_BG_BLUE, C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RED, C_RESET, C_WHITE};
-use crate::vault::backup::{cmd_backup, BackupOpts};
-use crate::vault::import::{cmd_import, ImportOpts};
+use crate::ctx::{Reported, ctx};
+use crate::ui::{C_BG_BLUE, C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RED, C_RESET, C_WHITE, Key};
+use crate::vault::backup::{BackupOpts, cmd_backup};
+use crate::vault::import::{ImportOpts, cmd_import};
 
 #[derive(Parser)]
 #[command(
@@ -77,12 +77,28 @@ enum VaultCmd {
     #[command(alias = "restore")]
     Import(ImportArgs),
     #[command(alias = "inspect")]
-    Info { file: Option<PathBuf> },
+    Info {
+        file: Option<PathBuf>,
+    },
 }
 
 const TARGETS: [&str; 16] = [
-    "all", "beeper", "beepertexts", "zalo", "zalodata", "vesktop", "zen", "obsidian", "fcitx5", "antigravity", "howdy",
-    "kde", "plasma", "kde-plasma", "hypr", "hyprland",
+    "all",
+    "beeper",
+    "beepertexts",
+    "zalo",
+    "zalodata",
+    "vesktop",
+    "zen",
+    "obsidian",
+    "fcitx5",
+    "antigravity",
+    "howdy",
+    "kde",
+    "plasma",
+    "kde-plasma",
+    "hypr",
+    "hyprland",
 ];
 
 #[derive(Args, Default)]
