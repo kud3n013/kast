@@ -23,7 +23,6 @@ pub const C_MAGENTA: &str = "\x1b[35m";
 pub const C_CYAN: &str = "\x1b[36m";
 pub const C_WHITE: &str = "\x1b[37m";
 pub const C_GRAY: &str = "\x1b[90m";
-pub const C_BG_BLUE: &str = "\x1b[44m";
 
 const BOX_H: &str = "─";
 const BOX_V: &str = "│";
@@ -124,65 +123,6 @@ fn read_byte() -> Option<u8> {
             _ => return None,
         }
     }
-}
-
-pub enum Key {
-    Up,
-    Down,
-    Enter,
-    Char(char),
-    Other,
-    Eof,
-}
-
-/// Read one key press (`read -rsn1` plus arrow-key escape sequences).
-pub fn read_key() -> Key {
-    let stdin = io::stdin();
-    let fd = stdin.as_fd();
-    let saved = termios::tcgetattr(fd).ok();
-    if let Some(t) = &saved {
-        let mut raw = t.clone();
-        raw.local_flags.remove(LocalFlags::ICANON | LocalFlags::ECHO);
-        raw.control_chars[libc::VMIN] = 1;
-        raw.control_chars[libc::VTIME] = 0;
-        let _ = termios::tcsetattr(fd, SetArg::TCSANOW, &raw);
-    }
-    let key = match read_byte() {
-        None => Key::Eof,
-        Some(b) => match b {
-            b'\n' | b'\r' => Key::Enter,
-            0x1b => {
-                let mut rest = [0u8; 2];
-                let mut n = 0;
-                while n < 2 && poll_stdin(100) {
-                    match read_byte() {
-                        Some(b) => {
-                            rest[n] = b;
-                            n += 1;
-                        }
-                        None => break,
-                    }
-                }
-                match &rest[..n] {
-                    b"[A" => Key::Up,
-                    b"[B" => Key::Down,
-                    _ => Key::Other,
-                }
-            }
-            b => Key::Char(b as char),
-        },
-    };
-    if let Some(t) = &saved {
-        let _ = termios::tcsetattr(fd, SetArg::TCSANOW, t);
-    }
-    key
-}
-
-fn poll_stdin(ms: u16) -> bool {
-    use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
-    let stdin = io::stdin();
-    let mut fds = [PollFd::new(stdin.as_fd(), PollFlags::POLLIN)];
-    matches!(poll(&mut fds, PollTimeout::from(ms)), Ok(n) if n > 0)
 }
 
 fn term_cols() -> usize {

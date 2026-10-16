@@ -1,0 +1,28 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+ kas | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
+┌ Arch Linux / CachyOS setup ──────────────────────────────────────────────────┐
+│>  1 Run automatic setup                                                      │
+│   2 Set up data partition                                                    │
+│   3 Add kud3n's repository                                                   │
+│   4 Install packages                                                         │
+│   5 Se┌ Help: Main menu ─────────────────────────────────────────────┐       │
+│   6 Im│Up/Down  j/k   Move the selection (wraps around)              │       │
+│   7 Ex│Home/End  g/G  First / last entry                             │       │
+│   8 Ap│Enter          Run the highlighted action                     │       │
+│   9 In│1-9            Run that action directly                       │       │
+│   q Qu│Mouse          Click selects, double-click runs, wheel moves  │       │
+└───────│?              This help                                      │───────┘
+┌ Detail│q  Esc         Quit kas                                       │───────┐
+│Upgrade│Ctrl+C         Quit kas                                       │very   │
+│package│                                                              │       │
+│progres│Press any key to close                                        │       │
+│Changes└──────────────────────────────────────────────────────────────┘kups   │
+│kept), Howdy config, systemd services                                         │
+│Needs root: yes (kas already runs as root)                                    │
+│Automatic:  This is the automatic run (no data partition, no import).         │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ Up/Down move  Enter run  1-9 pick  ? help  q quit

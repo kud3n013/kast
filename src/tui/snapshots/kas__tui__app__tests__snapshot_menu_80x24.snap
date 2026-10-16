@@ -1,0 +1,28 @@
+---
+source: src/tui/app.rs
+expression: "render(&app(80, 24))"
+---
+ kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Arch Linux / CachyOS setup ──────────────────────────────────────────────────╮
+│❯  1 Run automatic setup                                                      │
+│   2 Set up data partition                                                    │
+│   3 Add kud3n's repository                                                   │
+│   4 Install packages                                                         │
+│   5 Set up services                                                          │
+│   6 Import data                                                              │
+│   7 Export data                                                              │
+│   8 App status                                                               │
+│   9 Inspect a backup                                                         │
+│   q Quit                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Upgrades the system (pacman -Syuu), adds kud3n's repository, installs every   │
+│package, then sets up services. Steps 3 to 5 in one go, with an overall       │
+│progress bar and a summary at the end.                                        │
+│Changes:    /etc/pacman.conf, installed packages, /etc/pam.d files (backups   │
+│kept), Howdy config, systemd services                                         │
+│Needs root: yes (kas already runs as root)                                    │
+│Automatic:  This is the automatic run (no data partition, no import).         │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter run  1-9 pick  ? help  q quit

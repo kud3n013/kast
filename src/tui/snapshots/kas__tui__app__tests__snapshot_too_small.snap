@@ -1,0 +1,13 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+
+
+
+
+
+
+                Terminal too small
+              need 60×20, have 50×15
+      Enlarge the window, or press q to quit

@@ -5,6 +5,7 @@ mod ctx;
 mod interactive;
 mod report;
 mod setup;
+mod tui;
 mod ui;
 mod vault;
 
@@ -16,8 +17,8 @@ use std::process::{Command, ExitCode};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 
-use crate::ctx::{Reported, ctx};
-use crate::ui::{C_BG_BLUE, C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RED, C_RESET, C_WHITE, Key};
+use crate::ctx::Reported;
+use crate::ui::{C_RED, C_RESET};
 use crate::vault::backup::{BackupOpts, cmd_backup};
 use crate::vault::import::{ImportOpts, cmd_import};
 
@@ -185,7 +186,7 @@ fn needs_root(cmd: &Option<Cmd>) -> bool {
 
 fn dispatch(cmd: Option<Cmd>) -> Result<()> {
     match cmd {
-        None => run_menu(),
+        None => tui::run(),
         Some(Cmd::Auto) => setup::run_automatic(),
         Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
         Some(Cmd::Repo) => setup::add_kud3n_repo(false, 0, 1, 1),
@@ -212,127 +213,6 @@ fn dispatch(cmd: Option<Cmd>) -> Result<()> {
     }
 }
 
-// --- Main menu -----------------------------------------------------------------------
-
-const MENU_SHORT: [&str; 8] = [
-    "1. Run full auto setup (Steps 3 -> 5)",
-    "2. Setup data partition (optional)",
-    "3. Add kud3n's repository",
-    "4. Install packages (Official & custom)",
-    "5. Setup services (VPN, IME, Howdy...)",
-    "6. Import data (optional, not in auto)",
-    "7. Export data (Vault, KDE & Face backup)",
-    "Q. Exit",
-];
-const MENU_LONG: [&str; 8] = [
-    "1. Run automatic script (Steps 3 -> 5)",
-    "2. Setup data partition (optional, not in auto)",
-    "3. Add kud3n's repository ([archrepo] in /etc/pacman.conf)",
-    "4. Install packages (Official, CachyOS, kud3n, add-ons)",
-    "5. Setup services (ProtonVPN, IME, Howdy, Valkey/SearXNG)",
-    "6. Import data (App Vault, KDE & Face restore; not in auto)",
-    "7. Export data (App Vault, KDE Plasma & Face Model backup)",
-    "Q. Exit",
-];
-
-fn draw_menu(selected: usize) {
-    let c = ctx();
-    let (box_w, inner) = ui::term_dimensions();
-    let hl = |l: &str, r: &str| format!("{C_CYAN}{l}{}{r}{C_RESET}\x1b[K\n", "─".repeat(box_w - 2));
-    let mut buf = hl("╭", "╮");
-    let (title, target) = if inner < 50 {
-        ("◆ ARCH / CACHYOS SETUP ◆", format!("Target: {}", c.target_user))
-    } else if inner < 68 {
-        ("◆ ARCH LINUX / CACHYOS SETUP ◆", format!("Target: {} │ Home: {}", c.target_user, c.target_home.display()))
-    } else {
-        (
-            "◆ ARCH LINUX / CACHYOS FAST SETUP CONTROLLER ◆",
-            format!("Target: {} (UID: {}, GID: {}) │ Home: {}", c.target_user, c.target_uid, c.target_gid, c.target_home.display()),
-        )
-    };
-    buf += &ui::box_line(&format!("{C_BOLD}{C_WHITE}{title}{C_RESET}"), inner);
-    buf += &ui::box_line(&format!("{C_GRAY}{target}{C_RESET}"), inner);
-    buf += &hl("├", "┤");
-    let options = if inner < 64 { MENU_SHORT } else { MENU_LONG };
-    for (i, opt) in options.iter().enumerate() {
-        if i == selected {
-            buf += &ui::box_line(&format!("{C_BG_BLUE}{C_WHITE}{C_BOLD} ❯ {opt} {C_RESET}"), inner);
-        } else {
-            buf += &ui::box_line(&format!("   {opt}"), inner);
-        }
-    }
-    buf += &hl("├", "┤");
-    let controls = if inner < 50 {
-        "[↑/↓] Move │ [Enter] Run │ [Q] Quit"
-    } else if inner < 68 {
-        "[↑/↓] Move │ [1-7] Pick │ [Enter] Run │ [Q] Quit"
-    } else {
-        "Controls: [↑/↓] Navigate │ [1-7/Q] Select │ [Enter] Run │ [Ctrl+C] Exit"
-    };
-    buf += &ui::box_line(&format!("{C_GRAY}{controls}{C_RESET}"), inner);
-    buf += &hl("╰", "╯");
-    print!("\x1b[H{buf}");
-    use std::io::Write;
-    let _ = std::io::stdout().flush();
-}
-
-/// Run one menu action; a failure (or panic) returns to the menu instead of ending the TUI.
-fn run_menu_action(action: usize) {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| match action {
-        0 => setup::run_automatic(),
-        1 => setup::setup_data_partition(false, 0, 1, 1),
-        2 => setup::add_kud3n_repo(false, 0, 1, 1),
-        3 => {
-            setup::install_packages(false, 0, 1, 1);
-            Ok(())
-        }
-        4 => setup::setup_services(false, 0, 1, 1),
-        5 => interactive::import_data(),
-        _ => interactive::export_data(),
-    }));
-    ctx::cleanup_temp_state();
-    let err = match result {
-        Ok(Ok(())) => return,
-        Ok(Err(e)) if e.is::<Reported>() => String::new(),
-        Ok(Err(e)) => format!(": {e:#}"),
-        Err(_) => " (internal error)".into(),
-    };
-    ui::restore_terminal_interactive();
-    println!("\n{C_RED}[ERROR]{C_RESET} Action failed{err}. See {}", ctx().log_file.display());
-    ui::read_choice("Press Enter to return to menu...");
-}
-
-fn run_menu() -> Result<()> {
-    ui::init_terminal();
-    let total = MENU_LONG.len();
-    let mut selected = 0usize;
-    loop {
-        draw_menu(selected);
-        let action = match ui::read_key() {
-            Key::Up => {
-                selected = (selected + total - 1) % total;
-                None
-            }
-            Key::Down => {
-                selected = (selected + 1) % total;
-                None
-            }
-            Key::Enter if selected == total - 1 => break,
-            Key::Enter => Some(selected),
-            Key::Char(ch @ '1'..='7') => Some(ch as usize - '1' as usize),
-            Key::Char('q' | 'Q') | Key::Eof => break,
-            _ => None,
-        };
-        if let Some(a) = action {
-            run_menu_action(a);
-            ui::init_terminal();
-        }
-    }
-    ui::cleanup_terminal();
-    println!("{C_GREEN}Arch Linux Setup Controller exited.{C_RESET}");
-    Ok(())
-}
-
 // --- Entry point --------------------------------------------------------------------
 
 /// Ctrl+C / kill: undo temporary state (sudoers rule, staging dir, terminal) and exit
@@ -344,13 +224,26 @@ fn install_signal_handlers() {
         if let Some(sig) = signals.forever().next() {
             ctx::cleanup_temp_state();
             ui::cleanup_terminal();
+            tui::restore_terminal();
             std::process::exit(if sig == SIGINT { 130 } else { 143 });
         }
     });
 }
 
+/// The full-screen UI needs a terminal on both ends.
+fn interactive_terminal() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    if cli.cmd.is_none() && !interactive_terminal() {
+        // No terminal for the menu (piped, cron, ...): show what can be scripted instead
+        let _ = <Cli as clap::CommandFactory>::command().print_help();
+        return ExitCode::FAILURE;
+    }
 
     if needs_root(&cli.cmd) && !nix::unistd::Uid::effective().is_root() {
         println!("Privileges required. Re-executing with sudo...");
