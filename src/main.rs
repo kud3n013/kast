@@ -3,6 +3,7 @@
 
 mod ctx;
 mod interactive;
+mod report;
 mod setup;
 mod ui;
 mod vault;

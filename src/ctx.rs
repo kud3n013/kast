@@ -105,6 +105,7 @@ pub fn log(level: &str, msg: &str) {
     if let Ok(mut f) = OpenOptions::new().append(true).open(&ctx().log_file) {
         let _ = writeln!(f, "[{}] [{level}] {msg}", now_str("%Y-%m-%d %H:%M:%S"));
     }
+    crate::report::file_logged(level, msg);
 }
 
 /// Open the log file for a child's stdout/stderr.

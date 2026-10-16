@@ -6,7 +6,8 @@ use anyhow::{Result, bail};
 use serde_json::Value;
 
 use crate::ctx::{self, ctx, have, ok, ok_priv, reported, run_as_user};
-use crate::ui::{C_BOLD, C_RESET, read_choice};
+use crate::report::{self, Prompt};
+use crate::ui::{C_BOLD, C_RESET};
 
 use super::archive::{extract_zip_archive, read_zip_manifest};
 use super::info::jq_str;
@@ -43,10 +44,6 @@ fn restore_spec(app: &str) -> Option<RestoreSpec> {
     })
 }
 
-fn yes(s: &str) -> bool {
-    s.eq_ignore_ascii_case("y")
-}
-
 fn chmod(path: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
@@ -57,13 +54,13 @@ fn howdy_list() {
     if !have("howdy") {
         return;
     }
-    println!();
+    report::blank();
     log_info("Verifying enrolled models with howdy list:");
     let user = &ctx().target_user;
     let _ = ok_priv_inherit(&["howdy", "-U", user, "list"]) || ok_priv_inherit(&["howdy", "list"]);
 }
 
-/// Like ok_priv, but the output goes to the terminal.
+/// Like ok_priv, but the output goes to the terminal (to the log while a TUI owns it).
 fn ok_priv_inherit(args: &[&str]) -> bool {
     let mut cmd = if ctx().is_root {
         let mut c = Command::new(args[0]);
@@ -74,6 +71,9 @@ fn ok_priv_inherit(args: &[&str]) -> bool {
         c.args(args);
         c
     };
+    if report::owns_terminal() {
+        cmd.stdin(Stdio::null()).stdout(ctx::log_stdio());
+    }
     cmd.stderr(Stdio::null()).status().is_ok_and(|s| s.success())
 }
 
@@ -94,9 +94,9 @@ fn import_dat(o: &ImportOpts) -> Result<()> {
         return Ok(());
     }
     if !o.force {
-        println!();
+        report::blank();
         log_warn(&format!("Restoring will install this face model for user '{user}' at {}.", dest_file.display()));
-        if !yes(&read_choice("Proceed with face model import? [y/N]: ")) {
+        if !report::ask(&Prompt::yes_no("Proceed with face model import?", false)) {
             log_info("Import operation canceled.");
             ctx::set_canceled(true);
             return Ok(());
@@ -174,11 +174,13 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
     }
 
     let mut running: Vec<String> = Vec::new();
+    let mut running_info: Vec<String> = Vec::new();
     for app in &apps {
         let pids = running_pids(app);
         if !pids.is_empty() {
             log_warn(&format!("Application '{app}' is running (PID: {}).", pid_list(&pids)));
             running.push(app.clone());
+            running_info.push(format!("{app} (PID: {})", pid_list(&pids)));
         }
     }
     if !running.is_empty() {
@@ -193,10 +195,10 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
         } else if o.force {
             log_warn("--force flag used: Proceeding with restoration while apps are running. This is hazardous!");
         } else {
-            println!();
+            report::blank();
             log_warn(&format!("Target application(s) ({list}) are currently running. Overwriting open files will cause crashes or data corruption."));
-            let choice = read_choice(&format!("Close/kill running application(s) ({list}) to proceed with restore? [Y/n]: "));
-            if choice.is_empty() || yes(&choice) {
+            let ask = Prompt::yes_no(format!("Close/kill running application(s) ({list}) to proceed with restore?"), true);
+            if report::ask(&ask.with_details(running_info)) {
                 if !terminate_apps(&running) {
                     log_error("Could not terminate running applications. Restore aborted.");
                     return Err(reported());
@@ -209,9 +211,9 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
     }
 
     if !o.force && !o.dry_run {
-        println!();
+        report::blank();
         log_warn("Restoring will OVERWRITE existing application settings, login credentials, and databases!");
-        if !yes(&read_choice("Are you sure you want to proceed? [y/N]: ")) {
+        if !report::ask(&Prompt::yes_no("Are you sure you want to proceed?", false)) {
             log_info("Restore operation canceled.");
             ctx::set_canceled(true);
             return Ok(());
@@ -265,14 +267,14 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
 
     if o.dry_run {
         ctx::cleanup_vault_staging();
-        println!();
+        report::blank();
         log_success("Dry run complete. No modifications were made.");
         return Ok(());
     }
 
     hand_back_ownership(&apps, &rollback);
     ctx::cleanup_vault_staging();
-    println!();
+    report::blank();
     log_success("Restore process finished successfully!");
     if o.safety_backup && rollback.is_dir() {
         log_info(&format!("Safety rollback snapshot created at: {}", rollback.display()));

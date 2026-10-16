@@ -11,6 +11,7 @@ use std::time::Duration;
 use nix::sys::termios::{self, InputFlags, LocalFlags, SetArg, Termios};
 
 use crate::ctx::{ctx, log, log_stdio};
+use crate::report::{self, Progress};
 
 pub const C_RESET: &str = "\x1b[0m";
 pub const C_BOLD: &str = "\x1b[1m";
@@ -312,64 +313,19 @@ impl Dash {
     }
 
     pub fn render(&self, s_step: i64, s_total: i64, item: &str, recent_log: &str, spinner: Option<&str>) {
-        let spinner = spinner.unwrap_or(SPINNER[SPINNER_IDX.load(Ordering::Relaxed)]);
-        let (box_w, inner) = term_dimensions();
-        let now = now();
-        let s_pct = if s_total > 0 { s_step * 100 / s_total } else { 0 };
-        let s_elapsed = format_seconds(now - self.s_start);
-        let s_eta = calc_eta_countdown(self.s_start, s_step, s_total, 15);
-        let title = &self.title;
-
-        let mut buf = hline(box_w, BOX_TL, BOX_TR);
-        if self.auto {
-            let o_pct = calc_overall_progress(self.o_step, s_step, s_total);
-            let o_elapsed = (now - self.o_start).max(0);
-            let o_eta = if o_pct >= 100 {
-                0
-            } else if o_pct >= 2 {
-                (o_elapsed * 100 / o_pct - o_elapsed).max(5)
-            } else {
-                (420 - o_elapsed).max(10)
-            };
-            let heading = if inner < 56 { "◆ ARCH LINUX SETUP ◆" } else { "◆ ARCH LINUX / CACHYOS SETUP CONTROLLER ◆" };
-            buf += &box_line(&format!("{C_BOLD}{C_WHITE}{heading}{C_RESET}"), inner);
-            buf += &hline(box_w, BOX_VL, BOX_VR);
-            let (o_step, o_total) = (self.o_step, self.o_total);
-            let o_header = if inner < 56 {
-                format!("{C_BLUE}{C_BOLD}[ALL]{C_RESET} Step {o_step}/{o_total}: {title}")
-            } else {
-                format!("{C_BLUE}{C_BOLD}[UNIVERSAL PROGRESS]{C_RESET} Step {o_step}/{o_total}: {title}")
-            };
-            buf += &box_line(&o_header, inner);
-            let o_info = info_str(inner, o_pct, &format_seconds(o_elapsed), &format_seconds(o_eta));
-            buf += &bar_line(inner, C_GREEN, o_pct, &o_info);
-            buf += &hline(box_w, BOX_VL, BOX_VR);
-            let s_header = if inner < 56 {
-                format!("{C_MAGENTA}{C_BOLD}[STATE]{C_RESET} {s_step}/{s_total}: {title}")
-            } else {
-                format!("{C_MAGENTA}{C_BOLD}[STATE PROGRESS]{C_RESET} {title} ({s_step}/{s_total})")
-            };
-            buf += &box_line(&s_header, inner);
-            buf += &bar_line(inner, C_YELLOW, s_pct, &info_str(inner, s_pct, &s_elapsed, &s_eta));
-            buf += &box_line(&format!("  {C_BOLD}Active:{C_RESET} {item}"), inner);
-        } else {
-            let upper = title.to_uppercase();
-            let heading = if inner < 56 { format!("◆ TASK: {upper} ◆") } else { format!("◆ TASK EXECUTION: {upper} ◆") };
-            buf += &box_line(&format!("{C_BOLD}{C_WHITE}{heading}{C_RESET}"), inner);
-            buf += &hline(box_w, BOX_VL, BOX_VR);
-            let header = if inner < 56 {
-                format!("{C_MAGENTA}{C_BOLD}[PROGRESS]{C_RESET} {s_step}/{s_total}: {item}")
-            } else {
-                format!("{C_MAGENTA}{C_BOLD}[PROGRESS]{C_RESET} {s_step}/{s_total} - {item}")
-            };
-            buf += &box_line(&header, inner);
-            buf += &bar_line(inner, C_GREEN, s_pct, &info_str(inner, s_pct, &s_elapsed, &s_eta));
-        }
-        buf += &hline(box_w, BOX_VL, BOX_VR);
-        let clean = sanitize_log(recent_log);
-        buf += &box_line(&format!("{C_CYAN}{spinner}{C_RESET} {C_GRAY}Log: {clean}{C_RESET}"), inner);
-        buf += &hline(box_w, BOX_BL, BOX_BR);
-        out(&format!("\x1b[H{buf}"));
+        report::progress(&Progress {
+            auto: self.auto,
+            o_step: self.o_step,
+            o_total: self.o_total,
+            o_start: self.o_start,
+            title: self.title.clone(),
+            s_start: self.s_start,
+            s_step,
+            s_total,
+            item: item.to_string(),
+            recent_log: recent_log.to_string(),
+            mark: spinner.map(str::to_string),
+        });
     }
 
     /// Run `cmd` with output appended to the log while the dashboard shows its latest
@@ -407,6 +363,69 @@ impl Dash {
             None => 1,
         }
     }
+}
+
+/// The text dashboard of the plain terminal mode (dual for the automatic run, single otherwise).
+pub fn draw_dashboard(p: &Progress) {
+    let (s_step, s_total, item, recent_log) = (p.s_step, p.s_total, p.item.as_str(), p.recent_log.as_str());
+    let spinner = p.mark.as_deref().unwrap_or(SPINNER[SPINNER_IDX.load(Ordering::Relaxed)]);
+    let (box_w, inner) = term_dimensions();
+    let now = now();
+    let s_pct = if s_total > 0 { s_step * 100 / s_total } else { 0 };
+    let s_elapsed = format_seconds(now - p.s_start);
+    let s_eta = calc_eta_countdown(p.s_start, s_step, s_total, 15);
+    let title = &p.title;
+
+    let mut buf = hline(box_w, BOX_TL, BOX_TR);
+    if p.auto {
+        let o_pct = calc_overall_progress(p.o_step, s_step, s_total);
+        let o_elapsed = (now - p.o_start).max(0);
+        let o_eta = if o_pct >= 100 {
+            0
+        } else if o_pct >= 2 {
+            (o_elapsed * 100 / o_pct - o_elapsed).max(5)
+        } else {
+            (420 - o_elapsed).max(10)
+        };
+        let heading = if inner < 56 { "◆ ARCH LINUX SETUP ◆" } else { "◆ ARCH LINUX / CACHYOS SETUP CONTROLLER ◆" };
+        buf += &box_line(&format!("{C_BOLD}{C_WHITE}{heading}{C_RESET}"), inner);
+        buf += &hline(box_w, BOX_VL, BOX_VR);
+        let (o_step, o_total) = (p.o_step, p.o_total);
+        let o_header = if inner < 56 {
+            format!("{C_BLUE}{C_BOLD}[ALL]{C_RESET} Step {o_step}/{o_total}: {title}")
+        } else {
+            format!("{C_BLUE}{C_BOLD}[UNIVERSAL PROGRESS]{C_RESET} Step {o_step}/{o_total}: {title}")
+        };
+        buf += &box_line(&o_header, inner);
+        let o_info = info_str(inner, o_pct, &format_seconds(o_elapsed), &format_seconds(o_eta));
+        buf += &bar_line(inner, C_GREEN, o_pct, &o_info);
+        buf += &hline(box_w, BOX_VL, BOX_VR);
+        let s_header = if inner < 56 {
+            format!("{C_MAGENTA}{C_BOLD}[STATE]{C_RESET} {s_step}/{s_total}: {title}")
+        } else {
+            format!("{C_MAGENTA}{C_BOLD}[STATE PROGRESS]{C_RESET} {title} ({s_step}/{s_total})")
+        };
+        buf += &box_line(&s_header, inner);
+        buf += &bar_line(inner, C_YELLOW, s_pct, &info_str(inner, s_pct, &s_elapsed, &s_eta));
+        buf += &box_line(&format!("  {C_BOLD}Active:{C_RESET} {item}"), inner);
+    } else {
+        let upper = title.to_uppercase();
+        let heading = if inner < 56 { format!("◆ TASK: {upper} ◆") } else { format!("◆ TASK EXECUTION: {upper} ◆") };
+        buf += &box_line(&format!("{C_BOLD}{C_WHITE}{heading}{C_RESET}"), inner);
+        buf += &hline(box_w, BOX_VL, BOX_VR);
+        let header = if inner < 56 {
+            format!("{C_MAGENTA}{C_BOLD}[PROGRESS]{C_RESET} {s_step}/{s_total}: {item}")
+        } else {
+            format!("{C_MAGENTA}{C_BOLD}[PROGRESS]{C_RESET} {s_step}/{s_total} - {item}")
+        };
+        buf += &box_line(&header, inner);
+        buf += &bar_line(inner, C_GREEN, s_pct, &info_str(inner, s_pct, &s_elapsed, &s_eta));
+    }
+    buf += &hline(box_w, BOX_VL, BOX_VR);
+    let clean = sanitize_log(recent_log);
+    buf += &box_line(&format!("{C_CYAN}{spinner}{C_RESET} {C_GRAY}Log: {clean}{C_RESET}"), inner);
+    buf += &hline(box_w, BOX_BL, BOX_BR);
+    out(&format!("\x1b[H{buf}"));
 }
 
 fn describe(cmd: &Command) -> String {

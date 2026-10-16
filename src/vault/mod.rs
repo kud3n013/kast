@@ -16,22 +16,22 @@ use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
 
 use crate::ctx::{self, ctx, have, ok, ok_logged, output};
-use crate::ui::{C_BLUE, C_BOLD, C_CYAN, C_GREEN, C_RED, C_RESET, C_YELLOW};
+use crate::report::{self, Level};
 
 pub fn log_info(msg: &str) {
-    println!("{C_BLUE}[INFO]{C_RESET} {msg}");
+    report::log(Level::Info, msg);
 }
 pub fn log_success(msg: &str) {
-    println!("{C_GREEN}[SUCCESS]{C_RESET} {msg}");
+    report::log(Level::Success, msg);
 }
 pub fn log_warn(msg: &str) {
-    eprintln!("{C_YELLOW}[WARN]{C_RESET} {msg}");
+    report::log(Level::Warn, msg);
 }
 pub fn log_error(msg: &str) {
-    eprintln!("{C_RED}[ERROR]{C_RESET} {msg}");
+    report::log(Level::Error, msg);
 }
 pub fn log_step(msg: &str) {
-    println!("{C_CYAN}==>{C_RESET} {C_BOLD}{msg}{C_RESET}");
+    report::log(Level::Step, msg);
 }
 
 /// Archives are read and written natively; only rsync is still needed. Installed on the
@@ -295,7 +295,12 @@ pub fn kde_copy_named(src_root: &Path, dest_root: &Path, dry_run: bool, names: &
 
 /// `rsync <opts> <src> <dest>`; fails on a non-zero exit.
 pub fn rsync(opts: &[&str], src: &Path, dest: &str) -> Result<()> {
-    let status = std::process::Command::new("rsync").args(opts).arg(src).arg(dest).status().context("running rsync")?;
+    let mut cmd = std::process::Command::new("rsync");
+    cmd.args(opts).arg(src).arg(dest);
+    if report::owns_terminal() {
+        cmd.stdin(std::process::Stdio::null()).stdout(ctx::log_stdio()).stderr(ctx::log_stdio());
+    }
+    let status = cmd.status().context("running rsync")?;
     if !status.success() {
         bail!("rsync {} -> {dest} failed ({status})", src.display());
     }

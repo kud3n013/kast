@@ -94,7 +94,8 @@ pub fn extract_zip_archive(zip_file: &Path, dest: &Path) -> Result<()> {
     for i in 0..ar.len() {
         let mut f = ar.by_index(i)?;
         let Some(rel) = f.enclosed_name() else {
-            eprintln!("skipping unsafe archive entry: {}", String::from_utf8_lossy(f.name_raw()));
+            let name = String::from_utf8_lossy(f.name_raw());
+            crate::report::log(crate::report::Level::Raw, &format!("skipping unsafe archive entry: {name}"));
             continue;
         };
         if rel.as_os_str().is_empty() {

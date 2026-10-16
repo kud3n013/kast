@@ -6,7 +6,8 @@ use anyhow::{Context, Result};
 use serde_json::{Map, Value, json};
 
 use crate::ctx::{self, ctx, have, ok, ok_priv, reported};
-use crate::ui::{C_BOLD, C_RESET, read_choice};
+use crate::report::{self, Prompt};
+use crate::ui::{C_BOLD, C_RESET};
 
 use super::archive::{MANIFEST, create_zip_archive};
 use super::*;
@@ -131,7 +132,9 @@ fn howdy_available(dry_run: bool) -> bool {
         ok("pacman", &["-Q", "howdy-next"]) || ok("pacman", &["-Q", "howdy-next-bin"]) || have("howdy") || sudo_n()
     } else if !c.is_root && have("sudo") {
         // Interactive sudo is allowed here: a real backup may ask for the password
-        sudo_n() || (std::io::stdin().is_terminal() && (ok("sudo", &["test", "-d", &dir_s]) || ok("sudo", &["test", "-f", &file_s])))
+        // Never when a TUI owns the terminal: the password prompt would be invisible
+        sudo_n()
+            || (std::io::stdin().is_terminal() && !report::owns_terminal() && (ok("sudo", &["test", "-d", &dir_s]) || ok("sudo", &["test", "-f", &file_s])))
     } else {
         false
     }
@@ -169,11 +172,13 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
     let apps: Vec<String> = if target == "all" { ALL_APPS.iter().map(|s| s.to_string()).collect() } else { vec![target.clone()] };
 
     let mut running: Vec<String> = Vec::new();
+    let mut running_info: Vec<String> = Vec::new();
     for app in &apps {
         let pids = running_pids(app);
         if !pids.is_empty() {
             log_warn(&format!("Application '{app}' is currently running (PID: {}).", pid_list(&pids)));
             running.push(app.clone());
+            running_info.push(format!("{app} (PID: {})", pid_list(&pids)));
         }
     }
     if !running.is_empty() && (!o.force || o.kill) {
@@ -188,17 +193,16 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
                 return Err(reported());
             }
         } else {
-            println!();
+            report::blank();
             log_warn("Backing up applications while active can produce inconsistent or corrupted database snapshots (SQLite WAL / LevelDB locks).");
-            let choice = read_choice(&format!("Close/kill active application(s) ({list}) to run backup safely? [Y/n]: "));
-            if choice.is_empty() || choice.eq_ignore_ascii_case("y") {
+            let ask = Prompt::yes_no(format!("Close/kill active application(s) ({list}) to run backup safely?"), true);
+            if report::ask(&ask.with_details(running_info)) {
                 if !terminate_apps(&running) {
                     log_error("Could not terminate all running applications. Backup aborted to protect data.");
                     return Err(reported());
                 }
             } else {
-                let proceed = read_choice("Proceed anyway with applications running (risks inconsistent data)? [y/N]: ");
-                if !proceed.eq_ignore_ascii_case("y") {
+                if !report::ask(&Prompt::yes_no("Proceed anyway with applications running (risks inconsistent data)?", false)) {
                     log_info("Backup aborted by user. Please close running applications and retry.");
                     ctx::set_canceled(true);
                     return Ok(());
@@ -249,7 +253,7 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
 
     if o.dry_run {
         ctx::cleanup_vault_staging();
-        println!();
+        report::blank();
         log_success("Dry run complete. No files were written.");
         return Ok(());
     }
@@ -265,7 +269,7 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
     }
     ctx::cleanup_vault_staging();
 
-    println!();
+    report::blank();
     log_success("Backup completed successfully!");
     log_info(&format!("Archive:    {}", output.display()));
     log_info(&format!("Total Size: {}", format_bytes(&output)));
