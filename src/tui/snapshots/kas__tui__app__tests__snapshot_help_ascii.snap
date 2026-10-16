@@ -14,15 +14,15 @@ expression: render(&a)
 │   8 Ap│Enter          Run the highlighted action                     │       │
 │   9 In│1-9            Run that action directly                       │       │
 │   q Qu│Mouse          Click selects, double-click runs, wheel moves  │       │
-└───────│?              This help                                      │───────┘
-┌ Detail│q  Esc         Quit kas                                       │───────┐
-│Upgrade│Ctrl+C         Quit kas                                       │very   │
-│package│                                                              │       │
-│progres│Press any key to close                                        │       │
-│Changes└──────────────────────────────────────────────────────────────┘kups   │
-│kept), Howdy config, systemd services                                         │
+└───────│l              Open the log file                              │───────┘
+┌ Detail│?              This help                                      │───────┐
+│Upgrade│q  Esc         Quit kas                                       │very   │
+│package│Ctrl+C         Quit kas                                       │       │
+│progres│                                                              │       │
+│Changes│Press any key to close                                        │kups   │
+│kept), └──────────────────────────────────────────────────────────────┘       │
 │Needs root: yes (kas already runs as root)                                    │
 │Automatic:  This is the automatic run (no data partition, no import).         │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
- Up/Down move  Enter run  1-9 pick  ? help  q quit
+ Up/Down move  Enter run  1-9 pick  l log  ? help  q quit

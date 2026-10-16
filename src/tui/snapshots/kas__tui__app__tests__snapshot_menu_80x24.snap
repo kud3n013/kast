@@ -25,4 +25,4 @@ expression: "render(&app(80, 24))"
 │Automatic:  This is the automatic run (no data partition, no import).         │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- ↑/↓ move  Enter run  1-9 pick  ? help  q quit
+ ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit

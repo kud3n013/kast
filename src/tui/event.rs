@@ -14,6 +14,14 @@ pub enum Event {
     /// Redraw tick (only while something animates)
     Tick,
     Job(JobMsg),
+    /// Results of a load the runtime did for a screen
+    Loaded(Loaded),
+}
+
+#[derive(Debug)]
+pub enum Loaded {
+    /// The last lines of the log file
+    Log(Vec<String>),
 }
 
 /// Messages from a job thread (the engines, through `TuiReporter`).

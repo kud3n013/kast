@@ -193,14 +193,15 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true }).block(block(theme, " Details ")), desc_area);
 }
 
-pub const HINTS: [(&str, &str); 5] = [("↑/↓", "move"), ("Enter", "run"), ("1-9", "pick"), ("?", "help"), ("q", "quit")];
+pub const HINTS: [(&str, &str); 6] = [("↑/↓", "move"), ("Enter", "run"), ("1-9", "pick"), ("l", "log"), ("?", "help"), ("q", "quit")];
 
-pub const HELP: [(&str, &str); 8] = [
+pub const HELP: [(&str, &str); 9] = [
     ("↑/↓  j/k", "Move the selection (wraps around)"),
     ("Home/End  g/G", "First / last entry"),
     ("Enter", "Run the highlighted action"),
     ("1-9", "Run that action directly"),
     ("Mouse", "Click selects, double-click runs, wheel moves"),
+    ("l", "Open the log file"),
     ("?", "This help"),
     ("q  Esc", "Quit kas"),
     ("Ctrl+C", "Quit kas"),

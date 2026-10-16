@@ -184,6 +184,20 @@ fn next_event(rx: &Receiver<Event>, animating: bool) -> Option<Event> {
     }
 }
 
+/// The last lines of the log file (it can grow large: only the tail is read).
+fn read_log_tail() -> Vec<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(&ctx().log_file) else { return vec!["(log file not readable)".into()] };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let _ = f.seek(SeekFrom::Start(len.saturating_sub(2 * 1024 * 1024)));
+    let mut bytes = Vec::new();
+    let _ = f.read_to_end(&mut bytes);
+    let text = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = text.lines().collect();
+    let skip = lines.len().saturating_sub(screens::log::MAX_LINES);
+    lines[skip..].iter().map(|l| crate::ui::sanitize_log(l)).collect()
+}
+
 /// Reply channels of engine questions that wait for an answer, by question id.
 #[derive(Default)]
 pub struct Replies(Mutex<HashMap<u64, Sender<bool>>>);
@@ -213,6 +227,9 @@ fn execute_command(app: &mut App, term: &mut Term, cmd: Command, tx: &Sender<Eve
         Command::Cancel => {
             report::request_cancel();
             replies.decline_all();
+        }
+        Command::OpenLog => {
+            let _ = tx.send(Event::Loaded(event::Loaded::Log(read_log_tail())));
         }
         Command::Legacy(action) => {
             let result = suspend(term, || legacy_action(action));

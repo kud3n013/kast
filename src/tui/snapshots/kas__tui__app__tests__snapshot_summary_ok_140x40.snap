@@ -1,0 +1,44 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+ kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Summary ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                                          │
+│  ✓ Automatic setup completed successfully                                                                                                │
+│                                                                                                                                          │
+│  Time elapsed      12:34                                                                                                                 │
+│  Target user       p3ter (UID 1000, GID 1000)                                                                                            │
+│  Data partition    /media/data mounted & user folders symlinked                                                                          │
+│  kud3n repository  configured in /etc/pacman.conf                                                                                        │
+│  Log file          /var/log/kas.log                                                                                                      │
+│  Howdy face model  ✓ enrolled for p3ter                                                                                                  │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Enter back to menu  l full log  ? help

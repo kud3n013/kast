@@ -6,13 +6,16 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, M
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Line;
 
-use super::event::{Event, JobMsg, Outcome};
+use super::event::{Event, JobMsg, Loaded, Outcome};
 use super::job::JobKind;
 use super::screens::help;
+use super::screens::log::{self, LogState};
 use super::screens::menu::{self, Action, ITEMS, MenuState};
 use super::screens::run::{self, Finished, RunState};
+use super::screens::summary;
 use super::theme::Theme;
 use super::widgets::{self, Dialog, MIN_H, MIN_W};
+use crate::setup::Summary;
 
 /// Who kas runs for, shown in the header bar (copied out of `ctx()` so drawing stays pure).
 #[derive(Clone, Debug, Default)]
@@ -45,6 +48,9 @@ pub struct Toast {
 pub enum Screen {
     Menu,
     Run(Box<RunState>),
+    Summary(Box<Summary>),
+    /// The log file, opened from the screen kept alongside
+    Log(Box<LogState>, Box<Screen>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,6 +83,8 @@ pub enum Command {
     Cancel,
     /// Run a menu action that has no full-screen version yet on the plain terminal
     Legacy(Action),
+    /// Read the log file (answered with `Loaded::Log`)
+    OpenLog,
 }
 
 pub struct App {
@@ -149,6 +157,8 @@ impl App {
         match self.screen {
             Screen::Menu => ("Main menu", &menu::HELP),
             Screen::Run(_) => ("Progress", &run::HELP),
+            Screen::Summary(_) => ("Summary", &summary::HELP),
+            Screen::Log(..) => ("Log", &log::HELP),
         }
     }
 
@@ -182,6 +192,11 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Key(k) => on_key(app, k),
         Event::Mouse(m) => on_mouse(app, m),
         Event::Job(m) => on_job(app, m),
+        Event::Loaded(Loaded::Log(lines)) => {
+            let back = std::mem::replace(&mut app.screen, Screen::Menu);
+            app.screen = Screen::Log(Box::new(LogState::from_lines(lines)), Box::new(back));
+            None
+        }
     }
 }
 
@@ -210,12 +225,14 @@ fn on_job(app: &mut App, m: JobMsg) -> Option<Command> {
                 app.screen = Screen::Menu;
                 app.toast(ToastKind::Error, format!("{e}. Details: {}", app.header.log_file));
             }
+            Ok(Outcome::Summary(s)) => {
+                app.toast = None;
+                app.screen = Screen::Summary(Box::new(s));
+            }
             Ok(outcome) => {
                 let r = app.run_state()?;
                 let (finished, toast) = match outcome {
-                    Outcome::Summary(s) => {
-                        (Finished::Ok { message: "Automatic setup finished".into(), issues: s.issues }, (ToastKind::Ok, "Automatic setup finished".to_string()))
-                    }
+                    Outcome::Summary(_) => unreachable!("handled above"),
                     Outcome::Finished { message, issues } => {
                         let kind = if issues.is_empty() { ToastKind::Ok } else { ToastKind::Error };
                         (Finished::Ok { message: message.clone(), issues }, (kind, message))
@@ -254,6 +271,14 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.quit = true;
                 None
             }
+            Screen::Summary(_) => {
+                app.screen = Screen::Menu;
+                None
+            }
+            Screen::Log(..) => {
+                go_back(app);
+                None
+            }
         };
     }
     if app.help {
@@ -276,6 +301,15 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
     match app.screen {
         Screen::Menu => menu_key(app, k),
         Screen::Run(_) => run_key(app, k),
+        Screen::Summary(_) => match k.code {
+            KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') => {
+                app.screen = Screen::Menu;
+                None
+            }
+            KeyCode::Char('l') => Some(Command::OpenLog),
+            _ => None,
+        },
+        Screen::Log(..) => log_key(app, k),
     }
 }
 
@@ -341,6 +375,7 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::End | KeyCode::Char('G') => app.menu.selected = ITEMS.len() - 1,
         KeyCode::Enter => return activate(app, app.menu.action()),
         KeyCode::Char('q') | KeyCode::Esc => app.quit = true,
+        KeyCode::Char('l') => return Some(Command::OpenLog),
         KeyCode::Char(c @ '1'..='9') => {
             let idx = c as usize - '1' as usize;
             app.menu.selected = idx;
@@ -364,9 +399,33 @@ fn run_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::End | KeyCode::Char('G') => r.scroll.bottom(),
         KeyCode::Esc | KeyCode::Char('q') if running => return ask_cancel(app),
         KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') if !running => app.screen = Screen::Menu,
+        KeyCode::Char('l') if !running => return Some(Command::OpenLog),
         _ => {}
     }
     None
+}
+
+fn log_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    let Screen::Log(st, _) = &mut app.screen else { return None };
+    let len = st.log.len();
+    match k.code {
+        KeyCode::PageUp => st.scroll.up(PAGE, len),
+        KeyCode::PageDown => st.scroll.down(PAGE),
+        KeyCode::Up | KeyCode::Char('k') => st.scroll.up(1, len),
+        KeyCode::Down | KeyCode::Char('j') => st.scroll.down(1),
+        KeyCode::Home | KeyCode::Char('g') => st.scroll.top(len),
+        KeyCode::End | KeyCode::Char('G') => st.scroll.bottom(),
+        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => go_back(app),
+        _ => {}
+    }
+    None
+}
+
+/// Leave the log viewer for the screen it was opened from.
+fn go_back(app: &mut App) {
+    if let Screen::Log(_, back) = std::mem::replace(&mut app.screen, Screen::Menu) {
+        app.screen = *back;
+    }
 }
 
 /// Start what a menu entry stands for.
@@ -417,6 +476,12 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => r.scroll.down(3),
             _ => {}
         },
+        Screen::Log(st, _) => match m.kind {
+            MouseEventKind::ScrollUp => st.scroll.up(3, st.log.len()),
+            MouseEventKind::ScrollDown => st.scroll.down(3),
+            _ => {}
+        },
+        Screen::Summary(_) => {}
     }
     None
 }
@@ -437,6 +502,14 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Run(r) => {
             run::view(f, body, app, r);
             if r.running() { &run::HINTS_RUNNING } else { &run::HINTS_DONE }
+        }
+        Screen::Summary(s) => {
+            summary::view(f, body, &app.theme, s);
+            &summary::HINTS
+        }
+        Screen::Log(st, _) => {
+            log::view(f, body, &app.theme, st);
+            &log::HINTS
         }
     };
     let hints: &[(&str, &str)] = if app.modal.is_some() { &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")] } else { hints };
@@ -707,6 +780,51 @@ pub mod tests {
         let p = Prompt::yes_no("Close/kill running application(s) (zen obsidian) to proceed with restore?", true)
             .with_details(vec!["zen (PID: 4242 4243)".into(), "obsidian (PID: 5150)".into()]);
         job(&mut a, JobMsg::Ask { id: 1, prompt: p });
+        insta::assert_snapshot!(render(&a));
+    }
+
+    fn summary(issues: Vec<String>, howdy: bool) -> Summary {
+        Summary {
+            elapsed: "12:34".into(),
+            user: "p3ter".into(),
+            uid: 1000,
+            gid: 1000,
+            partition: None,
+            repo_configured: true,
+            log_file: "/var/log/kas.log".into(),
+            issues,
+            howdy_enrolled: howdy,
+        }
+    }
+
+    #[test]
+    fn auto_run_ends_on_summary_and_log_returns_there() {
+        let mut a = running_auto(80, 24);
+        job(&mut a, JobMsg::Done(Ok(Outcome::Summary(summary(vec![], true)))));
+        assert!(matches!(a.screen, Screen::Summary(_)));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('l'))), Some(Command::OpenLog)));
+        update(&mut a, Event::Loaded(Loaded::Log(vec!["[x] [INFO] hello".into()])));
+        assert!(matches!(a.screen, Screen::Log(..)));
+        update(&mut a, key(KeyCode::Esc));
+        assert!(matches!(a.screen, Screen::Summary(_)));
+        update(&mut a, key(KeyCode::Enter));
+        assert!(matches!(a.screen, Screen::Menu));
+    }
+
+    #[test]
+    fn snapshot_summary_with_issues_80x24() {
+        let mut a = app(80, 24);
+        let issues = vec!["System upgrade (pacman -Syuu) failed with exit code 1".into(), "Package failed to install: steam".into()];
+        a.screen = Screen::Summary(Box::new(summary(issues, false)));
+        insta::assert_snapshot!(render(&a));
+    }
+
+    #[test]
+    fn snapshot_summary_ok_140x40() {
+        let mut a = app(140, 40);
+        let mut s = summary(vec![], true);
+        s.partition = Some("/media/data mounted & user folders symlinked".into());
+        a.screen = Screen::Summary(Box::new(s));
         insta::assert_snapshot!(render(&a));
     }
 
