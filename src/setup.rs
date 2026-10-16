@@ -208,15 +208,9 @@ pub fn migrate_user_dirs(
         if meta.is_ok() && !is_link {
             // NTFS can't hold Unix owners/modes, so only preserve timestamps; never delete
             // the original unless the copy fully succeeded.
-            let copied = Command::new("cp")
-                .args(["-RT", "--preserve=timestamps"])
-                .arg(&home_dir)
-                .arg(&target)
-                .stdin(std::process::Stdio::null())
-                .stdout(cp_output())
-                .stderr(cp_output())
-                .status()
-                .is_ok_and(|s| s.success());
+            let mut cp = Command::new("cp");
+            cp.args(["-RT", "--preserve=timestamps"]).arg(&home_dir).arg(&target).stdin(std::process::Stdio::null()).stdout(cp_output()).stderr(cp_output());
+            let copied = crate::report::run_tracked(&mut cp).is_ok_and(|s| s.success());
             if !copied {
                 failed.push((dir.to_string(), target.display().to_string()));
                 continue;

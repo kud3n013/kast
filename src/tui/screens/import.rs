@@ -850,6 +850,25 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_import_confirm_long_80x24() {
+        let mut a = loaded(80, 24);
+        let mut ins = inspected();
+        ins.info.apps.clear();
+        ins.destinations.clear();
+        for k in crate::vault::ALL_APPS {
+            ins.info.apps.push(InfoApp { key: k.into(), name: k.to_uppercase(), fields: vec![] });
+            ins.destinations.push((k.into(), vec![format!("/home/p3ter/.config/{k}")]));
+        }
+        let Some(Command::Inspect { path, .. }) = update(&mut a, key(KeyCode::Enter)) else { panic!() };
+        update(&mut a, Event::Loaded(Loaded::Inspected { path, pick: true, result: Ok(Some(ins)) }));
+        update(&mut a, key(KeyCode::Char('s')));
+        let out = render(&a);
+        // The buttons stay visible even when the list doesn't fit
+        assert!(out.contains("Restore") && out.contains("Back"));
+        insta::assert_snapshot!(out);
+    }
+
+    #[test]
     fn snapshot_import_confirm_140x40() {
         let mut a = loaded(140, 40);
         let Some(Command::Inspect { path, .. }) = update(&mut a, key(KeyCode::Enter)) else { panic!() };

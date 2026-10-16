@@ -914,6 +914,14 @@ pub mod tests {
     }
 
     #[test]
+    fn snapshot_summary_with_issues_140x40() {
+        let mut a = app(140, 40);
+        let issues = vec!["System upgrade (pacman -Syuu) failed with exit code 1".into(), "Could not enable/start searxng".into()];
+        a.screen = Screen::Summary(Box::new(summary(issues, false)));
+        insta::assert_snapshot!(render(&a));
+    }
+
+    #[test]
     fn snapshot_summary_ok_140x40() {
         let mut a = app(140, 40);
         let mut s = summary(vec![], true);

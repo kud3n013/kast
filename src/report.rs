@@ -189,6 +189,23 @@ pub fn set_child(pgid: Option<i32>) {
     *CHILD_PGID.lock().unwrap() = pgid;
 }
 
+/// `cmd.status()`, except on a TUI job thread: there the child gets its own process group
+/// and is registered, so a cancel can stop it, and a canceled job ends right after it.
+pub fn run_tracked(cmd: &mut std::process::Command) -> std::io::Result<std::process::ExitStatus> {
+    use std::os::unix::process::CommandExt;
+    if !owns_terminal() {
+        return cmd.status();
+    }
+    checkpoint();
+    let mut child = cmd.process_group(0).spawn()?;
+    set_child(Some(child.id() as i32));
+    let status = child.wait();
+    set_child(None);
+    // Before the caller looks at the exit status: a killed child is a cancel, not a failure
+    checkpoint();
+    status
+}
+
 /// End the job here if a cancel was confirmed (only ever true on a TUI job thread).
 pub fn checkpoint() {
     if cancel_requested() && owns_terminal() {

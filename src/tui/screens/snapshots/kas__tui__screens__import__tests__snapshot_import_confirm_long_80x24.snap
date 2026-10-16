@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/import.rs
+expression: out
+---
+ kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭╭ Restore ───────────────────────────────────────────────────────────────────╮╮
+││Overwrite these settings with the backup?                                   ││
+││                                                                            ││
+││  Archive:  /media/data/backups/all_backup_2026-10-16_210400.zip            ││
+││  Restores: beeper zalo vesktop zen obsidian fcitx5 antigravity howdy kde   ││
+││hypr                                                                        ││
+││                                                                            ││
+││  Overwrites:                                                               ││
+││    /home/p3ter/.config/beeper                                              ││
+││    /home/p3ter/.config/zalo                                                ││
+││    /home/p3ter/.config/vesktop                                             ││
+││    /home/p3ter/.config/zen                                                 ││
+││    /home/p3ter/.config/obsidian                                            ││
+││    /home/p3ter/.config/fcitx5                                              ││
+││    /home/p3ter/.config/antigravity                                         ││
+││    /home/p3ter/.config/howdy                                               ││
+││    /home/p3ter/.config/kde                                                 ││
+││    /home/p3ter/.config/hypr                                                ││
+││                                                                            ││
+││  A safety snapshot of the current files is saved first.                    ││
+││                              Restore     Back                              ││
+╰╰────────────────────────────────────────────────────────────────────────────╯╯
+ y/n answer  ←/→ choose  Enter confirm  Esc no

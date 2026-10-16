@@ -300,7 +300,7 @@ pub fn rsync(opts: &[&str], src: &Path, dest: &str) -> Result<()> {
     if report::owns_terminal() {
         cmd.stdin(std::process::Stdio::null()).stdout(ctx::log_stdio()).stderr(ctx::log_stdio());
     }
-    let status = cmd.status().context("running rsync")?;
+    let status = report::run_tracked(&mut cmd).context("running rsync")?;
     if !status.success() {
         bail!("rsync {} -> {dest} failed ({status})", src.display());
     }

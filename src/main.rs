@@ -260,7 +260,14 @@ fn main() -> ExitCode {
     if needs_root(&cli.cmd) && !nix::unistd::Uid::effective().is_root() {
         println!("Privileges required. Re-executing with sudo...");
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(std::env::args().next().unwrap_or_default()));
-        let err = Command::new("sudo").arg(exe).args(std::env::args_os().skip(1)).exec();
+        let mut sudo = Command::new("sudo");
+        // sudo resets the environment; carry NO_COLOR over so the app stays colourless
+        if let Some(v) = std::env::var_os("NO_COLOR").filter(|v| !v.is_empty()) {
+            let mut kv = std::ffi::OsString::from("NO_COLOR=");
+            kv.push(v);
+            sudo.arg("env").arg(kv);
+        }
+        let err = sudo.arg(exe).args(std::env::args_os().skip(1)).exec();
         eprintln!("{C_RED}[ERROR]{C_RESET} Could not run sudo: {err}");
         return ExitCode::FAILURE;
     }
