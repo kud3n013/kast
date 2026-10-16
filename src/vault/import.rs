@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -85,24 +86,27 @@ fn howdy_list() {
     report::blank();
     log_info("Verifying enrolled models with howdy list:");
     let user = &ctx().target_user;
-    let _ = ok_priv_inherit(&["howdy", "-U", user, "list"]) || ok_priv_inherit(&["howdy", "list"]);
+    let Some(out) = priv_output(&["howdy", "-U", user, "list"]).or_else(|| priv_output(&["howdy", "list"])) else { return };
+    // Into the log either way; on the terminal too when no full-screen UI owns it
+    ctx::log_raw(&out);
+    if !report::owns_terminal() {
+        let _ = std::io::stdout().write_all(&out);
+    }
 }
 
-/// Like ok_priv, but the output goes to the terminal (to the log while a TUI owns it).
-fn ok_priv_inherit(args: &[&str]) -> bool {
+/// Stdout of a command run as root (through `sudo -n` when not root), if it succeeded.
+fn priv_output(args: &[&str]) -> Option<Vec<u8>> {
     let mut cmd = if ctx().is_root {
         let mut c = Command::new(args[0]);
         c.args(&args[1..]);
         c
     } else {
         let mut c = Command::new("sudo");
-        c.args(args);
+        c.arg("-n").args(args);
         c
     };
-    if report::owns_terminal() {
-        cmd.stdin(Stdio::null()).stdout(ctx::log_stdio());
-    }
-    cmd.stderr(Stdio::null()).status().is_ok_and(|s| s.success())
+    let out = cmd.stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    out.status.success().then_some(out.stdout)
 }
 
 /// Run a shell snippet (needed for globs inside root-only /etc/howdy/models) as root.
