@@ -259,6 +259,14 @@ fn execute_command(app: &mut App, term: &mut Term, cmd: Command, tx: &Sender<Eve
             let (value, matches) = screens::import::complete_path(&value, &ctx().target_home);
             let _ = tx.send(Event::Loaded(event::Loaded::Completion { value, matches }));
         }
+        Command::LoadExportTargets => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let targets = screens::export::load_targets();
+                let (dir, ts) = screens::export::default_destination();
+                let _ = tx.send(Event::Loaded(event::Loaded::ExportTargets { targets, dir, ts }));
+            });
+        }
         Command::OpenLog => {
             let _ = tx.send(Event::Loaded(event::Loaded::Log(read_log_tail())));
         }

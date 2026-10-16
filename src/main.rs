@@ -208,6 +208,7 @@ fn dispatch(cmd: Option<Cmd>) -> Result<()> {
         Some(Cmd::Import(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Import),
         Some(Cmd::Import(a)) if a.is_empty() => interactive::import_data(),
         Some(Cmd::Import(a)) => cmd_import(a.into_opts()?),
+        Some(Cmd::Export(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Export),
         Some(Cmd::Export(a)) if a.is_empty() => interactive::export_data(),
         Some(Cmd::Export(a)) => cmd_backup(a.into_opts()),
         Some(Cmd::Status) | Some(Cmd::Vault { cmd: VaultCmd::Status }) => {

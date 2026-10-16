@@ -5,6 +5,7 @@ use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 use crate::report::{Level, Progress, Prompt};
 use std::path::PathBuf;
 
+use super::screens::export::TargetInfo;
 use super::screens::import::{Candidate, Inspected};
 use crate::setup::Summary;
 
@@ -35,6 +36,11 @@ pub enum Loaded {
     Completion {
         value: String,
         matches: Vec<String>,
+    },
+    ExportTargets {
+        targets: Vec<TargetInfo>,
+        dir: PathBuf,
+        ts: String,
     },
 }
 

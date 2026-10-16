@@ -9,6 +9,7 @@ use ratatui::text::Line;
 pub use super::event::Event;
 use super::event::{JobMsg, Loaded, Outcome};
 use super::job::JobKind;
+use super::screens::export::{self, ExportState};
 use super::screens::help;
 use super::screens::import::{self, ImportState};
 use super::screens::log::{self, LogState};
@@ -52,6 +53,7 @@ pub enum Screen {
     Run(Box<RunState>),
     Summary(Box<Summary>),
     Import(Box<ImportState>),
+    Export(Box<ExportState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -96,6 +98,8 @@ pub enum Command {
     Inspect { path: std::path::PathBuf, pick: bool },
     /// Tab completion of a typed path (answered with `Loaded::Completion`)
     Complete(String),
+    /// Detect what can be backed up (answered with `Loaded::ExportTargets`)
+    LoadExportTargets,
 }
 
 pub struct App {
@@ -170,6 +174,7 @@ impl App {
             Screen::Run(_) => ("Progress", &run::HELP),
             Screen::Summary(_) => ("Summary", &summary::HELP),
             Screen::Import(_) => ("Backups", &import::HELP),
+            Screen::Export(_) => ("Back up", &export::HELP),
             Screen::Log(..) => ("Log", &log::HELP),
         }
     }
@@ -201,6 +206,7 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         }
         Event::Paste(text) => {
             import::on_paste(app, &text);
+            export::on_paste(app, &text);
             None
         }
         Event::Key(k) if k.kind == KeyEventKind::Release => None,
@@ -215,7 +221,12 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::Candidates(list)) => import::on_candidates(app, list),
         Event::Loaded(Loaded::Inspected { path, pick, result }) => import::on_inspected(app, path, pick, result),
         Event::Loaded(Loaded::Completion { value, matches }) => {
+            export::on_completion(app, value.clone());
             import::on_completion(app, value, matches);
+            None
+        }
+        Event::Loaded(Loaded::ExportTargets { targets, dir, ts }) => {
+            export::on_targets(app, targets, dir, ts);
             None
         }
     }
@@ -292,7 +303,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.quit = true;
                 None
             }
-            Screen::Summary(_) | Screen::Import(_) => {
+            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -332,12 +343,13 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         },
         Screen::Log(..) => log_key(app, k),
         Screen::Import(_) => import::key(app, k),
+        Screen::Export(_) => export::key(app, k),
     }
 }
 
 /// A text field has the keyboard (letters must reach it, not shortcuts).
 fn text_field_open(app: &App) -> bool {
-    matches!(&app.screen, Screen::Import(s) if s.path.is_some() || s.filtering)
+    matches!(&app.screen, Screen::Import(s) if s.path.is_some() || s.filtering) || export::editing(app)
 }
 
 fn modal_key(app: &mut App, k: KeyEvent) -> Option<Command> {
@@ -473,7 +485,11 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Restore)));
             return Some(Command::LoadCandidates { zips_only: false });
         }
-        Action::Export | Action::Status | Action::Info => return Some(Command::Legacy(action)),
+        Action::Export => {
+            app.screen = Screen::Export(Box::new(ExportState::new(&app.header.user)));
+            return Some(Command::LoadExportTargets);
+        }
+        Action::Status | Action::Info => return Some(Command::Legacy(action)),
     };
     Some(start_job(app, kind))
 }
@@ -491,6 +507,9 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
     if matches!(app.screen, Screen::Import(_)) {
         let body = app.body_area();
         return import::mouse(app, m, body);
+    }
+    if matches!(app.screen, Screen::Export(_)) {
+        return export::mouse(app, m);
     }
     match &mut app.screen {
         Screen::Menu => match m.kind {
@@ -518,7 +537,7 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => st.scroll.down(3),
             _ => {}
         },
-        Screen::Summary(_) | Screen::Import(_) => {}
+        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) => {}
     }
     None
 }
@@ -551,6 +570,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Import(st) => {
             import::view(f, body, app, st);
             import::hints(st)
+        }
+        Screen::Export(st) => {
+            export::view(f, body, app, st);
+            export::hints(st)
         }
     };
     let hints: &[(&str, &str)] = if app.modal.is_some() { &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")] } else { hints };
