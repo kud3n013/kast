@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use nix::sys::termios::{self, InputFlags, LocalFlags, SetArg};
 
-use crate::ctx::{ctx, log, log_stdio};
+use crate::ctx::{self, ctx, log, log_stdio};
 use crate::report::{self, Progress};
 
 pub const C_RESET: &str = "\x1b[0m";
@@ -259,10 +259,20 @@ impl Dash {
     /// Run `cmd` with output appended to the log while the dashboard shows its latest
     /// line. stdin is /dev/null, so any prompt fails fast instead of hanging unseen.
     /// Returns the exit code (127 if it could not be started).
-    pub fn exec_monitored(&self, s_step: i64, s_total: i64, item: &str, mut cmd: Command) -> i32 {
-        if report::owns_terminal() {
-            return self.exec_piped(s_step, s_total, item, cmd);
+    pub fn exec_monitored(&self, s_step: i64, s_total: i64, item: &str, cmd: Command) -> i32 {
+        let pacman = runs_pacman(&cmd);
+        if pacman {
+            ctx::note_pacman_start();
         }
+        // A canceled job unwinds inside exec_piped, so the note survives only then
+        let rc = if report::owns_terminal() { self.exec_piped(s_step, s_total, item, cmd) } else { self.exec_logged(s_step, s_total, item, cmd) };
+        if pacman {
+            ctx::note_pacman_done();
+        }
+        rc
+    }
+
+    fn exec_logged(&self, s_step: i64, s_total: i64, item: &str, mut cmd: Command) -> i32 {
         log("INFO", &format!("Executing monitored task: {item} ({})", describe(&cmd)));
         flush_input();
         let child = cmd.stdin(Stdio::null()).stdout(log_stdio()).stderr(log_stdio()).spawn();
@@ -416,6 +426,11 @@ pub fn draw_dashboard(p: &Progress) {
     buf += &box_line(&format!("{C_CYAN}{spinner}{C_RESET} {C_GRAY}Log: {clean}{C_RESET}"), inner);
     buf += &hline(box_w, BOX_BL, BOX_BR);
     out(&format!("\x1b[H{buf}"));
+}
+
+/// pacman itself, or yay (which runs pacman through sudo).
+fn runs_pacman(cmd: &Command) -> bool {
+    cmd.get_program() == "pacman" || cmd.get_args().any(|a| a == "yay")
 }
 
 fn describe(cmd: &Command) -> String {

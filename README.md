@@ -72,4 +72,5 @@ and `l` opens the log (`/var/log/kas.log`). Below 60×20 it asks for a bigger wi
 
 Canceling a running job stops the command it is running (SIGTERM to its process group,
 then SIGKILL) and ends the job at its next step; steps that already finished are not
-undone.
+undone. If a stopped pacman leaves `/var/lib/pacman/db.lck` behind (and no pacman is
+running), kas offers to remove it.

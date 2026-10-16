@@ -25,6 +25,8 @@ pub enum JobKind {
     Services,
     Import(ImportOpts),
     Export(BackupOpts),
+    /// Remove /var/lib/pacman/db.lck after a canceled pacman left it behind
+    RemovePacmanLock,
     /// Scripted messages, for tests of the run screen and prompts
     #[cfg(test)]
     Fake(Vec<FakeStep>),
@@ -50,6 +52,7 @@ impl JobKind {
             JobKind::Services => "Set up services".into(),
             JobKind::Import(o) => format!("Restore {}", o.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             JobKind::Export(o) => format!("Back up {}", o.target),
+            JobKind::RemovePacmanLock => "Remove the pacman lock".into(),
             #[cfg(test)]
             JobKind::Fake(_) => "Fake job".into(),
         }
@@ -143,6 +146,10 @@ pub fn spawn(kind: JobKind, tx: Sender<Event>, replies: Arc<super::Replies>) {
             Ok(Ok(outcome)) => Ok(outcome),
             Ok(Err(e)) if e.is::<Reported>() => Err("Action failed".to_string()),
             Ok(Err(e)) => Err(format!("{e:#}")),
+            // A pacman stopped mid-run can leave its lock: the next pacman would fail
+            Err(p) if p.is::<JobCanceled>() && ctx::stale_pacman_lock(ctx::pacman_interrupted(), std::time::Duration::from_secs(4)) => {
+                Ok(Outcome::CanceledStaleLock("Canceled; pacman left its lock behind".into()))
+            }
             Err(p) if p.is::<JobCanceled>() => Ok(Outcome::Canceled("Canceled".into())),
             Err(_) => Err("Internal error (details in the log)".into()),
         };
@@ -195,6 +202,15 @@ fn run(kind: JobKind) -> Result<Outcome> {
             let out = o.output.clone().map(|p| p.display().to_string()).unwrap_or_default();
             cmd_backup(o)?;
             if ctx::canceled() { Outcome::Canceled("No backup was created".into()) } else { finished(&format!("Backup saved to {out}")) }
+        }
+        JobKind::RemovePacmanLock => {
+            if ctx::remove_stale_pacman_lock() {
+                report::log(Level::Success, &format!("Removed {}", ctx::PACMAN_LOCK));
+                finished("pacman lock removed")
+            } else {
+                report::log(Level::Warn, &format!("{} is in use or already gone; left as it is", ctx::PACMAN_LOCK));
+                finished("pacman lock left in place")
+            }
         }
         #[cfg(test)]
         JobKind::Fake(steps) => {

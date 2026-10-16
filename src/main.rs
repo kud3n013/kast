@@ -242,9 +242,13 @@ fn install_signal_handlers() {
     let Ok(mut signals) = signal_hook::iterator::Signals::new([SIGINT, SIGTERM, SIGHUP]) else { return };
     std::thread::spawn(move || {
         if let Some(sig) = signals.forever().next() {
+            let interrupted = ctx::pacman_interrupted();
             report::kill_child(std::time::Duration::from_secs(2));
             ctx::cleanup_temp_state();
             tui::restore_terminal();
+            if ctx::stale_pacman_lock(interrupted, std::time::Duration::from_secs(2)) {
+                eprintln!("pacman was stopped mid-run and left {0} behind. No pacman is running; remove it with: sudo rm {0}", ctx::PACMAN_LOCK);
+            }
             std::process::exit(if sig == SIGINT { 130 } else { 143 });
         }
     });

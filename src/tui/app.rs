@@ -276,6 +276,7 @@ fn on_job(app: &mut App, m: JobMsg) -> Option<Command> {
                 app.screen = Screen::Summary(Box::new(s));
             }
             Ok(outcome) => {
+                let stale_lock = matches!(outcome, Outcome::CanceledStaleLock(_));
                 let r = app.run_state()?;
                 let (finished, toast) = match outcome {
                     Outcome::Summary(_) => unreachable!("handled above"),
@@ -283,11 +284,26 @@ fn on_job(app: &mut App, m: JobMsg) -> Option<Command> {
                         let kind = if issues.is_empty() { ToastKind::Ok } else { ToastKind::Error };
                         (Finished::Ok { message: message.clone(), issues }, (kind, message))
                     }
-                    Outcome::Canceled(msg) => (Finished::Canceled(msg.clone()), (ToastKind::Info, msg)),
+                    Outcome::Canceled(msg) | Outcome::CanceledStaleLock(msg) => (Finished::Canceled(msg.clone()), (ToastKind::Info, msg)),
                 };
                 r.finished = Some(finished);
                 r.scroll.bottom();
                 app.toast(toast.0, toast.1);
+                if stale_lock {
+                    app.modal = Some(Modal {
+                        kind: ModalKind::Confirm(Box::new(JobKind::RemovePacmanLock)),
+                        title: "pacman lock".into(),
+                        text: "Remove the lock pacman left behind?".into(),
+                        details: vec![
+                            format!("pacman was stopped mid-run and left {} behind.", crate::ctx::PACMAN_LOCK),
+                            "No pacman is running now. Until the lock is gone, every pacman run".into(),
+                            "fails with \"unable to lock database\".".into(),
+                        ],
+                        yes: "Remove",
+                        no: "Keep",
+                        yes_selected: false,
+                    });
+                }
             }
         }
         return None;
@@ -794,6 +810,29 @@ pub mod tests {
         assert!(!a.job_running());
         update(&mut a, key(KeyCode::Enter));
         assert!(matches!(a.screen, Screen::Menu));
+    }
+
+    #[test]
+    fn stale_pacman_lock_offers_removal() {
+        let canceled = || {
+            let mut a = running_auto(80, 24);
+            update(&mut a, ctrl('c'));
+            update(&mut a, key(KeyCode::Left));
+            update(&mut a, key(KeyCode::Enter));
+            job(&mut a, JobMsg::Done(Ok(Outcome::CanceledStaleLock("Canceled; pacman left its lock behind".into()))));
+            a
+        };
+        let mut a = canceled();
+        assert!(matches!(a.modal.as_ref().unwrap().kind, ModalKind::Confirm(ref k) if matches!(**k, JobKind::RemovePacmanLock)));
+        insta::assert_snapshot!(render(&a));
+        // Esc keeps the lock
+        assert!(update(&mut a, key(KeyCode::Esc)).is_none());
+        assert!(a.modal.is_none() && !a.job_running());
+        // Enter takes the safe default too; y removes it
+        let mut a = canceled();
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        let mut a = canceled();
+        assert!(matches!(update(&mut a, key(KeyCode::Char('y'))), Some(Command::Start(JobKind::RemovePacmanLock))));
     }
 
     #[test]

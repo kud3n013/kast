@@ -72,4 +72,6 @@ pub enum Outcome {
     Finished { message: String, issues: Vec<String> },
     /// Stopped by the user (a confirmed cancel or a declined engine prompt)
     Canceled(String),
+    /// Canceled while pacman ran, and pacman left its lock behind: offer to remove it
+    CanceledStaleLock(String),
 }

@@ -310,6 +310,64 @@ pub fn canceled() -> bool {
     CANCELED.load(Ordering::SeqCst)
 }
 
+// --- pacman lock left behind by a stopped pacman --------------------------------------
+
+pub const PACMAN_LOCK: &str = "/var/lib/pacman/db.lck";
+
+/// Set while a pacman that kas started (directly or through yay) is running or was
+/// interrupted, and the lock was free when it started: a lock found then is that pacman's.
+/// Cleared when the command returns normally, so a later cancel never touches the lock of
+/// another tool (Discover / PackageKit, pamac hold it without a `pacman` process).
+static LOCK_WAS_FREE: AtomicBool = AtomicBool::new(false);
+
+/// Call right before kas starts a command that runs pacman.
+pub fn note_pacman_start() {
+    LOCK_WAS_FREE.store(!Path::new(PACMAN_LOCK).exists(), Ordering::SeqCst);
+}
+
+/// Call when that command returned (it wasn't interrupted by a cancel).
+pub fn note_pacman_done() {
+    LOCK_WAS_FREE.store(false, Ordering::SeqCst);
+}
+
+/// Read this first in a signal handler: the main thread may clear it once pacman exits.
+pub fn pacman_interrupted() -> bool {
+    LOCK_WAS_FREE.load(Ordering::SeqCst)
+}
+
+/// A process named `pacman` is running (any user, any terminal).
+fn pacman_running() -> bool {
+    fs::read_dir("/proc").is_ok_and(|rd| rd.flatten().any(|e| fs::read_to_string(e.path().join("comm")).is_ok_and(|c| c.trim_end() == "pacman")))
+}
+
+/// The pacman lock is still there although the pacman kas started is gone. Waits up to
+/// `wait` for a pacman that was just stopped to exit. Never true for a lock that existed
+/// before kas started pacman, or while any pacman runs, so another pacman's lock is safe.
+pub fn stale_pacman_lock(interrupted: bool, wait: std::time::Duration) -> bool {
+    lock_is_stale(Path::new(PACMAN_LOCK), interrupted, wait, pacman_running)
+}
+
+fn lock_is_stale(lock: &Path, was_free: bool, wait: std::time::Duration, running: impl Fn() -> bool) -> bool {
+    if !was_free || !lock.exists() {
+        return false;
+    }
+    let end = std::time::Instant::now() + wait;
+    while running() {
+        if std::time::Instant::now() >= end {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    lock.exists()
+}
+
+/// Remove the lock if it is (still) stale. True when it was removed.
+pub fn remove_stale_pacman_lock() -> bool {
+    let removed = stale_pacman_lock(pacman_interrupted(), std::time::Duration::ZERO) && fs::remove_file(PACMAN_LOCK).is_ok();
+    note_pacman_done();
+    removed
+}
+
 // --- Temporary state undone on exit -------------------------------------------------
 
 static STAGING: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -395,5 +453,23 @@ mod tests {
         assert_eq!(fs::read_to_string(&p).unwrap(), "new");
         assert_eq!(fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o644);
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn stale_lock_only_when_ours_and_no_pacman() {
+        use std::time::Duration;
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("db.lck");
+        // No lock: nothing to do
+        assert!(!lock_is_stale(&lock, true, Duration::ZERO, || false));
+        fs::write(&lock, "").unwrap();
+        assert!(lock_is_stale(&lock, true, Duration::ZERO, || false));
+        // The lock was already there before kas started pacman: someone else's
+        assert!(!lock_is_stale(&lock, false, Duration::ZERO, || false));
+        // A pacman still runs (another terminal, or ours not gone yet)
+        assert!(!lock_is_stale(&lock, true, Duration::from_millis(250), || true));
+        // Ours exits while we wait
+        let n = std::sync::atomic::AtomicU32::new(0);
+        assert!(lock_is_stale(&lock, true, Duration::from_secs(2), || n.fetch_add(1, Ordering::SeqCst) < 2));
     }
 }
