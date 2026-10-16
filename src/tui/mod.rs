@@ -6,14 +6,17 @@
 
 mod app;
 mod event;
+mod job;
 mod screens;
 mod theme;
 mod widgets;
 
+use std::collections::HashMap;
 use std::io::{self, Stdout};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -24,6 +27,7 @@ use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, d
 use ratatui::crossterm::{cursor, execute};
 
 use crate::ctx::{self, Reported, ctx};
+use crate::report;
 use crate::ui::C_RED;
 use crate::ui::C_RESET;
 use app::{App, Command, Header, ToastKind, update, view};
@@ -150,6 +154,7 @@ pub fn run() -> Result<()> {
     spawn_input(tx.clone());
 
     let mut app = App::new(header(), theme::Theme::from_env(), (size.width, size.height));
+    let replies = Arc::new(Replies::default());
     let started = Instant::now();
     loop {
         app.now = crate::ui::now();
@@ -158,7 +163,7 @@ pub fn run() -> Result<()> {
         let Some(ev) = next_event(&rx, app.animating()) else { break };
         app.now_ms = started.elapsed().as_millis() as u64;
         if let Some(cmd) = update(&mut app, ev) {
-            execute_command(&mut app, &mut term, cmd);
+            execute_command(&mut app, &mut term, cmd, &tx, &replies);
         }
         if app.quit {
             break;
@@ -179,9 +184,37 @@ fn next_event(rx: &Receiver<Event>, animating: bool) -> Option<Event> {
     }
 }
 
-fn execute_command(app: &mut App, term: &mut Term, cmd: Command) {
+/// Reply channels of engine questions that wait for an answer, by question id.
+#[derive(Default)]
+pub struct Replies(Mutex<HashMap<u64, Sender<bool>>>);
+
+impl Replies {
+    pub fn insert(&self, id: u64, tx: Sender<bool>) {
+        self.0.lock().unwrap().insert(id, tx);
+    }
+
+    fn answer(&self, id: u64, yes: bool) {
+        if let Some(tx) = self.0.lock().unwrap().remove(&id) {
+            let _ = tx.send(yes);
+        }
+    }
+
+    fn decline_all(&self) {
+        for (_, tx) in self.0.lock().unwrap().drain() {
+            let _ = tx.send(false);
+        }
+    }
+}
+
+fn execute_command(app: &mut App, term: &mut Term, cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>) {
     match cmd {
-        Command::Run(action) => {
+        Command::Start(kind) => job::spawn(kind, tx.clone(), replies.clone()),
+        Command::Answer { id, yes } => replies.answer(id, yes),
+        Command::Cancel => {
+            report::request_cancel();
+            replies.decline_all();
+        }
+        Command::Legacy(action) => {
             let result = suspend(term, || legacy_action(action));
             match result {
                 Ok(()) => {}

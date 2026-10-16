@@ -2,6 +2,9 @@
 
 use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 
+use crate::report::{Level, Progress, Prompt};
+use crate::setup::Summary;
+
 #[derive(Debug)]
 pub enum Event {
     Key(KeyEvent),
@@ -10,4 +13,34 @@ pub enum Event {
     Resize(u16, u16),
     /// Redraw tick (only while something animates)
     Tick,
+    Job(JobMsg),
+}
+
+/// Messages from a job thread (the engines, through `TuiReporter`).
+#[derive(Debug)]
+pub enum JobMsg {
+    Progress(Progress),
+    Log {
+        level: Level,
+        line: String,
+    },
+    /// A `\r`-rewritten line still in progress (replaced by the next one)
+    Transient(String),
+    /// An engine question; the job waits until `Command::Answer` with the same id
+    Ask {
+        id: u64,
+        prompt: Prompt,
+    },
+    Done(Result<Outcome, String>),
+}
+
+/// How a job ended.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Outcome {
+    /// The automatic run: show its summary screen
+    Summary(Summary),
+    /// Any other action: a closing message plus the issues it recorded
+    Finished { message: String, issues: Vec<String> },
+    /// Stopped by the user (a confirmed cancel or a declined engine prompt)
+    Canceled(String),
 }

@@ -6,7 +6,12 @@
 //! A thread-local keeps every engine signature unchanged, the same way `ctx()` does.
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use nix::sys::signal::{Signal, kill};
+use nix::unistd::Pid;
 
 use crate::ui::{self, C_BLUE, C_BOLD, C_CYAN, C_GREEN, C_RED, C_RESET, C_YELLOW};
 
@@ -67,6 +72,10 @@ pub trait Reporter: Send + Sync {
     fn ask(&self, p: &Prompt) -> bool;
     /// A line that was just appended to the log file (`ctx::log`).
     fn file_logged(&self, _level: &str, _msg: &str) {}
+    /// A complete line of a monitored child's output.
+    fn output_line(&self, _line: &str) {}
+    /// A `\r`-rewritten line of a monitored child that is still in progress.
+    fn output_partial(&self, _line: &str) {}
     /// True when a full-screen UI owns the terminal: children must not inherit it.
     fn owns_terminal(&self) -> bool {
         false
@@ -106,7 +115,6 @@ thread_local! {
 }
 
 /// Install `r` for the current thread (a TUI job thread does this first thing).
-#[allow(dead_code)] // used by the TUI job thread (next commit)
 pub fn install(r: Arc<dyn Reporter>) {
     CURRENT.with(|c| *c.borrow_mut() = Some(r));
 }
@@ -136,6 +144,110 @@ pub fn owns_terminal() -> bool {
     current().owns_terminal()
 }
 
+// --- Cancellation (TUI jobs) ---------------------------------------------------------------
+
+/// Unwind payload that ends a canceled job at its next checkpoint. Raised with
+/// `resume_unwind`, so no panic message is printed; the job thread catches it.
+#[derive(Debug)]
+pub struct JobCanceled;
+
+static CANCEL: AtomicBool = AtomicBool::new(false);
+/// Process group of the monitored child that is running right now (TUI only).
+static CHILD_PGID: Mutex<Option<i32>> = Mutex::new(None);
+
+pub fn reset_cancel() {
+    CANCEL.store(false, Ordering::SeqCst);
+}
+
+pub fn cancel_requested() -> bool {
+    CANCEL.load(Ordering::SeqCst)
+}
+
+/// Stop the current job: the engines see `ctx::canceled()`, the running child gets SIGTERM
+/// (SIGKILL after 3 s if it is still there) and the job ends at its next checkpoint.
+pub fn request_cancel() {
+    CANCEL.store(true, Ordering::SeqCst);
+    crate::ctx::set_canceled(true);
+    kill_child(Duration::from_secs(3));
+}
+
+/// SIGTERM the running child's process group; SIGKILL it after `grace` if it is still the
+/// running child. sudo relays SIGTERM to the command it runs.
+pub fn kill_child(grace: Duration) {
+    let Some(pgid) = *CHILD_PGID.lock().unwrap() else { return };
+    let group = Pid::from_raw(-pgid);
+    let _ = kill(group, Signal::SIGTERM);
+    std::thread::spawn(move || {
+        std::thread::sleep(grace);
+        if *CHILD_PGID.lock().unwrap() == Some(pgid) {
+            let _ = kill(group, Signal::SIGKILL);
+        }
+    });
+}
+
+pub fn set_child(pgid: Option<i32>) {
+    *CHILD_PGID.lock().unwrap() = pgid;
+}
+
+/// End the job here if a cancel was confirmed (only ever true on a TUI job thread).
+pub fn checkpoint() {
+    if cancel_requested() && owns_terminal() {
+        std::panic::resume_unwind(Box::new(JobCanceled));
+    }
+}
+
+/// Splits a child's output into lines. A `\r` without `\n` (progress bars) yields the text
+/// so far as a partial line that the next piece replaces.
+#[derive(Default)]
+pub struct LineSplitter {
+    buf: Vec<u8>,
+    pending_cr: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Piece {
+    Line(String),
+    Partial(String),
+}
+
+impl LineSplitter {
+    pub fn feed(&mut self, bytes: &[u8]) -> Vec<Piece> {
+        let mut out = Vec::new();
+        for &b in bytes {
+            if self.pending_cr {
+                self.pending_cr = false;
+                if b != b'\n' {
+                    let text = clean(&self.buf);
+                    self.buf.clear();
+                    if !text.trim().is_empty() {
+                        out.push(Piece::Partial(text));
+                    }
+                }
+            }
+            match b {
+                b'\n' => {
+                    out.push(Piece::Line(clean(&self.buf)));
+                    self.buf.clear();
+                }
+                b'\r' => self.pending_cr = true,
+                _ => self.buf.push(b),
+            }
+        }
+        out
+    }
+
+    /// Whatever is left when the output ends.
+    pub fn finish(&mut self) -> Option<String> {
+        let text = clean(&self.buf);
+        self.buf.clear();
+        (!text.trim().is_empty()).then_some(text)
+    }
+}
+
+fn clean(bytes: &[u8]) -> String {
+    ui::sanitize_log(&String::from_utf8_lossy(bytes))
+}
+
 pub fn file_logged(level: &str, msg: &str) {
     if let Some(r) = CURRENT.with(|c| c.borrow().clone()) {
         r.file_logged(level, msg);
@@ -160,6 +272,18 @@ mod tests {
         fn ask(&self, p: &Prompt) -> bool {
             p.default
         }
+    }
+
+    #[test]
+    fn splitter_handles_cr_progress_and_crlf() {
+        let mut sp = LineSplitter::default();
+        assert_eq!(sp.feed(b"one\ntw"), vec![Piece::Line("one".into())]);
+        assert_eq!(sp.feed(b"o\r\n"), vec![Piece::Line("two".into())]);
+        // pacman-style progress: each \r rewrites the line
+        assert_eq!(sp.feed(b" 10%\r 50%\r100%\n"), vec![Piece::Partial(" 10%".into()), Piece::Partial(" 50%".into()), Piece::Line("100%".into())]);
+        assert_eq!(sp.feed(b"\x1b[1mbold\x1b[0m\ttab"), vec![]);
+        assert_eq!(sp.finish(), Some("bold  tab".into()));
+        assert_eq!(sp.finish(), None);
     }
 
     #[test]

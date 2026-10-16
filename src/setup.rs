@@ -566,8 +566,32 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 // The data partition and the data import are optional and deliberately not part of it
 // (menu options 2 and 6 / `kas partition`, `kas import`).
 
+/// What the end of the automatic run reports.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Summary {
+    pub elapsed: String,
+    pub user: String,
+    pub uid: u32,
+    pub gid: u32,
+    /// None when the data partition is not set up
+    pub partition: Option<String>,
+    pub repo_configured: bool,
+    pub log_file: String,
+    pub issues: Vec<String>,
+    pub howdy_enrolled: bool,
+}
+
 pub fn run_automatic() -> Result<()> {
-    let c = ctx();
+    let o_start = run_automatic_steps()?;
+    ui::restore_terminal_interactive();
+    ui::clear_screen();
+    print_summary(&collect_summary(o_start));
+    ui::read_choice("Press Enter to return to master menu...");
+    Ok(())
+}
+
+/// The four steps of the automatic run; returns its start time.
+pub fn run_automatic_steps() -> Result<i64> {
     let o_start = ui::now();
     let o_total = 4;
     ctx::clear_issues();
@@ -579,24 +603,39 @@ pub fn run_automatic() -> Result<()> {
     add_kud3n_repo(true, o_start, 2, o_total)?;
     install_packages(true, o_start, 3, o_total);
     setup_services(true, o_start, 4, o_total)?;
+    Ok(o_start)
+}
 
-    ui::restore_terminal_interactive();
-    ui::clear_screen();
-    let elapsed = ui::format_seconds(ui::now() - o_start);
-    let mut partition = format!("{C_GRAY}not set up (optional: menu option 2 or `sudo kas partition`){C_RESET}");
-    if is_mounted(MOUNT_POINT) {
-        partition = format!("{MOUNT_POINT} mounted");
+/// The state after the automatic run (takes the recorded issues).
+pub fn collect_summary(o_start: i64) -> Summary {
+    let c = ctx();
+    let partition = is_mounted(MOUNT_POINT).then(|| {
+        let mut p = format!("{MOUNT_POINT} mounted");
         if c.target_home.join("Documents").is_symlink() {
-            partition += " & user folders symlinked";
+            p += " & user folders symlinked";
         }
+        p
+    });
+    Summary {
+        elapsed: ui::format_seconds(ui::now() - o_start),
+        user: c.target_user.clone(),
+        uid: c.target_uid,
+        gid: c.target_gid,
+        partition,
+        repo_configured: fs::read_to_string("/etc/pacman.conf").is_ok_and(|s| s.lines().any(|l| l.starts_with("[archrepo]"))),
+        log_file: c.log_file.display().to_string(),
+        issues: ctx::take_issues(),
+        howdy_enrolled: Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file(),
     }
-    let repo = if fs::read_to_string("/etc/pacman.conf").is_ok_and(|s| s.lines().any(|l| l.starts_with("[archrepo]"))) {
-        "Configured in /etc/pacman.conf".to_string()
-    } else {
-        format!("{C_YELLOW}not configured{C_RESET}")
-    };
+}
 
-    let issues = ctx::take_issues();
+pub const PARTITION_HINT: &str = "not set up (optional: menu option 2 or `sudo kas partition`)";
+pub const HOWDY_RESTORE_HINT: &str = "(or restore a saved face model with menu option 6 / `sudo kas import`)";
+
+fn print_summary(s: &Summary) {
+    let partition = s.partition.clone().unwrap_or_else(|| format!("{C_GRAY}{PARTITION_HINT}{C_RESET}"));
+    let repo = if s.repo_configured { "Configured in /etc/pacman.conf".to_string() } else { format!("{C_YELLOW}not configured{C_RESET}") };
+    let issues = &s.issues;
     let rule = "=".repeat(80);
     if issues.is_empty() {
         println!("{C_GREEN}{C_BOLD}\n{rule}\n           🎉 AUTOMATED ARCH LINUX SETUP COMPLETED SUCCESSFULLY! 🎉           \n{rule}");
@@ -604,28 +643,26 @@ pub fn run_automatic() -> Result<()> {
         println!("{C_YELLOW}{C_BOLD}\n{rule}\n           ⚠  AUTOMATED SETUP FINISHED WITH {} ISSUE(S)  ⚠\n{rule}", issues.len());
     }
     println!("{C_RESET}");
-    println!("  • Total Time Elapsed: {C_BOLD}{elapsed}{C_RESET}");
-    println!("  • Target User:        {C_BOLD}{}{C_RESET} (UID: {}, GID: {})", c.target_user, c.target_uid, c.target_gid);
+    println!("  • Total Time Elapsed: {C_BOLD}{}{C_RESET}", s.elapsed);
+    println!("  • Target User:        {C_BOLD}{}{C_RESET} (UID: {}, GID: {})", s.user, s.uid, s.gid);
     println!("  • Data Partition:     {partition}");
     println!("  • Kud3n Repo:         {repo}");
-    println!("  • Log File:           {}", c.log_file.display());
+    println!("  • Log File:           {}", s.log_file);
     if !issues.is_empty() {
         println!("\n{C_YELLOW}{C_BOLD}Issues:{C_RESET}");
-        for issue in &issues {
+        for issue in issues {
             println!("  {C_RED}✘{C_RESET} {issue}");
         }
     }
     println!();
-    if Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file() {
-        println!("  • Howdy Face Model:   {C_GREEN}Enrolled / Restored for {}{C_RESET}", c.target_user);
+    if s.howdy_enrolled {
+        println!("  • Howdy Face Model:   {C_GREEN}Enrolled / Restored for {}{C_RESET}", s.user);
     } else {
         println!("{C_YELLOW}Note:{C_RESET} If you have not enrolled your face in Howdy yet, run:");
-        println!("  sudo howdy -U {} add", c.target_user);
-        println!("  (or restore a saved face model with menu option 6 / `sudo kas import`)");
+        println!("  sudo howdy -U {} add", s.user);
+        println!("  {HOWDY_RESTORE_HINT}");
     }
     println!();
-    ui::read_choice("Press Enter to return to master menu...");
-    Ok(())
 }
 
 #[cfg(test)]

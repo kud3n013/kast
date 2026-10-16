@@ -4,12 +4,15 @@
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::text::Line;
 
-use super::event::Event;
+use super::event::{Event, JobMsg, Outcome};
+use super::job::JobKind;
 use super::screens::help;
 use super::screens::menu::{self, Action, ITEMS, MenuState};
+use super::screens::run::{self, Finished, RunState};
 use super::theme::Theme;
-use super::widgets::{self, MIN_H, MIN_W};
+use super::widgets::{self, Dialog, MIN_H, MIN_W};
 
 /// Who kas runs for, shown in the header bar (copied out of `ctx()` so drawing stays pure).
 #[derive(Clone, Debug, Default)]
@@ -41,13 +44,39 @@ pub struct Toast {
 #[derive(Debug)]
 pub enum Screen {
     Menu,
+    Run(Box<RunState>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModalKind {
+    /// An engine question; the job waits for the answer
+    Ask(u64),
+    CancelJob,
+}
+
+/// A yes/no dialog over the current screen. Esc always answers No.
+#[derive(Debug, Clone)]
+pub struct Modal {
+    pub kind: ModalKind,
+    pub title: String,
+    pub text: String,
+    pub details: Vec<String>,
+    pub yes: &'static str,
+    pub no: &'static str,
+    pub yes_selected: bool,
 }
 
 /// Side effects requested by `update`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Command {
-    /// Run a menu action
-    Run(Action),
+    /// Start a job thread (the run screen is already showing)
+    Start(JobKind),
+    /// Reply to an engine question
+    Answer { id: u64, yes: bool },
+    /// Stop the running job
+    Cancel,
+    /// Run a menu action that has no full-screen version yet on the plain terminal
+    Legacy(Action),
 }
 
 pub struct App {
@@ -62,12 +91,14 @@ pub struct App {
     pub screen: Screen,
     pub menu: MenuState,
     pub help: bool,
+    pub modal: Option<Modal>,
     pub toast: Option<Toast>,
     pub quit: bool,
     last_click: Option<(usize, u64)>,
 }
 
 const DOUBLE_CLICK_MS: u64 = 400;
+const PAGE: usize = 10;
 
 pub fn is_ctrl_c(k: &KeyEvent) -> bool {
     k.modifiers.contains(KeyModifiers::CONTROL) && matches!(k.code, KeyCode::Char('c' | 'C'))
@@ -85,6 +116,7 @@ impl App {
             screen: Screen::Menu,
             menu: MenuState::default(),
             help: false,
+            modal: None,
             toast: None,
             quit: false,
             last_click: None,
@@ -92,12 +124,16 @@ impl App {
     }
 
     pub fn toast(&mut self, kind: ToastKind, text: impl Into<String>) {
-        self.toast = Some(Toast { text: text.into(), kind, until_ms: self.now_ms + 4000 });
+        self.toast = Some(Toast { text: text.into(), kind, until_ms: self.now_ms + 5000 });
+    }
+
+    pub fn job_running(&self) -> bool {
+        matches!(&self.screen, Screen::Run(r) if r.running())
     }
 
     /// Whether something on screen animates (the runtime only ticks then).
     pub fn animating(&self) -> bool {
-        self.toast.is_some()
+        self.toast.is_some() || self.job_running()
     }
 
     fn too_small(&self) -> bool {
@@ -112,6 +148,14 @@ impl App {
     fn help_keys(&self) -> (&'static str, &'static [(&'static str, &'static str)]) {
         match self.screen {
             Screen::Menu => ("Main menu", &menu::HELP),
+            Screen::Run(_) => ("Progress", &run::HELP),
+        }
+    }
+
+    fn run_state(&mut self) -> Option<&mut RunState> {
+        match &mut self.screen {
+            Screen::Run(r) => Some(r),
+            _ => None,
         }
     }
 }
@@ -137,13 +181,80 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Key(k) if k.kind == KeyEventKind::Release => None,
         Event::Key(k) => on_key(app, k),
         Event::Mouse(m) => on_mouse(app, m),
+        Event::Job(m) => on_job(app, m),
     }
 }
 
-fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
-    if is_ctrl_c(&k) {
-        app.quit = true;
+fn on_job(app: &mut App, m: JobMsg) -> Option<Command> {
+    if let JobMsg::Ask { id, prompt } = m {
+        if app.run_state().is_none_or(|r| r.cancel_requested) {
+            return Some(Command::Answer { id, yes: false });
+        }
+        app.help = false;
+        app.modal = Some(Modal {
+            kind: ModalKind::Ask(id),
+            title: "Question".into(),
+            text: prompt.text,
+            details: prompt.details,
+            yes: "Yes",
+            no: "No",
+            yes_selected: prompt.default,
+        });
         return None;
+    }
+    if let JobMsg::Done(result) = m {
+        // A job that ends while one of its dialogs is open no longer needs the answer
+        app.modal = None;
+        match result {
+            Err(e) => {
+                app.screen = Screen::Menu;
+                app.toast(ToastKind::Error, format!("{e}. Details: {}", app.header.log_file));
+            }
+            Ok(outcome) => {
+                let r = app.run_state()?;
+                let (finished, toast) = match outcome {
+                    Outcome::Summary(s) => {
+                        (Finished::Ok { message: "Automatic setup finished".into(), issues: s.issues }, (ToastKind::Ok, "Automatic setup finished".to_string()))
+                    }
+                    Outcome::Finished { message, issues } => {
+                        let kind = if issues.is_empty() { ToastKind::Ok } else { ToastKind::Error };
+                        (Finished::Ok { message: message.clone(), issues }, (kind, message))
+                    }
+                    Outcome::Canceled(msg) => (Finished::Canceled(msg.clone()), (ToastKind::Info, msg)),
+                };
+                r.finished = Some(finished);
+                r.scroll.bottom();
+                app.toast(toast.0, toast.1);
+            }
+        }
+        return None;
+    }
+    let r = app.run_state()?;
+    match m {
+        JobMsg::Progress(p) => r.on_progress(p),
+        JobMsg::Log { level, line } => r.push_log(level, line),
+        JobMsg::Transient(line) => r.log.set_transient(line),
+        JobMsg::Ask { .. } | JobMsg::Done(_) => {}
+    }
+    None
+}
+
+fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    if app.modal.is_some() {
+        return modal_key(app, k);
+    }
+    if is_ctrl_c(&k) {
+        return match &app.screen {
+            Screen::Run(_) if app.job_running() => ask_cancel(app),
+            Screen::Run(_) => {
+                app.screen = Screen::Menu;
+                None
+            }
+            Screen::Menu => {
+                app.quit = true;
+                None
+            }
+        };
     }
     if app.help {
         app.help = false;
@@ -151,6 +262,9 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
     }
     if app.too_small() {
         if matches!(k.code, KeyCode::Char('q') | KeyCode::Esc) {
+            if app.job_running() {
+                return ask_cancel(app);
+            }
             app.quit = true;
         }
         return None;
@@ -161,7 +275,62 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
     }
     match app.screen {
         Screen::Menu => menu_key(app, k),
+        Screen::Run(_) => run_key(app, k),
     }
+}
+
+fn modal_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    let m = app.modal.as_mut()?;
+    if is_ctrl_c(&k) {
+        // Ctrl+C on an engine question: answer No, then offer to cancel the whole job
+        let cmd = answer(app, false);
+        if app.job_running() {
+            ask_cancel(app);
+        }
+        return cmd;
+    }
+    match k.code {
+        KeyCode::Char('y' | 'Y') => answer(app, true),
+        KeyCode::Char('n' | 'N') | KeyCode::Esc => answer(app, false),
+        KeyCode::Enter => {
+            let yes = m.yes_selected;
+            answer(app, yes)
+        }
+        KeyCode::Left | KeyCode::Right | KeyCode::Tab | KeyCode::BackTab | KeyCode::Char('h' | 'l') => {
+            m.yes_selected = !m.yes_selected;
+            None
+        }
+        _ => None,
+    }
+}
+
+fn answer(app: &mut App, yes: bool) -> Option<Command> {
+    let m = app.modal.take()?;
+    match m.kind {
+        ModalKind::Ask(id) => Some(Command::Answer { id, yes }),
+        ModalKind::CancelJob if yes => {
+            let r = app.run_state()?;
+            r.cancel_requested = true;
+            Some(Command::Cancel)
+        }
+        ModalKind::CancelJob => None,
+    }
+}
+
+fn ask_cancel(app: &mut App) -> Option<Command> {
+    if app.run_state().is_some_and(|r| r.cancel_requested) {
+        return None;
+    }
+    app.modal = Some(Modal {
+        kind: ModalKind::CancelJob,
+        title: "Cancel".into(),
+        text: "Cancel this job?".into(),
+        details: vec!["The running command is stopped and the job ends at its next step.".into(), "Steps that already finished are not undone.".into()],
+        yes: "Cancel job",
+        no: "Keep running",
+        yes_selected: false,
+    });
+    None
 }
 
 fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
@@ -182,19 +351,52 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
     None
 }
 
-fn activate(app: &mut App, action: Action) -> Option<Command> {
-    if action == Action::Quit {
-        app.quit = true;
-        return None;
+fn run_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    let running = app.job_running();
+    let r = app.run_state()?;
+    let len = r.log.len();
+    match k.code {
+        KeyCode::PageUp => r.scroll.up(PAGE, len),
+        KeyCode::PageDown => r.scroll.down(PAGE),
+        KeyCode::Up | KeyCode::Char('k') => r.scroll.up(1, len),
+        KeyCode::Down | KeyCode::Char('j') => r.scroll.down(1),
+        KeyCode::Home | KeyCode::Char('g') => r.scroll.top(len),
+        KeyCode::End | KeyCode::Char('G') => r.scroll.bottom(),
+        KeyCode::Esc | KeyCode::Char('q') if running => return ask_cancel(app),
+        KeyCode::Enter | KeyCode::Esc | KeyCode::Char('q') if !running => app.screen = Screen::Menu,
+        _ => {}
     }
-    Some(Command::Run(action))
+    None
+}
+
+/// Start what a menu entry stands for.
+pub fn activate(app: &mut App, action: Action) -> Option<Command> {
+    let kind = match action {
+        Action::Quit => {
+            app.quit = true;
+            return None;
+        }
+        Action::Auto => JobKind::Auto,
+        Action::Partition => JobKind::Partition,
+        Action::Repo => JobKind::Repo,
+        Action::Packages => JobKind::Packages,
+        Action::Services => JobKind::Services,
+        Action::Import | Action::Export | Action::Status | Action::Info => return Some(Command::Legacy(action)),
+    };
+    Some(start_job(app, kind))
+}
+
+pub fn start_job(app: &mut App, kind: JobKind) -> Command {
+    app.toast = None;
+    app.screen = Screen::Run(Box::new(RunState::new(kind.title(), kind.is_auto(), app.now)));
+    Command::Start(kind)
 }
 
 fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
-    if app.help || app.too_small() {
+    if app.help || app.modal.is_some() || app.too_small() {
         return None;
     }
-    match app.screen {
+    match &mut app.screen {
         Screen::Menu => match m.kind {
             MouseEventKind::ScrollUp => app.menu.up(),
             MouseEventKind::ScrollDown => app.menu.down(),
@@ -210,6 +412,11 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             }
             _ => {}
         },
+        Screen::Run(r) => match m.kind {
+            MouseEventKind::ScrollUp => r.scroll.up(3, r.log.len()),
+            MouseEventKind::ScrollDown => r.scroll.down(3),
+            _ => {}
+        },
     }
     None
 }
@@ -222,11 +429,20 @@ pub fn view(app: &App, f: &mut Frame) {
     }
     let [top, body, bottom] = areas(area);
     widgets::header(f, top, &app.header, &app.theme);
-    match app.screen {
+    let hints: &[(&str, &str)] = match &app.screen {
         Screen::Menu => {
             menu::view(f, body, app);
-            widgets::footer(f, bottom, &menu::HINTS, &app.theme);
+            &menu::HINTS
         }
+        Screen::Run(r) => {
+            run::view(f, body, app, r);
+            if r.running() { &run::HINTS_RUNNING } else { &run::HINTS_DONE }
+        }
+    };
+    let hints: &[(&str, &str)] = if app.modal.is_some() { &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")] } else { hints };
+    widgets::footer(f, bottom, hints, &app.theme);
+    if let Some(m) = &app.modal {
+        modal_view(f, body, app, m);
     }
     if app.help {
         let (title, keys) = app.help_keys();
@@ -235,9 +451,21 @@ pub fn view(app: &App, f: &mut Frame) {
     widgets::toast(f, body, app);
 }
 
+fn modal_view(f: &mut Frame, area: Rect, app: &App, m: &Modal) {
+    let theme = &app.theme;
+    let mut lines = vec![Line::styled(m.text.clone(), theme.bold())];
+    if !m.details.is_empty() {
+        lines.push(Line::raw(""));
+        lines.extend(m.details.iter().map(|d| Line::raw(format!("  {d}"))));
+    }
+    let d = Dialog { title: &m.title, lines, yes: m.yes, no: m.no, yes_selected: m.yes_selected };
+    widgets::dialog(f, area, theme, &d);
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::report::{Level, Progress, Prompt};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use ratatui::crossterm::event::KeyEventState;
@@ -282,6 +510,26 @@ pub mod tests {
         out
     }
 
+    pub fn progress(o_step: i64, s_step: i64, s_total: i64, item: &str, mark: Option<&str>) -> Progress {
+        Progress {
+            auto: true,
+            o_step,
+            o_total: 4,
+            o_start: 1000,
+            title: "Install Packages".into(),
+            s_start: 1100,
+            s_step,
+            s_total,
+            item: item.into(),
+            recent_log: String::new(),
+            mark: mark.map(str::to_string),
+        }
+    }
+
+    fn job(app: &mut App, m: JobMsg) -> Option<Command> {
+        update(app, Event::Job(m))
+    }
+
     #[test]
     fn menu_navigation_wraps() {
         let mut a = app(80, 24);
@@ -300,13 +548,13 @@ pub mod tests {
     }
 
     #[test]
-    fn digits_and_enter_run_actions() {
+    fn digits_and_enter_start_actions() {
         let mut a = app(80, 24);
-        assert_eq!(update(&mut a, key(KeyCode::Char('3'))), Some(Command::Run(Action::Repo)));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('3'))), Some(Command::Start(JobKind::Repo))));
+        assert!(matches!(a.screen, Screen::Run(_)));
         assert_eq!(a.menu.selected, 2);
-        assert_eq!(update(&mut a, key(KeyCode::Char('9'))), Some(Command::Run(Action::Info)));
-        update(&mut a, key(KeyCode::Home));
-        assert_eq!(update(&mut a, key(KeyCode::Enter)), Some(Command::Run(Action::Auto)));
+        let mut a = app(80, 24);
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Start(JobKind::Auto))));
         assert!(!a.quit);
     }
 
@@ -314,7 +562,7 @@ pub mod tests {
     fn quit_keys() {
         for ev in [key(KeyCode::Char('q')), key(KeyCode::Esc), ctrl('c')] {
             let mut a = app(80, 24);
-            assert_eq!(update(&mut a, ev), None);
+            assert!(update(&mut a, ev).is_none());
             assert!(a.quit);
         }
         let mut a = app(80, 24);
@@ -328,7 +576,7 @@ pub mod tests {
         let mut a = app(80, 24);
         update(&mut a, key(KeyCode::Char('?')));
         assert!(a.help);
-        assert_eq!(update(&mut a, key(KeyCode::Char('q'))), None);
+        assert!(update(&mut a, key(KeyCode::Char('q'))).is_none());
         assert!(!a.help && !a.quit);
     }
 
@@ -336,13 +584,84 @@ pub mod tests {
     fn double_click_runs() {
         let mut a = app(120, 30);
         let click = |row| Event::Mouse(MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 5, row, modifiers: KeyModifiers::NONE });
-        // Body starts at y=1, list border at y=1, first item at y=2
-        assert_eq!(update(&mut a, click(4)), None);
+        // Header at y=0, list border at y=1, first item at y=2
+        assert!(update(&mut a, click(4)).is_none());
         assert_eq!(a.menu.selected, 2);
         a.now_ms += 100;
-        assert_eq!(update(&mut a, click(4)), Some(Command::Run(Action::Repo)));
+        assert!(matches!(update(&mut a, click(4)), Some(Command::Start(JobKind::Repo))));
+        let mut a = app(120, 30);
+        update(&mut a, click(4));
         a.now_ms += 5000;
-        assert_eq!(update(&mut a, click(4)), None);
+        assert!(update(&mut a, click(4)).is_none());
+    }
+
+    fn running_auto(w: u16, h: u16) -> App {
+        let mut a = app(w, h);
+        a.now = 1000;
+        update(&mut a, key(KeyCode::Char('1')));
+        a.now = 1300;
+        job(&mut a, JobMsg::Progress(progress(3, 12, 41, "Installing obsidian (pacman)", None)));
+        job(&mut a, JobMsg::Log { level: Level::Info, line: "Package zotero already installed.".into() });
+        job(&mut a, JobMsg::Log { level: Level::Error, line: "Failed to install steam. Recorded in /var/log/kas.log".into() });
+        job(&mut a, JobMsg::Log { level: Level::Raw, line: "resolving dependencies...".into() });
+        job(&mut a, JobMsg::Transient("obsidian-1.9.12   45%".into()));
+        a
+    }
+
+    #[test]
+    fn escape_asks_before_canceling() {
+        let mut a = running_auto(80, 24);
+        assert!(update(&mut a, key(KeyCode::Esc)).is_none());
+        assert_eq!(a.modal.as_ref().unwrap().kind, ModalKind::CancelJob);
+        // Enter takes the safe default: keep running
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        assert!(a.modal.is_none() && a.job_running());
+        update(&mut a, ctrl('c'));
+        update(&mut a, key(KeyCode::Left));
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Cancel)));
+        assert!(a.run_state().unwrap().cancel_requested);
+        // A second request doesn't ask again
+        assert!(update(&mut a, key(KeyCode::Esc)).is_none());
+        assert!(a.modal.is_none());
+        job(&mut a, JobMsg::Done(Ok(Outcome::Canceled("Canceled".into()))));
+        assert!(!a.job_running());
+        update(&mut a, key(KeyCode::Enter));
+        assert!(matches!(a.screen, Screen::Menu));
+    }
+
+    #[test]
+    fn engine_questions_default_and_escape() {
+        let mut a = running_auto(80, 24);
+        let ask = |id, default| JobMsg::Ask { id, prompt: Prompt::yes_no("Close/kill running application(s) (zen)?", default) };
+        job(&mut a, ask(7, true));
+        assert!(a.modal.as_ref().unwrap().yes_selected);
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Answer { id: 7, yes: true })));
+        job(&mut a, ask(8, true));
+        // Esc is always the safe answer, whatever the default
+        assert!(matches!(update(&mut a, key(KeyCode::Esc)), Some(Command::Answer { id: 8, yes: false })));
+        job(&mut a, ask(9, false));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('y'))), Some(Command::Answer { id: 9, yes: true })));
+        // Ctrl+C: No to the question, then the cancel dialog
+        job(&mut a, ask(10, true));
+        assert!(matches!(update(&mut a, ctrl('c')), Some(Command::Answer { id: 10, yes: false })));
+        assert_eq!(a.modal.as_ref().unwrap().kind, ModalKind::CancelJob);
+    }
+
+    #[test]
+    fn questions_after_cancel_are_declined() {
+        let mut a = running_auto(80, 24);
+        a.run_state().unwrap().cancel_requested = true;
+        assert!(matches!(job(&mut a, JobMsg::Ask { id: 3, prompt: Prompt::yes_no("q", true) }), Some(Command::Answer { id: 3, yes: false })));
+    }
+
+    #[test]
+    fn failed_job_returns_to_menu_with_toast() {
+        let mut a = running_auto(80, 24);
+        job(&mut a, JobMsg::Done(Err("Action failed".into())));
+        assert!(matches!(a.screen, Screen::Menu));
+        let t = a.toast.as_ref().unwrap();
+        assert_eq!(t.kind, ToastKind::Error);
+        assert!(t.text.contains("/var/log/kas.log"));
     }
 
     #[test]
@@ -369,6 +688,35 @@ pub mod tests {
     fn snapshot_help_ascii() {
         let mut a = App::new(header(), Theme::new(false, true), (80, 24));
         update(&mut a, key(KeyCode::Char('?')));
+        insta::assert_snapshot!(render(&a));
+    }
+
+    #[test]
+    fn snapshot_run_auto_80x24() {
+        insta::assert_snapshot!(render(&running_auto(80, 24)));
+    }
+
+    #[test]
+    fn snapshot_run_auto_140x40() {
+        insta::assert_snapshot!(render(&running_auto(140, 40)));
+    }
+
+    #[test]
+    fn snapshot_engine_question() {
+        let mut a = running_auto(80, 24);
+        let p = Prompt::yes_no("Close/kill running application(s) (zen obsidian) to proceed with restore?", true)
+            .with_details(vec!["zen (PID: 4242 4243)".into(), "obsidian (PID: 5150)".into()]);
+        job(&mut a, JobMsg::Ask { id: 1, prompt: p });
+        insta::assert_snapshot!(render(&a));
+    }
+
+    #[test]
+    fn snapshot_run_finished_with_issues() {
+        let mut a = running_auto(80, 24);
+        job(&mut a, JobMsg::Progress(progress(4, 4, 4, "Completed", Some("✔"))));
+        let issues = vec!["Package failed to install: steam".to_string(), "Could not enable/start searxng".to_string()];
+        job(&mut a, JobMsg::Done(Ok(Outcome::Finished { message: "Services step finished".into(), issues })));
+        a.toast = None;
         insta::assert_snapshot!(render(&a));
     }
 }

@@ -222,6 +222,7 @@ fn install_signal_handlers() {
     let Ok(mut signals) = signal_hook::iterator::Signals::new([SIGINT, SIGTERM, SIGHUP]) else { return };
     std::thread::spawn(move || {
         if let Some(sig) = signals.forever().next() {
+            report::kill_child(std::time::Duration::from_secs(2));
             ctx::cleanup_temp_state();
             ui::cleanup_terminal();
             tui::restore_terminal();

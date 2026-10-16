@@ -13,6 +13,7 @@ use super::archive::{extract_zip_archive, read_zip_manifest};
 use super::info::jq_str;
 use super::*;
 
+#[derive(Debug, Clone)]
 pub struct ImportOpts {
     pub file: PathBuf,
     pub app: Option<String>,

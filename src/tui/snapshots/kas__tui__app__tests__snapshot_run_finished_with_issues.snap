@@ -1,0 +1,28 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+ kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Overall: step 4/4 · Install Packages ────────────────────────────────────────╮
+│███████████████████████100% · 05:00 elapsed · ETA 00:00 ██████████████████████│
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Step 4/4 ────────────────────────────────────────────────────────────────────╮
+│███████████████████████100% · 03:20 elapsed · ETA 00:00 ██████████████████████│
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Status ──────────────────────────────────────────────────────────────────────╮
+│⚠ Services step finished, with 2 issue(s):                                    │
+│  ✗ Package failed to install: steam                                          │
+│  ✗ Could not enable/start searxng                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Log (following) ─────────────────────────────────────────────────────────────╮
+│INFO  Package zotero already installed.                                       │
+│ERROR Failed to install steam. Recorded in /var/log/kas.log                   │
+│      resolving dependencies...                                               │
+│      obsidian-1.9.12   45%                                                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Enter back to menu  PgUp/PgDn scroll  l full log  ? help

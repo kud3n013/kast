@@ -196,7 +196,12 @@ pub fn format_seconds(s: i64) -> String {
 }
 
 pub fn calc_eta_countdown(start: i64, current: i64, total: i64, baseline: i64) -> String {
-    let elapsed = (now() - start).max(0);
+    eta_countdown_at(now(), start, current, total, baseline)
+}
+
+/// `calc_eta_countdown` at a given time (the TUI passes its own clock).
+pub fn eta_countdown_at(now: i64, start: i64, current: i64, total: i64, baseline: i64) -> String {
+    let elapsed = (now - start).max(0);
     if total <= 0 || current >= total {
         return "00:00".into();
     }
@@ -213,6 +218,17 @@ pub fn calc_overall_progress(o_step: i64, s_step: i64, s_total: i64) -> i64 {
     let cur = WEIGHTS.get(idx).copied().unwrap_or(10);
     let sub = if s_total > 0 { s_step * cur / s_total } else { 0 };
     (cum + sub).min(100)
+}
+
+/// Seconds left in the automatic run, from its overall percentage.
+pub fn overall_eta(o_pct: i64, o_elapsed: i64) -> i64 {
+    if o_pct >= 100 {
+        0
+    } else if o_pct >= 2 {
+        (o_elapsed * 100 / o_pct - o_elapsed).max(5)
+    } else {
+        (420 - o_elapsed).max(10)
+    }
 }
 
 pub fn draw_bar(percent: i64, width: i64) -> String {
@@ -272,6 +288,9 @@ impl Dash {
     /// line. stdin is /dev/null, so any prompt fails fast instead of hanging unseen.
     /// Returns the exit code (127 if it could not be started).
     pub fn exec_monitored(&self, s_step: i64, s_total: i64, item: &str, mut cmd: Command) -> i32 {
+        if report::owns_terminal() {
+            return self.exec_piped(s_step, s_total, item, cmd);
+        }
         log("INFO", &format!("Executing monitored task: {item} ({})", describe(&cmd)));
         flush_input();
         let child = cmd.stdin(Stdio::null()).stdout(log_stdio()).stderr(log_stdio()).spawn();
@@ -303,6 +322,71 @@ impl Dash {
             None => 1,
         }
     }
+
+    /// Under the full-screen UI: the child's output comes through a pipe, is appended to the
+    /// log as-is and is shown line by line. The child gets its own process group so a
+    /// canceled job can stop it (and whatever sudo/yay started) as a whole.
+    fn exec_piped(&self, s_step: i64, s_total: i64, item: &str, mut cmd: Command) -> i32 {
+        use std::os::unix::process::CommandExt;
+        report::checkpoint();
+        log("INFO", &format!("Executing monitored task: {item} ({})", describe(&cmd)));
+        let spawned = io::pipe().and_then(|(reader, writer)| {
+            cmd.stdin(Stdio::null()).stdout(writer.try_clone()?).stderr(writer).process_group(0);
+            let child = cmd.spawn()?;
+            Ok((reader, child))
+        });
+        // Close our copies of the pipe's write end, or the reader never sees EOF
+        drop(cmd);
+        let (reader, mut child) = match spawned {
+            Ok(v) => v,
+            Err(e) => {
+                log("ERROR", &format!("Could not start {item}: {e}"));
+                return 127;
+            }
+        };
+        report::set_child(Some(child.id() as i32));
+        let rep = report::current();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            pump_output(reader, rep.as_ref());
+            let _ = done_tx.send(());
+        });
+        self.render(s_step, s_total, item, "Starting task...", None);
+        let status = child.wait();
+        report::set_child(None);
+        // A daemon the child started (gpg-agent from a pacman hook) can keep the pipe open
+        // after the child is gone: don't wait for EOF forever
+        let _ = done_rx.recv_timeout(Duration::from_millis(500));
+        report::checkpoint();
+        match status {
+            Ok(st) => st.code().unwrap_or_else(|| 128 + std::os::unix::process::ExitStatusExt::signal(&st).unwrap_or(0)),
+            Err(_) => 1,
+        }
+    }
+}
+
+/// Copy a child's output into the log file and to the reporter, line by line.
+fn pump_output(mut reader: io::PipeReader, rep: &dyn report::Reporter) {
+    let mut split = report::LineSplitter::default();
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        };
+        crate::ctx::log_raw(&buf[..n]);
+        for piece in split.feed(&buf[..n]) {
+            match piece {
+                report::Piece::Line(l) => rep.output_line(&l),
+                report::Piece::Partial(l) => rep.output_partial(&l),
+            }
+        }
+    }
+    if let Some(rest) = split.finish() {
+        rep.output_line(&rest);
+    }
 }
 
 /// The text dashboard of the plain terminal mode (dual for the automatic run, single otherwise).
@@ -320,13 +404,7 @@ pub fn draw_dashboard(p: &Progress) {
     if p.auto {
         let o_pct = calc_overall_progress(p.o_step, s_step, s_total);
         let o_elapsed = (now - p.o_start).max(0);
-        let o_eta = if o_pct >= 100 {
-            0
-        } else if o_pct >= 2 {
-            (o_elapsed * 100 / o_pct - o_elapsed).max(5)
-        } else {
-            (420 - o_elapsed).max(10)
-        };
+        let o_eta = overall_eta(o_pct, o_elapsed);
         let heading = if inner < 56 { "◆ ARCH LINUX SETUP ◆" } else { "◆ ARCH LINUX / CACHYOS SETUP CONTROLLER ◆" };
         buf += &box_line(&format!("{C_BOLD}{C_WHITE}{heading}{C_RESET}"), inner);
         buf += &hline(box_w, BOX_VL, BOX_VR);

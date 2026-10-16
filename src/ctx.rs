@@ -102,10 +102,24 @@ pub fn now_str(fmt: &str) -> String {
 }
 
 pub fn log(level: &str, msg: &str) {
-    if let Ok(mut f) = OpenOptions::new().append(true).open(&ctx().log_file) {
+    log_file_only(level, msg);
+    crate::report::file_logged(level, msg);
+}
+
+/// Append to the log file without telling the reporter (it already showed the message).
+pub fn log_file_only(level: &str, msg: &str) {
+    let Some(c) = CTX.get() else { return };
+    if let Ok(mut f) = OpenOptions::new().append(true).open(&c.log_file) {
         let _ = writeln!(f, "[{}] [{level}] {msg}", now_str("%Y-%m-%d %H:%M:%S"));
     }
-    crate::report::file_logged(level, msg);
+}
+
+/// Append raw bytes (a child's output) to the log file.
+pub fn log_raw(bytes: &[u8]) {
+    let Some(c) = CTX.get() else { return };
+    if let Ok(mut f) = OpenOptions::new().append(true).open(&c.log_file) {
+        let _ = f.write_all(bytes);
+    }
 }
 
 /// Open the log file for a child's stdout/stderr.

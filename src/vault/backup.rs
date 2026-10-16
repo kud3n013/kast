@@ -12,6 +12,7 @@ use crate::ui::{C_BOLD, C_RESET};
 use super::archive::{MANIFEST, create_zip_archive};
 use super::*;
 
+#[derive(Debug, Clone)]
 pub struct BackupOpts {
     pub target: String,
     pub output: Option<PathBuf>,
