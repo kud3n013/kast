@@ -1,14 +1,13 @@
-//! Menu-driven import/export screens and the import step of the automatic run.
+//! Menu-driven import/export screens.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::Result;
 use serde_json::Value;
 use walkdir::WalkDir;
 
-use crate::ctx::{self, add_issue, ctx, log, reported};
-use crate::ui::{self, read_choice, Dash, C_BLUE, C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RESET, C_YELLOW};
+use crate::ctx::{self, ctx, log, reported};
+use crate::ui::{self, read_choice, C_BLUE, C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RESET, C_YELLOW};
 use crate::vault::archive::read_zip_manifest;
 use crate::vault::backup::{cmd_backup, BackupOpts};
 use crate::vault::import::{cmd_import, ImportOpts};
@@ -61,7 +60,7 @@ fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
             }
         }
     }
-    // Newest first: auto mode restores the first one, and the backups folder accumulates
+    // Newest first: the backups folder accumulates over time
     let newest_first = |v: &mut Vec<PathBuf>| {
         v.sort_by_key(|p| std::cmp::Reverse(p.metadata().and_then(|m| m.modified()).ok()));
     };
@@ -70,57 +69,15 @@ fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
     (zips, models)
 }
 
-fn self_import(file: &Path, kill: bool) -> Command {
-    let mut cmd = Command::new(std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kas")));
-    cmd.arg("import").arg(file).arg("-f");
-    if kill {
-        cmd.arg("-k");
-    }
-    cmd
-}
-
 fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-pub fn import_data(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Result<()> {
+/// Interactive restore screen (menu option 6 / `kas import` without arguments).
+pub fn import_data() -> Result<()> {
     let c = ctx();
-    let title = "Import Data";
     log("INFO", "Starting App Vault & Howdy Face Model import...");
     let (zips, models) = find_candidates();
-
-    if auto {
-        let d = Dash::new(true, o_start, o_step, o_total, title);
-        // The restore runs as a child process (output to the log) behind the dashboard
-        let mut rc = if let Some(z) = zips.first() {
-            d.exec_monitored(1, 2, &format!("Restoring: {}", file_name(z)), self_import(z, true))
-        } else if let Some(m) = models.first() {
-            d.exec_monitored(1, 2, &format!("Restoring face model: {}", file_name(m)), self_import(m, false))
-        } else {
-            log("INFO", "No backup archive or face model found in default paths. Skipping import in auto mode.");
-            d.render(2, 2, "No backup files found", "Skipped (no archive or model specified)", Some("✔"));
-            ui::sleep_secs(1.0);
-            return Ok(());
-        };
-        // Archive restored but no face model yet: also restore a standalone model
-        if let Some(m) = models.first()
-            && !Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file() {
-                log("INFO", &format!("Restoring standalone face model: {}", m.display()));
-                let r = d.exec_monitored(2, 2, &format!("Restoring face model: {}", file_name(m)), self_import(m, false));
-                if r != 0 {
-                    rc = r;
-                }
-            }
-        if rc != 0 {
-            log("ERROR", &format!("Data import finished with errors (exit code {rc}). See {}", c.log_file.display()));
-            add_issue(format!("Data import failed (exit code {rc})"));
-            d.render(2, 2, "Restore Failed", &format!("Import failed (exit code {rc}); see {}", c.log_file.display()), Some("✘"));
-        } else {
-            d.render(2, 2, "Restore Finished", "Application data, desktop settings & face model restored.", Some("✔"));
-        }
-        ui::sleep_secs(1.0);
-        return Ok(());
-    }
 
     ui::restore_terminal_interactive();
     ui::clear_screen();

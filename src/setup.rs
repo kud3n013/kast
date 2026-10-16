@@ -556,13 +556,13 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 }
 
 // --- State 1: Automatic run -------------------------------------------------------------
-// The data partition is optional and deliberately not part of it (menu option 2 /
-// `kas partition`).
+// The data partition and the data import are optional and deliberately not part of it
+// (menu options 2 and 6 / `kas partition`, `kas import`).
 
 pub fn run_automatic() -> Result<()> {
     let c = ctx();
     let o_start = ui::now();
-    let o_total = 5;
+    let o_total = 4;
     ctx::clear_issues();
     log("INFO", "==========================================");
     log("INFO", "Starting Full Automated Setup Sequence...");
@@ -572,7 +572,6 @@ pub fn run_automatic() -> Result<()> {
     add_kud3n_repo(true, o_start, 2, o_total)?;
     install_packages(true, o_start, 3, o_total);
     setup_services(true, o_start, 4, o_total)?;
-    crate::interactive::import_data(true, o_start, 5, o_total)?;
 
     ui::restore_terminal_interactive();
     ui::clear_screen();
@@ -615,6 +614,7 @@ pub fn run_automatic() -> Result<()> {
     } else {
         println!("{C_YELLOW}Note:{C_RESET} If you have not enrolled your face in Howdy yet, run:");
         println!("  sudo howdy -U {} add", c.target_user);
+        println!("  (or restore a saved face model with menu option 6 / `sudo kas import`)");
     }
     println!();
     ui::read_choice("Press Enter to return to master menu...");

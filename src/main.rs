@@ -34,10 +34,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Run the full automatic setup: upgrade, repo, packages, services, import (not the data partition)
+    /// Run the full automatic setup: upgrade, repo, packages, services (no data partition or import)
     #[command(visible_alias = "automatic")]
     Auto,
-    /// Set up the universal data partition (/media/data & user dir symlinks); optional, not part of auto
+    /// Set up the universal data partition (/media/data & user dir symlinks); not part of auto
     #[command(visible_alias = "data")]
     Partition,
     /// Add kud3n's repository ([archrepo] in /etc/pacman.conf)
@@ -177,7 +177,7 @@ fn dispatch(cmd: Option<Cmd>) -> Result<()> {
             Ok(())
         }
         Some(Cmd::Services) => setup::setup_services(false, 0, 1, 1),
-        Some(Cmd::Import(a)) if a.is_empty() => interactive::import_data(false, 0, 1, 1),
+        Some(Cmd::Import(a)) if a.is_empty() => interactive::import_data(),
         Some(Cmd::Import(a)) => cmd_import(a.into_opts()?),
         Some(Cmd::Export(a)) if a.is_empty() => interactive::export_data(),
         Some(Cmd::Export(a)) => cmd_backup(a.into_opts()),
@@ -198,22 +198,22 @@ fn dispatch(cmd: Option<Cmd>) -> Result<()> {
 // --- Main menu -----------------------------------------------------------------------
 
 const MENU_SHORT: [&str; 8] = [
-    "1. Run full auto setup (Steps 3 -> 6)",
+    "1. Run full auto setup (Steps 3 -> 5)",
     "2. Setup data partition (optional)",
     "3. Add kud3n's repository",
     "4. Install packages (Official & custom)",
     "5. Setup services (VPN, IME, Howdy...)",
-    "6. Import data (Vault, KDE & Face restore)",
+    "6. Import data (optional, not in auto)",
     "7. Export data (Vault, KDE & Face backup)",
     "Q. Exit",
 ];
 const MENU_LONG: [&str; 8] = [
-    "1. Run automatic script (Complete setup: Steps 3 -> 6)",
-    "2. Setup data partition (optional, not run by auto)",
+    "1. Run automatic script (Steps 3 -> 5)",
+    "2. Setup data partition (optional, not in auto)",
     "3. Add kud3n's repository ([archrepo] in /etc/pacman.conf)",
     "4. Install packages (Official, CachyOS, kud3n, add-ons)",
     "5. Setup services (ProtonVPN, IME, Howdy, Valkey/SearXNG)",
-    "6. Import data (App Vault, KDE Plasma & Face Model restore)",
+    "6. Import data (App Vault, KDE & Face restore; not in auto)",
     "7. Export data (App Vault, KDE Plasma & Face Model backup)",
     "Q. Exit",
 ];
@@ -270,7 +270,7 @@ fn run_menu_action(action: usize) {
             Ok(())
         }
         4 => setup::setup_services(false, 0, 1, 1),
-        5 => interactive::import_data(false, 0, 1, 1),
+        5 => interactive::import_data(),
         _ => interactive::export_data(),
     }));
     ctx::cleanup_temp_state();
