@@ -134,9 +134,13 @@ fn import_dat(o: &ImportOpts) -> Result<()> {
             return Ok(());
         }
     }
+    if !sudo_ready() {
+        warn_sudo_needed("the face model");
+        return Err(reported());
+    }
 
     let dest_s = dest_file.to_string_lossy().into_owned();
-    if o.safety_backup && (dest_file.is_file() || (!c.is_root && have("sudo") && ok("sudo", &["test", "-f", &dest_s]))) {
+    if o.safety_backup && (dest_file.is_file() || (!c.is_root && have("sudo") && ok("sudo", &["-n", "test", "-f", &dest_s]))) {
         let rollback = safety_backup_dir().join(format!("safety_rollback_{}", ctx::now_str("%Y-%m-%d_%H%M%S")));
         let models = rollback.join("howdy/models");
         ctx::mkdir_user(&models)?;
@@ -250,6 +254,11 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
             ctx::set_canceled(true);
             return Ok(());
         }
+    }
+
+    // Ask for the sudo password now rather than in the middle of the restore
+    if !o.dry_run && apps.iter().any(|a| a == "howdy") {
+        sudo_ready();
     }
 
     let staging = get_safe_staging_dir("app-vault-sync-restore")?;
@@ -372,6 +381,10 @@ fn restore_howdy(staging: &Path, rollback: &Path, manifest: &Value, o: &ImportOp
     }
     if o.dry_run {
         log_info(&format!("  [Dry-run] Would restore Howdy face models to: {HOWDY_MODELS_DIR}"));
+        return Ok(());
+    }
+    if !sudo_ready() {
+        warn_sudo_needed("the Howdy face models");
         return Ok(());
     }
     let mut howdy_user = jq_str(manifest, &["apps", "howdy", "user"], "");

@@ -154,12 +154,13 @@ pub fn output(prog: &str, args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// Like `ok`, but through `sudo` when not root (for /etc/howdy access).
+/// Like `ok`, but through `sudo -n` when not root (for /etc/howdy access). Never prompts:
+/// vault commands ask for the password up front (`vault::sudo_ready`).
 pub fn ok_priv(prog: &str, args: &[&str]) -> bool {
     if ctx().is_root {
         ok(prog, args)
     } else {
-        let mut v = vec![prog];
+        let mut v = vec!["-n", prog];
         v.extend_from_slice(args);
         ok("sudo", &v)
     }

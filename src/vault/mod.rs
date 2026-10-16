@@ -8,7 +8,9 @@ pub mod info;
 pub mod status;
 
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
@@ -95,6 +97,51 @@ pub const HOWDY_MODELS_DIR: &str = "/etc/howdy/models";
 
 pub fn howdy_model_path(user: &str) -> PathBuf {
     PathBuf::from(format!("{HOWDY_MODELS_DIR}/{user}.dat"))
+}
+
+/// Root access for /etc/howdy/models when kas runs as a normal user. sudo asks for the
+/// password here, once, before anything starts, and the credentials are kept fresh
+/// afterwards, so no prompt shows up part-way through a backup or restore. False when sudo
+/// would need a password and there's no terminal to type it in (the answer is remembered).
+pub fn sudo_ready() -> bool {
+    static READY: OnceLock<bool> = OnceLock::new();
+    if ctx().is_root {
+        return true;
+    }
+    *READY.get_or_init(|| {
+        if !have("sudo") {
+            return false;
+        }
+        if !ok("sudo", &["-n", "true"]) {
+            if !std::io::stdin().is_terminal() || report::owns_terminal() {
+                return false;
+            }
+            log_info("The Howdy face model in /etc/howdy/models needs root access.");
+            if !std::process::Command::new("sudo").arg("-v").status().is_ok_and(|s| s.success()) {
+                return false;
+            }
+        }
+        // Refresh the timestamp so a long backup doesn't outlive it
+        std::thread::spawn(|| {
+            loop {
+                std::thread::sleep(Duration::from_secs(60));
+                if !ok("sudo", &["-n", "-v"]) {
+                    break;
+                }
+            }
+        });
+        true
+    })
+}
+
+/// Howdy is set up on this machine (its models folder is visible even without root).
+pub fn howdy_installed() -> bool {
+    have("howdy") || Path::new(HOWDY_MODELS_DIR).is_dir()
+}
+
+/// Warning for a face model that can't be read or written without a password prompt.
+pub fn warn_sudo_needed(what: &str) {
+    log_warn(&format!("Skipping {what}: /etc/howdy/models needs root and sudo would ask for a password here. Run the command with sudo to include it."));
 }
 
 /// /etc/howdy/models is root-only; as a normal user, ask sudo without prompting.

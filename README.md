@@ -37,7 +37,9 @@ Run it from your own account (`sudo kas`, not from a root shell): the target use
 taken from `SUDO_USER`. The full-screen app and the setup commands need root and re-run
 themselves through `sudo`, so the password is asked once, before anything starts.
 Vault commands with arguments (`kas backup ...`, `kas restore FILE ...`) work as your
-own user.
+own user. The Howdy face model lives in root-only `/etc/howdy/models`: when it is part of
+the job, sudo asks for the password once at the start; without a terminal to ask on, the
+face model is skipped with a warning.
 
 Scripted use is unchanged: subcommands with arguments never open the full-screen app,
 and their output stays plain text when piped (`kas status | cat`, `kas info x.zip > out.txt`).

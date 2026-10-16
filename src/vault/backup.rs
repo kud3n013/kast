@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::IsTerminal;
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -95,13 +94,17 @@ fn chown_to_invoker(path: &Path) {
     if ctx().is_root {
         ctx::chown_path(path, uid, gid);
     } else {
-        let _ = ok("sudo", &["chown", &format!("{uid}:{gid}"), &path.to_string_lossy()]);
+        let _ = ok("sudo", &["-n", "chown", &format!("{uid}:{gid}"), &path.to_string_lossy()]);
     }
 }
 
 fn export_howdy_dat(output: &Path, dry_run: bool) -> Result<()> {
     let c = ctx();
     log_step("Exporting Howdy Face Model (.dat)...");
+    if !dry_run && !c.is_root && howdy_installed() && !sudo_ready() {
+        warn_sudo_needed("the face model");
+        return Err(reported());
+    }
     let model = find_howdy_model(&c.target_user).or_else(|| dry_run.then(|| howdy_model_path(&c.target_user)));
     let Some(model) = model else {
         log_error(&format!("No enrolled face model found for user '{0}' at /etc/howdy/models/{0}.dat", c.target_user));
@@ -132,10 +135,8 @@ fn howdy_available(dry_run: bool) -> bool {
     } else if dry_run {
         ok("pacman", &["-Q", "howdy-next"]) || ok("pacman", &["-Q", "howdy-next-bin"]) || have("howdy") || sudo_n()
     } else if !c.is_root && have("sudo") {
-        // Interactive sudo is allowed here: a real backup may ask for the password
-        // Never when a TUI owns the terminal: the password prompt would be invisible
+        // sudo_ready asked for the password before the backup started, if it could
         sudo_n()
-            || (std::io::stdin().is_terminal() && !report::owns_terminal() && (ok("sudo", &["test", "-d", &dir_s]) || ok("sudo", &["test", "-f", &file_s])))
     } else {
         false
     }
@@ -211,6 +212,11 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
                 log_warn("Proceeding with live backup as requested. Note: open database files might be dirty.");
             }
         }
+    }
+
+    // Ask for the sudo password now rather than in the middle of the backup
+    if !o.dry_run && apps.iter().any(|a| a == "howdy") && !c.is_root && howdy_installed() {
+        sudo_ready();
     }
 
     let staging = get_safe_staging_dir("app-vault-sync-backup")?;
@@ -317,6 +323,11 @@ fn backup_app_dir(app: &str, spec: &AppSpec, staging: &Path, o: &BackupOpts) -> 
 fn backup_howdy(staging: &Path, dry_run: bool) -> Result<Option<Value>> {
     let c = ctx();
     let file = howdy_model_path(&c.target_user);
+    // Without root the model can't even be looked for: say so instead of "not found"
+    if !dry_run && !c.is_root && howdy_installed() && !sudo_ready() {
+        warn_sudo_needed("the Howdy face model");
+        return Ok(None);
+    }
     if !howdy_available(dry_run) {
         log_warn(&format!("Howdy face model not found ({}), skipping...", file.display()));
         return Ok(None);
@@ -335,9 +346,9 @@ fn backup_howdy(staging: &Path, dry_run: bool) -> Result<Option<Value>> {
                 ok("cp", &["-p", &src, &dst]);
             }
         } else {
-            ok("sudo", &["cp", "-p", &src, &dst]);
+            ok("sudo", &["-n", "cp", "-p", &src, &dst]);
             let me = format!("{}:{}", nix::unistd::getuid(), nix::unistd::getgid());
-            ok("sudo", &["chown", "-R", &me, &staging.join("howdy").to_string_lossy()]);
+            ok("sudo", &["-n", "chown", "-R", &me, &staging.join("howdy").to_string_lossy()]);
         }
     }
     Ok(Some(json!({
