@@ -71,7 +71,7 @@ fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
 }
 
 fn self_import(file: &Path, kill: bool) -> Command {
-    let mut cmd = Command::new(std::env::current_exe().unwrap_or_else(|_| PathBuf::from("arch-setup")));
+    let mut cmd = Command::new(std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kas")));
     cmd.arg("import").arg(file).arg("-f");
     if kill {
         cmd.arg("-k");

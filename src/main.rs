@@ -1,4 +1,4 @@
-//! arch-setup - Arch Linux / CachyOS fast setup TUI with an embedded App Vault
+//! kas (Kud3n's Arch Setup) - Arch Linux / CachyOS fast setup TUI with an embedded App Vault
 //! (backup/restore of app data, KDE Plasma, Hyprland and Howdy face models).
 
 mod ctx;
@@ -22,7 +22,7 @@ use crate::vault::import::{cmd_import, ImportOpts};
 
 #[derive(Parser)]
 #[command(
-    name = "arch-setup",
+    name = "kas",
     version,
     about = "Arch Linux / CachyOS fast setup with an embedded App Vault backup engine",
     after_help = "Run without a command to launch the interactive TUI menu.\nSetup commands re-run themselves through sudo; vault commands work as your own user."

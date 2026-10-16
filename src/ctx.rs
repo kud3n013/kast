@@ -83,9 +83,9 @@ pub fn init() {
         .unwrap_or_else(|| PathBuf::from(format!("/home/{target_user}")));
 
     let log_file = if is_root {
-        PathBuf::from("/var/log/arch-setup.log")
+        PathBuf::from("/var/log/kas.log")
     } else {
-        target_home.join(".local/state/arch-setup.log")
+        target_home.join(".local/state/kas.log")
     };
     if let Some(dir) = log_file.parent() {
         let _ = fs::create_dir_all(dir);
@@ -363,7 +363,7 @@ pub fn cleanup_vault_staging() {
     }
 }
 
-pub const YAY_SUDOERS_FILE: &str = "/etc/sudoers.d/zz-arch-setup-yay";
+pub const YAY_SUDOERS_FILE: &str = "/etc/sudoers.d/zz-kas-yay";
 
 /// yay builds as the target user and then runs `sudo pacman` itself. Behind the dashboard
 /// that password prompt is invisible and hangs forever, so for the duration of a yay call

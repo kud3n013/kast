@@ -28,7 +28,7 @@ pub fn jq_str(v: &Value, path: &[&str], default: &str) -> String {
 pub fn cmd_info(file: Option<&Path>) -> Result<()> {
     let Some(zip) = file else {
         log_error("Please specify a zip archive to inspect.");
-        println!("Usage: arch-setup info <archive.zip>");
+        println!("Usage: kas info <archive.zip>");
         return Err(reported());
     };
     if !zip.is_file() {

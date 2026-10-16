@@ -144,7 +144,7 @@ pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64)
         return Ok(());
     }
     // ntfs3 mounts read-only (or refuses rw) when Windows was hibernated / Fast Startup is on
-    let probe = PathBuf::from(format!("{MOUNT_POINT}/.arch-setup-write-test.{}", std::process::id()));
+    let probe = PathBuf::from(format!("{MOUNT_POINT}/.kas-write-test.{}", std::process::id()));
     if fs::write(&probe, b"").is_err() {
         log("ERROR", &format!("{MOUNT_POINT} is mounted but not writable (Windows Fast Startup/hibernation?). Skipping migration."));
         add_issue(format!("{MOUNT_POINT} is read-only (disable Windows Fast Startup, then re-run step 2)"));

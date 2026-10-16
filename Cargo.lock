@@ -77,24 +77,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "arch-setup"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "filetime",
- "libc",
- "nix",
- "regex",
- "serde_json",
- "signal-hook",
- "tempfile",
- "walkdir",
- "zip",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -363,6 +345,24 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "kas"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "filetime",
+ "libc",
+ "nix",
+ "regex",
+ "serde_json",
+ "signal-hook",
+ "tempfile",
+ "walkdir",
+ "zip",
 ]
 
 [[package]]
