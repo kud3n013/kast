@@ -144,7 +144,15 @@ fn header() -> Header {
     }
 }
 
-pub fn run() -> Result<()> {
+/// Where the app opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Start {
+    Menu,
+    Import,
+    Export,
+}
+
+pub fn run(start: Start) -> Result<()> {
     install_panic_hook();
     enter_terminal()?;
     let _guard = TerminalGuard;
@@ -156,6 +164,15 @@ pub fn run() -> Result<()> {
     let mut app = App::new(header(), theme::Theme::from_env(), (size.width, size.height));
     let replies = Arc::new(Replies::default());
     let started = Instant::now();
+    app.now = crate::ui::now();
+    let first = match start {
+        Start::Menu => None,
+        Start::Import => app::activate(&mut app, Action::Import),
+        Start::Export => app::activate(&mut app, Action::Export),
+    };
+    if let Some(cmd) = first {
+        execute_command(&mut app, &mut term, cmd, &tx, &replies);
+    }
     loop {
         app.now = crate::ui::now();
         app.now_ms = started.elapsed().as_millis() as u64;
@@ -227,6 +244,20 @@ fn execute_command(app: &mut App, term: &mut Term, cmd: Command, tx: &Sender<Eve
         Command::Cancel => {
             report::request_cancel();
             replies.decline_all();
+        }
+        Command::LoadCandidates { zips_only } => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Candidates(screens::import::load_candidates(zips_only))));
+            });
+        }
+        Command::Inspect { path, pick } => {
+            let result = screens::import::inspect(&path);
+            let _ = tx.send(Event::Loaded(event::Loaded::Inspected { path, pick, result }));
+        }
+        Command::Complete(value) => {
+            let (value, matches) = screens::import::complete_path(&value, &ctx().target_home);
+            let _ = tx.send(Event::Loaded(event::Loaded::Completion { value, matches }));
         }
         Command::OpenLog => {
             let _ = tx.send(Event::Loaded(event::Loaded::Log(read_log_tail())));

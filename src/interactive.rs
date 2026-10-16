@@ -34,7 +34,7 @@ fn glob_match(name: &str, pattern: &str) -> bool {
 }
 
 /// Backup archives and face models in the usual places (maxdepth 2), newest first.
-fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
+pub fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
     let c = ctx();
     let dirs = [
         PathBuf::from("/media/data/backups"),
@@ -69,6 +69,22 @@ fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
     (zips, models)
 }
 
+/// Type label of a backup file (matched on the whole path, see KNOWN_ISSUES.md).
+pub fn candidate_tag(p: &Path) -> &'static str {
+    let s = p.to_string_lossy();
+    if s.ends_with(".dat") {
+        "[Howdy Face Model]"
+    } else if s.contains("kde") || s.contains("plasma") {
+        "[KDE Plasma Backup]"
+    } else if s.contains("hypr") {
+        "[Hyprland Backup]"
+    } else if s.contains("all") {
+        "[Full System Backup]"
+    } else {
+        "[Archive]"
+    }
+}
+
 fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -87,17 +103,7 @@ pub fn import_data() -> Result<()> {
         println!("{C_BOLD}Found backup archives & face models:{C_RESET}");
         for (i, item) in all.iter().enumerate() {
             let s = item.to_string_lossy();
-            let tag = if s.ends_with(".dat") {
-                "[Howdy Face Model]"
-            } else if s.contains("kde") || s.contains("plasma") {
-                "[KDE Plasma Backup]"
-            } else if s.contains("hypr") {
-                "[Hyprland Backup]"
-            } else if s.contains("all") {
-                "[Full System Backup]"
-            } else {
-                "[Archive]"
-            };
+            let tag = candidate_tag(item);
             println!("  [{}] {s} ({}) {C_GRAY}{tag}{C_RESET}", i + 1, format_bytes(item));
         }
         println!("  [c] Enter custom path (.zip or .dat)");

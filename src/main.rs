@@ -180,13 +180,23 @@ impl ImportArgs {
     }
 }
 
+/// The interactive restore/backup screens (no arguments, on a terminal) run as root like
+/// the menu, so sudo asks for the password once, before the full-screen UI starts.
+fn interactive_vault(cmd: &Option<Cmd>) -> bool {
+    match cmd {
+        Some(Cmd::Import(a)) => a.is_empty() && interactive_terminal(),
+        Some(Cmd::Export(a)) => a.is_empty() && interactive_terminal(),
+        _ => false,
+    }
+}
+
 fn needs_root(cmd: &Option<Cmd>) -> bool {
-    matches!(cmd, None | Some(Cmd::Auto | Cmd::Partition | Cmd::Repo | Cmd::Packages | Cmd::Services))
+    matches!(cmd, None | Some(Cmd::Auto | Cmd::Partition | Cmd::Repo | Cmd::Packages | Cmd::Services)) || interactive_vault(cmd)
 }
 
 fn dispatch(cmd: Option<Cmd>) -> Result<()> {
     match cmd {
-        None => tui::run(),
+        None => tui::run(tui::Start::Menu),
         Some(Cmd::Auto) => setup::run_automatic(),
         Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
         Some(Cmd::Repo) => setup::add_kud3n_repo(false, 0, 1, 1),
@@ -195,6 +205,7 @@ fn dispatch(cmd: Option<Cmd>) -> Result<()> {
             Ok(())
         }
         Some(Cmd::Services) => setup::setup_services(false, 0, 1, 1),
+        Some(Cmd::Import(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Import),
         Some(Cmd::Import(a)) if a.is_empty() => interactive::import_data(),
         Some(Cmd::Import(a)) => cmd_import(a.into_opts()?),
         Some(Cmd::Export(a)) if a.is_empty() => interactive::export_data(),

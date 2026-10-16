@@ -16,7 +16,7 @@ use crate::setup;
 use crate::vault::backup::{BackupOpts, cmd_backup};
 use crate::vault::import::{ImportOpts, cmd_import};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum JobKind {
     Auto,
     Partition,

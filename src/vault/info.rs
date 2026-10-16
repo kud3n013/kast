@@ -25,44 +25,52 @@ pub fn jq_str(v: &Value, path: &[&str], default: &str) -> String {
     }
 }
 
-pub fn cmd_info(file: Option<&Path>) -> Result<()> {
-    let Some(zip) = file else {
-        log_error("Please specify a zip archive to inspect.");
-        println!("Usage: kas info <archive.zip>");
-        return Err(reported());
-    };
+/// What a backup archive's manifest says, ready to print or show.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InfoReport {
+    pub file: String,
+    pub size: String,
+    pub created: String,
+    pub host: String,
+    pub user: String,
+    pub target: String,
+    pub media: String,
+    /// Keys of `apps`, in manifest order
+    pub apps: Vec<InfoApp>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InfoApp {
+    /// Manifest key (beeper, kde, ...)
+    pub key: String,
+    /// Display name (BEEPER, KDE, ...)
+    pub name: String,
+    /// (label padded to 13 columns, value)
+    pub fields: Vec<(String, String)>,
+}
+
+/// Read the manifest of `zip`; the error is the message `kas info` prints.
+pub fn read_info(zip: &Path) -> std::result::Result<InfoReport, String> {
     if !zip.is_file() {
-        log_error(&format!("Archive file not found: {}", zip.display()));
-        return Err(reported());
+        return Err(format!("Archive file not found: {}", zip.display()));
     }
     let Some(raw) = read_zip_manifest(zip) else {
-        log_error(&format!("No 'backup_manifest.json' found inside {}", zip.display()));
-        return Err(reported());
+        return Err(format!("No 'backup_manifest.json' found inside {}", zip.display()));
     };
     let m: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
-
-    println!("{C_BOLD}=== Backup Archive Information ==={C_RESET}");
-    println!("  Archive File:     {} ({})", zip.display(), format_bytes(zip));
-    println!("  Created At:       {}", jq_str(&m, &["created_at"], "Unknown"));
-    println!("  Source Host:      {} ({})", jq_str(&m, &["hostname"], "Unknown"), jq_str(&m, &["user"], "Unknown"));
-    println!("  Backup Target:    {}", jq_str(&m, &["target"], "Unknown"));
     let media = m.get("include_media").map_or("Unknown".to_string(), |v| match v {
         Value::String(s) => s.clone(),
         other => other.to_string(),
     });
-    println!("  Media Included:   {media}");
-    println!();
-    println!("{C_BOLD}Included Applications & Folders:{C_RESET}");
-
-    let Some(apps) = m.get("apps").and_then(Value::as_object) else { return Ok(()) };
-    for key in apps.keys() {
+    let mut apps = Vec::new();
+    for key in m.get("apps").and_then(Value::as_object).map(|a| a.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
         let name: String = key.to_uppercase().chars().filter(|c| *c != ' ' && *c != '-').collect();
-        println!("  {C_CYAN}• {name}{C_RESET}");
-        let field = |f: &str, d: &str| jq_str(&m, &["apps", key, f], d);
-        let source = |label: &str, f: &str| {
+        let field = |f: &str, d: &str| jq_str(&m, &["apps", &key, f], d);
+        let mut fields: Vec<(String, String)> = Vec::new();
+        let source = |fields: &mut Vec<(String, String)>, label: &str, f: &str| {
             let v = field(f, "");
             if !v.is_empty() {
-                println!("      {label}{v}");
+                fields.push((label.into(), v));
             }
         };
         match name.as_str() {
@@ -72,29 +80,74 @@ pub fn cmd_info(file: Option<&Path>) -> Result<()> {
                     "ZALO" => "ZaloData",
                     _ => "Antigravity",
                 };
-                println!("      Folder:      ~/.config/{}", field("folder", default));
-                source("Source:      ", "config_path");
+                fields.push(("Folder:      ".into(), format!("~/.config/{}", field("folder", default))));
+                source(&mut fields, "Source:      ", "config_path");
             }
             "VESKTOP" | "ZEN" | "OBSIDIAN" | "FCITX5" | "HYPR" => {
-                println!("      Folder:      ~/.config/{}", key);
-                source("Source:      ", "config_path");
+                fields.push(("Folder:      ".into(), format!("~/.config/{key}")));
+                source(&mut fields, "Source:      ", "config_path");
             }
             "HOWDY" => {
                 let user = field("user", "");
                 let file = field("model_file", "");
-                println!("      Models Dir:  /etc/howdy/models");
-                println!("      User Model:  {}", if file.is_empty() { format!("{user}.dat") } else { file });
+                fields.push(("Models Dir:  ".into(), "/etc/howdy/models".into()));
+                fields.push(("User Model:  ".into(), if file.is_empty() { format!("{user}.dat") } else { file }));
             }
             "KDE" => {
-                println!("      Config:      ~/.config (kdeglobals, kwinrc, Plasma applets, shortcuts)");
-                println!("      Share:       ~/.local/share (plasma, kwin, icons, wallpapers)");
-                source("Source cfg:  ", "config_path");
-                source("Source data: ", "share_path");
+                fields.push(("Config:      ".into(), "~/.config (kdeglobals, kwinrc, Plasma applets, shortcuts)".into()));
+                fields.push(("Share:       ".into(), "~/.local/share (plasma, kwin, icons, wallpapers)".into()));
+                source(&mut fields, "Source cfg:  ", "config_path");
+                source(&mut fields, "Source data: ", "share_path");
             }
             _ => {}
         }
+        apps.push(InfoApp { key, name, fields });
     }
-    Ok(())
+    Ok(InfoReport {
+        file: zip.display().to_string(),
+        size: format_bytes(zip),
+        created: jq_str(&m, &["created_at"], "Unknown"),
+        host: jq_str(&m, &["hostname"], "Unknown"),
+        user: jq_str(&m, &["user"], "Unknown"),
+        target: jq_str(&m, &["target"], "Unknown"),
+        media,
+        apps,
+    })
+}
+
+pub fn cmd_info(file: Option<&Path>) -> Result<()> {
+    let Some(zip) = file else {
+        log_error("Please specify a zip archive to inspect.");
+        println!("Usage: kas info <archive.zip>");
+        return Err(reported());
+    };
+    match read_info(zip) {
+        Ok(r) => {
+            print_info(&r);
+            Ok(())
+        }
+        Err(msg) => {
+            log_error(&msg);
+            Err(reported())
+        }
+    }
+}
+
+fn print_info(r: &InfoReport) {
+    println!("{C_BOLD}=== Backup Archive Information ==={C_RESET}");
+    println!("  Archive File:     {} ({})", r.file, r.size);
+    println!("  Created At:       {}", r.created);
+    println!("  Source Host:      {} ({})", r.host, r.user);
+    println!("  Backup Target:    {}", r.target);
+    println!("  Media Included:   {}", r.media);
+    println!();
+    println!("{C_BOLD}Included Applications & Folders:{C_RESET}");
+    for app in &r.apps {
+        println!("  {C_CYAN}• {}{C_RESET}", app.name);
+        for (label, value) in &app.fields {
+            println!("      {label}{value}");
+        }
+    }
 }
 
 #[cfg(test)]

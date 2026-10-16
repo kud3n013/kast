@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/import.rs
+expression: render(&a)
+---
+ kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore all_backup_2026-10-16_210400.zip ──────────────────────────╮╭ Manifest ──────────────────────────────────────────────────────────╮
+│❯ (•) All applications & desktop settings (recommended)             ││Created   2026-10-16T21:04:00+02:00                                 │
+│  ( ) KDE Plasma settings only                                      ││Source    archbox (p3ter)                                           │
+│  ( ) Only beeper                                                   ││Target    all                                                       │
+│  ( ) Only zen                                                      ││Media     true                                                      │
+│  [x] Close running apps first                                      ││Size      1.2G                                                      │
+│  [x] Keep a safety snapshot of the current files                   ││                                                                    │
+│  [ ] Dry run (change nothing)                                      ││Contains 3 item(s):                                                 │
+│  ▶ Start restore                                                   ││• BEEPER                                                            │
+│                                                                    ││    Folder:      ~/.config/BeeperTexts                              │
+│                                                                    ││• ZEN                                                               │
+│                               ╭ Restore ─────────────────────────────────────────────────────────────────╮                               │
+│                               │Overwrite these settings with the backup?                                 │                               │
+│                               │                                                                          │s, kwinrc, Plasma applets,     │
+│                               │  Archive:  /media/data/backups/all_backup_2026-10-16_210400.zip          │                               │
+│                               │  Restores: beeper zen kde                                                │                               │
+│                               │                                                                          │                               │
+│                               │  Overwrites:                                                             │                               │
+│                               │    /home/p3ter/.config/BeeperTexts                                       │                               │
+│                               │    /home/p3ter/.config/zen                                               │                               │
+│                               │    KDE Plasma settings in /home/p3ter/.config (kdeglobals, kwinrc, ...)  │                               │
+│                               │                                                                          │                               │
+│                               │  A safety snapshot of the current files is saved first.                  │                               │
+│                               │  Running apps among these are closed first.                              │                               │
+│                               │                                                                          │                               │
+│                               │                             Restore     Back                             │                               │
+│                               ╰──────────────────────────────────────────────────────────────────────────╯                               │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+╰────────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────╯
+ y/n answer  ←/→ choose  Enter confirm  Esc no

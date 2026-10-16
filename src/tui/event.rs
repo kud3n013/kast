@@ -3,6 +3,9 @@
 use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 
 use crate::report::{Level, Progress, Prompt};
+use std::path::PathBuf;
+
+use super::screens::import::{Candidate, Inspected};
 use crate::setup::Summary;
 
 #[derive(Debug)]
@@ -22,6 +25,17 @@ pub enum Event {
 pub enum Loaded {
     /// The last lines of the log file
     Log(Vec<String>),
+    Candidates(Vec<Candidate>),
+    /// A file the user highlighted (`pick` false) or chose
+    Inspected {
+        path: PathBuf,
+        pick: bool,
+        result: Result<Option<Inspected>, String>,
+    },
+    Completion {
+        value: String,
+        matches: Vec<String>,
+    },
 }
 
 /// Messages from a job thread (the engines, through `TuiReporter`).

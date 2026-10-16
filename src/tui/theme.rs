@@ -18,6 +18,10 @@ pub struct Symbols {
     pub up_down: &'static str,
     pub left_right: &'static str,
     pub ellipsis: &'static str,
+    pub radio_on: &'static str,
+    pub start: &'static str,
+    pub caret: &'static str,
+    pub bullet: &'static str,
     pub spinner: &'static [&'static str],
     pub border: BorderType,
 }
@@ -33,6 +37,10 @@ const UNICODE: Symbols = Symbols {
     up_down: "↑/↓",
     left_right: "←/→",
     ellipsis: "…",
+    radio_on: "(•)",
+    start: "▶",
+    caret: "▏",
+    bullet: "•",
     spinner: &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
     border: BorderType::Rounded,
 };
@@ -48,6 +56,10 @@ const ASCII: Symbols = Symbols {
     up_down: "Up/Dn",
     left_right: "Lt/Rt",
     ellipsis: "...",
+    radio_on: "(*)",
+    start: ">",
+    caret: "_",
+    bullet: "*",
     spinner: &["|", "/", "-", "\\"],
     border: BorderType::Plain,
 };

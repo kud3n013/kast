@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/import.rs
+expression: "render(&loaded(80, 24))"
+---
+ kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Backups & face models (newest first) ────────────────────────────────────────╮
+│  Name                                                 Type             Size  │
+│❯ all_backup_2026-10-16_210400.zip                     Full System      1.2G  │
+│  kde_backup_2026-10-01_090000.zip                     KDE Plasma       48M   │
+│  p3ter_face_model_2026-09-30.dat                      Howdy Face Model 8.0K  │
+│  Custom path…                                                                │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Path: /media/data/backups/all_backup_2026-10-16_210400.zip                    │
+│Size: 1.2G   modified 2026-10-16 21:04                                        │
+│                                                                              │
+│Created   2026-10-16T21:04:00+02:00                                           │
+│Source    archbox (p3ter)                                                     │
+│Target    all                                                                 │
+│Media     true                                                                │
+│Size      1.2G                                                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter choose  / filter  c custom path  Esc back  ? help

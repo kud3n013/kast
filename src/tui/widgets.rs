@@ -109,6 +109,82 @@ pub fn dialog(f: &mut Frame, area: Rect, theme: &Theme, d: &Dialog) {
     f.render_widget(Paragraph::new(line), buttons);
 }
 
+/// A one-line text field (path entry, filter).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Input {
+    pub value: String,
+    /// Cursor position in chars
+    pub cursor: usize,
+}
+
+impl Input {
+    pub fn new(value: impl Into<String>) -> Self {
+        let value = value.into();
+        let cursor = value.chars().count();
+        Input { value, cursor }
+    }
+
+    fn byte_at(&self, char_idx: usize) -> usize {
+        self.value.char_indices().nth(char_idx).map_or(self.value.len(), |(i, _)| i)
+    }
+
+    pub fn insert(&mut self, text: &str) {
+        // Pasted text may end in a newline; a path never contains one
+        let text: String = text.chars().filter(|c| *c != '\n' && *c != '\r').collect();
+        let at = self.byte_at(self.cursor);
+        self.value.insert_str(at, &text);
+        self.cursor += text.chars().count();
+    }
+
+    pub fn set(&mut self, value: impl Into<String>) {
+        *self = Input::new(value);
+    }
+
+    /// Editing keys; false if the key isn't one.
+    pub fn key(&mut self, k: &ratatui::crossterm::event::KeyEvent) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        match k.code {
+            KeyCode::Char('u') if ctrl => {
+                let at = self.byte_at(self.cursor);
+                self.value.drain(..at);
+                self.cursor = 0;
+            }
+            KeyCode::Char('a') if ctrl => self.cursor = 0,
+            KeyCode::Char('e') if ctrl => self.cursor = self.value.chars().count(),
+            KeyCode::Char(c) if !ctrl => self.insert(&c.to_string()),
+            KeyCode::Backspace if self.cursor > 0 => {
+                self.cursor -= 1;
+                let at = self.byte_at(self.cursor);
+                self.value.remove(at);
+            }
+            KeyCode::Delete if self.cursor < self.value.chars().count() => {
+                let at = self.byte_at(self.cursor);
+                self.value.remove(at);
+            }
+            KeyCode::Left => self.cursor = self.cursor.saturating_sub(1),
+            KeyCode::Right => self.cursor = (self.cursor + 1).min(self.value.chars().count()),
+            KeyCode::Home => self.cursor = 0,
+            KeyCode::End => self.cursor = self.value.chars().count(),
+            KeyCode::Backspace | KeyCode::Delete => {}
+            _ => return false,
+        }
+        true
+    }
+
+    /// Draw inside `area` (one line); shows the cursor when focused.
+    pub fn render(&self, f: &mut Frame, area: Rect, theme: &Theme, focused: bool) {
+        let w = area.width.max(1) as usize;
+        // Keep the cursor visible by scrolling the text horizontally
+        let skip = (self.cursor + 1).saturating_sub(w);
+        let shown: String = self.value.chars().skip(skip).take(w).collect();
+        f.render_widget(Paragraph::new(shown).style(if focused { theme.bold() } else { Style::new() }), area);
+        if focused {
+            f.set_cursor_position((area.x + (self.cursor - skip) as u16, area.y));
+        }
+    }
+}
+
 /// Shorten `s` to `max` chars with an ellipsis.
 pub fn ellipsize(s: &str, max: usize, ellipsis: &str) -> String {
     if s.chars().count() <= max {
@@ -127,5 +203,21 @@ mod tests {
         assert_eq!(ellipsize("abc", 5, "…"), "abc");
         assert_eq!(ellipsize("abcdefgh", 5, "…"), "abcd…");
         assert_eq!(ellipsize("abcdefgh", 5, "..."), "ab...");
+    }
+
+    #[test]
+    fn input_edits_unicode_and_paste() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let k = |c| KeyEvent::new(c, KeyModifiers::NONE);
+        let mut i = Input::new("/hö");
+        i.key(&k(KeyCode::Backspace));
+        assert_eq!(i.value, "/h");
+        i.key(&k(KeyCode::Home));
+        i.insert("~/x.zip\n");
+        assert_eq!((i.value.as_str(), i.cursor), ("~/x.zip/h", 7));
+        i.key(&k(KeyCode::Delete));
+        i.key(&KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!((i.value.as_str(), i.cursor), ("h", 0));
+        assert!(!i.key(&k(KeyCode::Enter)));
     }
 }

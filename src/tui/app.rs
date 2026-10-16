@@ -6,9 +6,11 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, M
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Line;
 
-use super::event::{Event, JobMsg, Loaded, Outcome};
+pub use super::event::Event;
+use super::event::{JobMsg, Loaded, Outcome};
 use super::job::JobKind;
 use super::screens::help;
+use super::screens::import::{self, ImportState};
 use super::screens::log::{self, LogState};
 use super::screens::menu::{self, Action, ITEMS, MenuState};
 use super::screens::run::{self, Finished, RunState};
@@ -49,15 +51,18 @@ pub enum Screen {
     Menu,
     Run(Box<RunState>),
     Summary(Box<Summary>),
+    Import(Box<ImportState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ModalKind {
     /// An engine question; the job waits for the answer
     Ask(u64),
     CancelJob,
+    /// Start this job on Yes
+    Confirm(Box<JobKind>),
 }
 
 /// A yes/no dialog over the current screen. Esc always answers No.
@@ -85,6 +90,12 @@ pub enum Command {
     Legacy(Action),
     /// Read the log file (answered with `Loaded::Log`)
     OpenLog,
+    /// Find backups (answered with `Loaded::Candidates`)
+    LoadCandidates { zips_only: bool },
+    /// Look at a backup file (answered with `Loaded::Inspected`)
+    Inspect { path: std::path::PathBuf, pick: bool },
+    /// Tab completion of a typed path (answered with `Loaded::Completion`)
+    Complete(String),
 }
 
 pub struct App {
@@ -158,6 +169,7 @@ impl App {
             Screen::Menu => ("Main menu", &menu::HELP),
             Screen::Run(_) => ("Progress", &run::HELP),
             Screen::Summary(_) => ("Summary", &summary::HELP),
+            Screen::Import(_) => ("Backups", &import::HELP),
             Screen::Log(..) => ("Log", &log::HELP),
         }
     }
@@ -187,7 +199,10 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
             }
             None
         }
-        Event::Paste(_) => None,
+        Event::Paste(text) => {
+            import::on_paste(app, &text);
+            None
+        }
         Event::Key(k) if k.kind == KeyEventKind::Release => None,
         Event::Key(k) => on_key(app, k),
         Event::Mouse(m) => on_mouse(app, m),
@@ -195,6 +210,12 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::Log(lines)) => {
             let back = std::mem::replace(&mut app.screen, Screen::Menu);
             app.screen = Screen::Log(Box::new(LogState::from_lines(lines)), Box::new(back));
+            None
+        }
+        Event::Loaded(Loaded::Candidates(list)) => import::on_candidates(app, list),
+        Event::Loaded(Loaded::Inspected { path, pick, result }) => import::on_inspected(app, path, pick, result),
+        Event::Loaded(Loaded::Completion { value, matches }) => {
+            import::on_completion(app, value, matches);
             None
         }
     }
@@ -271,7 +292,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.quit = true;
                 None
             }
-            Screen::Summary(_) => {
+            Screen::Summary(_) | Screen::Import(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -294,7 +315,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         }
         return None;
     }
-    if k.code == KeyCode::Char('?') {
+    if k.code == KeyCode::Char('?') && !text_field_open(app) {
         app.help = true;
         return None;
     }
@@ -310,7 +331,13 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
             _ => None,
         },
         Screen::Log(..) => log_key(app, k),
+        Screen::Import(_) => import::key(app, k),
     }
+}
+
+/// A text field has the keyboard (letters must reach it, not shortcuts).
+fn text_field_open(app: &App) -> bool {
+    matches!(&app.screen, Screen::Import(s) if s.path.is_some() || s.filtering)
 }
 
 fn modal_key(app: &mut App, k: KeyEvent) -> Option<Command> {
@@ -348,6 +375,8 @@ fn answer(app: &mut App, yes: bool) -> Option<Command> {
             Some(Command::Cancel)
         }
         ModalKind::CancelJob => None,
+        ModalKind::Confirm(kind) if yes => Some(start_job(app, *kind)),
+        ModalKind::Confirm(_) => None,
     }
 }
 
@@ -440,7 +469,11 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
         Action::Repo => JobKind::Repo,
         Action::Packages => JobKind::Packages,
         Action::Services => JobKind::Services,
-        Action::Import | Action::Export | Action::Status | Action::Info => return Some(Command::Legacy(action)),
+        Action::Import => {
+            app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Restore)));
+            return Some(Command::LoadCandidates { zips_only: false });
+        }
+        Action::Export | Action::Status | Action::Info => return Some(Command::Legacy(action)),
     };
     Some(start_job(app, kind))
 }
@@ -454,6 +487,10 @@ pub fn start_job(app: &mut App, kind: JobKind) -> Command {
 fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
     if app.help || app.modal.is_some() || app.too_small() {
         return None;
+    }
+    if matches!(app.screen, Screen::Import(_)) {
+        let body = app.body_area();
+        return import::mouse(app, m, body);
     }
     match &mut app.screen {
         Screen::Menu => match m.kind {
@@ -481,7 +518,7 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => st.scroll.down(3),
             _ => {}
         },
-        Screen::Summary(_) => {}
+        Screen::Summary(_) | Screen::Import(_) => {}
     }
     None
 }
@@ -510,6 +547,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Log(st, _) => {
             log::view(f, body, &app.theme, st);
             &log::HINTS
+        }
+        Screen::Import(st) => {
+            import::view(f, body, app, st);
+            import::hints(st)
         }
     };
     let hints: &[(&str, &str)] = if app.modal.is_some() { &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")] } else { hints };
@@ -685,7 +726,7 @@ pub mod tests {
     fn escape_asks_before_canceling() {
         let mut a = running_auto(80, 24);
         assert!(update(&mut a, key(KeyCode::Esc)).is_none());
-        assert_eq!(a.modal.as_ref().unwrap().kind, ModalKind::CancelJob);
+        assert!(matches!(a.modal.as_ref().unwrap().kind, ModalKind::CancelJob));
         // Enter takes the safe default: keep running
         assert!(update(&mut a, key(KeyCode::Enter)).is_none());
         assert!(a.modal.is_none() && a.job_running());
@@ -717,7 +758,7 @@ pub mod tests {
         // Ctrl+C: No to the question, then the cancel dialog
         job(&mut a, ask(10, true));
         assert!(matches!(update(&mut a, ctrl('c')), Some(Command::Answer { id: 10, yes: false })));
-        assert_eq!(a.modal.as_ref().unwrap().kind, ModalKind::CancelJob);
+        assert!(matches!(a.modal.as_ref().unwrap().kind, ModalKind::CancelJob));
     }
 
     #[test]

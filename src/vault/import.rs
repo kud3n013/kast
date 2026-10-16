@@ -45,6 +45,30 @@ fn restore_spec(app: &str) -> Option<RestoreSpec> {
     })
 }
 
+/// What restoring `app` overwrites, for a confirmation dialog.
+pub fn restore_destinations(app: &str) -> Vec<String> {
+    let c = ctx();
+    let cfg = c.config_home.display();
+    match app {
+        "howdy" => vec![format!("{HOWDY_MODELS_DIR}/*.dat (face models in the archive, incl. {}.dat)", c.target_user)],
+        "kde" => vec![
+            format!("KDE Plasma settings in {cfg} (kdeglobals, kwinrc, Plasma applets, shortcuts, ...)"),
+            format!("KDE data in {} (plasma, kwin, icons, wallpapers, ...)", c.data_home.display()),
+            "~/.fonts, ~/.themes, ~/.icons (if in the archive)".into(),
+        ],
+        other => match restore_spec(other) {
+            Some(spec) => {
+                let mut v = vec![format!("{cfg}/{}", spec.folder)];
+                if other == "zalo" {
+                    v.push(format!("{cfg}/zalo-flags.conf"));
+                }
+                v
+            }
+            None => vec![],
+        },
+    }
+}
+
 fn chmod(path: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
