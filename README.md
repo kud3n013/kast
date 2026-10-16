@@ -19,8 +19,9 @@ Archives are read and written natively, so `zip`/`unzip`/`jq` are no longer need
 
 ```sh
 kas                  # interactive menu (re-runs itself through sudo)
-kas auto             # full automatic setup
-kas partition | repo | packages | services
+kas auto             # full automatic setup (skips the data partition)
+kas partition        # optional: /media/data + home folder symlinks
+kas repo | packages | services
 kas status           # detected apps, Howdy, KDE, Hyprland
 kas backup all --no-media -o ~/all.zip
 kas info ~/all.zip

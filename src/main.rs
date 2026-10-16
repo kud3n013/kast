@@ -34,10 +34,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Run the full automatic setup (upgrade, then steps 2 to 6)
+    /// Run the full automatic setup: upgrade, repo, packages, services, import (not the data partition)
     #[command(visible_alias = "automatic")]
     Auto,
-    /// Set up the universal data partition (/media/data & user dir symlinks)
+    /// Set up the universal data partition (/media/data & user dir symlinks); optional, not part of auto
     #[command(visible_alias = "data")]
     Partition,
     /// Add kud3n's repository ([archrepo] in /etc/pacman.conf)
@@ -198,8 +198,8 @@ fn dispatch(cmd: Option<Cmd>) -> Result<()> {
 // --- Main menu -----------------------------------------------------------------------
 
 const MENU_SHORT: [&str; 8] = [
-    "1. Run full auto setup (Steps 2 -> 6)",
-    "2. Setup data partition (/media/data)",
+    "1. Run full auto setup (Steps 3 -> 6)",
+    "2. Setup data partition (optional)",
     "3. Add kud3n's repository",
     "4. Install packages (Official & custom)",
     "5. Setup services (VPN, IME, Howdy...)",
@@ -208,8 +208,8 @@ const MENU_SHORT: [&str; 8] = [
     "Q. Exit",
 ];
 const MENU_LONG: [&str; 8] = [
-    "1. Run automatic script (Complete setup: Steps 2 -> 6)",
-    "2. Setup universal data partition (/media/data & symlinks)",
+    "1. Run automatic script (Complete setup: Steps 3 -> 6)",
+    "2. Setup data partition (optional, not run by auto)",
     "3. Add kud3n's repository ([archrepo] in /etc/pacman.conf)",
     "4. Install packages (Official, CachyOS, kud3n, add-ons)",
     "5. Setup services (ProtonVPN, IME, Howdy, Valkey/SearXNG)",

@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 
 use crate::ctx::{self, add_issue, ctx, have, log, ok, ok_logged, output, run_as_user};
-use crate::ui::{self, Dash, C_BOLD, C_GREEN, C_RED, C_RESET, C_YELLOW};
+use crate::ui::{self, Dash, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW};
 
 pub const MOUNT_POINT: &str = "/media/data";
 const DEFAULT_DATA_UUID: &str = "6C62ADEA62ADB96A";
@@ -556,27 +556,28 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 }
 
 // --- State 1: Automatic run -------------------------------------------------------------
+// The data partition is optional and deliberately not part of it (menu option 2 /
+// `kas partition`).
 
 pub fn run_automatic() -> Result<()> {
     let c = ctx();
     let o_start = ui::now();
-    let o_total = 6;
+    let o_total = 5;
     ctx::clear_issues();
     log("INFO", "==========================================");
     log("INFO", "Starting Full Automated Setup Sequence...");
     log("INFO", "==========================================");
 
     system_upgrade(true, o_start, 1, o_total);
-    setup_data_partition(true, o_start, 2, o_total)?;
-    add_kud3n_repo(true, o_start, 3, o_total)?;
-    install_packages(true, o_start, 4, o_total);
-    setup_services(true, o_start, 5, o_total)?;
-    crate::interactive::import_data(true, o_start, 6, o_total)?;
+    add_kud3n_repo(true, o_start, 2, o_total)?;
+    install_packages(true, o_start, 3, o_total);
+    setup_services(true, o_start, 4, o_total)?;
+    crate::interactive::import_data(true, o_start, 5, o_total)?;
 
     ui::restore_terminal_interactive();
     ui::clear_screen();
     let elapsed = ui::format_seconds(ui::now() - o_start);
-    let mut partition = format!("{C_YELLOW}not mounted - user folders not migrated{C_RESET}");
+    let mut partition = format!("{C_GRAY}not set up (optional: menu option 2 or `sudo kas partition`){C_RESET}");
     if is_mounted(MOUNT_POINT) {
         partition = format!("{MOUNT_POINT} mounted");
         if c.target_home.join("Documents").is_symlink() {

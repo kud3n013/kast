@@ -273,7 +273,8 @@ pub fn calc_eta_countdown(start: i64, current: i64, total: i64, baseline: i64) -
 }
 
 pub fn calc_overall_progress(o_step: i64, s_step: i64, s_total: i64) -> i64 {
-    const WEIGHTS: [i64; 6] = [25, 5, 5, 50, 10, 5];
+    // Automatic run: upgrade, repo, packages, services, import
+    const WEIGHTS: [i64; 5] = [25, 5, 55, 10, 5];
     let idx = (o_step.max(1) - 1) as usize;
     let cum: i64 = WEIGHTS.iter().take(idx).sum();
     let cur = WEIGHTS.get(idx).copied().unwrap_or(10);
@@ -480,8 +481,8 @@ mod tests {
     #[test]
     fn overall_progress_weights() {
         assert_eq!(calc_overall_progress(1, 0, 2), 0);
-        assert_eq!(calc_overall_progress(4, 1, 2), 35 + 25);
-        assert_eq!(calc_overall_progress(6, 2, 2), 100);
+        assert_eq!(calc_overall_progress(4, 1, 2), 85 + 5);
+        assert_eq!(calc_overall_progress(5, 2, 2), 100);
     }
 
     #[test]
