@@ -2,7 +2,7 @@
 source: src/tui/screens/status.rs
 expression: render(&a)
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ App status ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │App           Status       Config folder                                                               Size   Process                     │
 │BeeperTexts   ✓ installed  /home/p3ter/.config/BeeperTexts                                             2.1G   ⚠ running (PID 4242)        │

@@ -2,7 +2,7 @@
 source: src/tui/screens/export.rs
 expression: render(&a)
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Back up ──────────────────────────────────────────────────────────────────╮╭ Details ────────────────────────────────────────────────────╮
 │  ( ) All detected apps & Howdy face model  ✓                              ││BeeperTexts (~/.config/BeeperTexts)                          │
 │❯ (•) BeeperTexts (~/.config/BeeperTexts)  ✓ 2.1G                          ││                                                             │

@@ -1,4 +1,4 @@
-//! Restore (and inspect) backups: a table of the archives and face models kas finds, a
+//! Restore (and inspect) backups: a table of the archives and face models kast finds, a
 //! manifest panel, a custom path field, then the restore options and a confirmation that
 //! names exactly what gets overwritten.
 

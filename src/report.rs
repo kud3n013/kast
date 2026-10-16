@@ -82,7 +82,7 @@ pub trait Reporter: Send + Sync {
     }
 }
 
-/// Plain terminal output, exactly as kas always printed it.
+/// Plain terminal output, exactly as kast always printed it.
 pub struct CliReporter;
 
 impl Reporter for CliReporter {

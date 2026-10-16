@@ -2,24 +2,24 @@
 source: src/tui/app.rs
 expression: render(&a)
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Summary ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                                          │
-│  ✓ Automatic setup completed successfully                                                                                                │
+│  ⚠ Automatic setup finished with 2 issue(s)                                                                                              │
 │                                                                                                                                          │
 │  Time elapsed      12:34                                                                                                                 │
 │  Target user       p3ter (UID 1000, GID 1000)                                                                                            │
-│  Data partition    /media/data mounted & user folders symlinked                                                                          │
+│  Data partition    not set up (optional: menu option 2 or `sudo kast partition`)                                                         │
 │  kud3n repository  configured in /etc/pacman.conf                                                                                        │
-│  Log file          /var/log/kas.log                                                                                                      │
-│  Howdy face model  ✓ enrolled for p3ter                                                                                                  │
+│  Log file          /var/log/kast.log                                                                                                     │
 │                                                                                                                                          │
+│  Issues                                                                                                                                  │
+│    ✗ System upgrade (pacman -Syuu) failed with exit code 1                                                                               │
+│    ✗ Could not enable/start searxng                                                                                                      │
 │                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
+│  Howdy: no face model enrolled yet. Run:                                                                                                 │
+│    sudo howdy -U p3ter add                                                                                                               │
+│    (or restore a saved face model with menu option 6 / `sudo kast import`)                                                               │
 │                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │

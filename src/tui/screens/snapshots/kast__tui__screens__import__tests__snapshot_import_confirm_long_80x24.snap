@@ -2,7 +2,7 @@
 source: src/tui/screens/import.rs
 expression: out
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭╭ Restore ───────────────────────────────────────────────────────────────────╮╮
 ││Overwrite these settings with the backup?                                   ││
 ││                                                                            ││

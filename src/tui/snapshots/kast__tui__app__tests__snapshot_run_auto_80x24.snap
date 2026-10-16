@@ -1,8 +1,8 @@
 ---
 source: src/tui/app.rs
-expression: render(&a)
+expression: "render(&running_auto(80, 24))"
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Overall: step 3/4 · Install Packages ────────────────────────────────────────╮
 │███████████████████████47% · 05:00 elapsed · ETA 05:38                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -10,14 +10,14 @@ expression: render(&a)
 │██████████████████████▋29% · 03:20 elapsed · ETA 07:44                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Status ──────────────────────────────────────────────────────────────────────╮
-│⠋╭ Question ─────────────────────────────────────────────────────────────────╮│
-╰─│Close/kill running application(s) (zen obsidian) to proceed with restore?  │╯
-╭ │                                                                           │╮
-│I│  zen (PID: 4242 4243)                                                     ││
-│E│  obsidian (PID: 5150)                                                     ││
-│ │                                                                           ││
-│ │                                Yes     No                                 ││
-│ ╰───────────────────────────────────────────────────────────────────────────╯│
+│⠋ 12/41: Installing obsidian (pacman)                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Log (following) ─────────────────────────────────────────────────────────────╮
+│INFO  Package zotero already installed.                                       │
+│ERROR Failed to install steam. Recorded in /var/log/kast.log                  │
+│      resolving dependencies...                                               │
+│      obsidian-1.9.12   45%                                                   │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -25,4 +25,4 @@ expression: render(&a)
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- y/n answer  ←/→ choose  Enter confirm  Esc no
+ PgUp/PgDn scroll  G follow  Esc cancel  ? help

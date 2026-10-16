@@ -2,7 +2,7 @@
 source: src/tui/app.rs
 expression: render(&a)
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Arch Linux / CachyOS setup ──────────╮╭ Details ─────────────────────────────────────────────────────────────────────────────────────────╮
 │   1 Run automatic setup              ││Set up data partition                                                                             │
 │❯  2 Set up data partition            ││                                                                                                  │
@@ -11,7 +11,7 @@ expression: render(&a)
 │   5 Set up services                  ││your home.                                                                                        │
 │   6 Import data                      ││                                                                                                  │
 │   7 Export data                      ││Changes:    /etc/fstab (backup kept), your home folders, ~/.config/user-dirs.dirs                 │
-│   8 App status                       ││Needs root: yes (kas already runs as root)                                                        │
+│   8 App status                       ││Needs root: yes (kast already runs as root)                                                       │
 │   9 Inspect a backup                 ││Automatic:  Optional: not part of the automatic run.                                              │
 │   q Quit                             ││                                                                                                  │
 │                                      ││                                                                                                  │

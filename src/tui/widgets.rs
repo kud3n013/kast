@@ -18,11 +18,11 @@ pub fn block<'a>(theme: &Theme, title: impl Into<Line<'a>>) -> Block<'a> {
 
 pub fn header(f: &mut Frame, area: Rect, h: &Header, theme: &Theme) {
     let mode = if h.root { "root" } else { "user" };
-    let full = format!(" kas │ {} (UID {}, GID {}) │ {} │ {} │ {mode} ", h.user, h.uid, h.gid, h.home, h.host);
-    let mid = format!(" kas │ {} ({}:{}) │ {} │ {mode} ", h.user, h.uid, h.gid, h.host);
-    let short = format!(" kas │ {} │ {mode} ", h.user);
+    let full = format!(" kast │ {} (UID {}, GID {}) │ {} │ {} │ {mode} ", h.user, h.uid, h.gid, h.home, h.host);
+    let mid = format!(" kast │ {} ({}:{}) │ {} │ {mode} ", h.user, h.uid, h.gid, h.host);
+    let short = format!(" kast │ {} │ {mode} ", h.user);
     let w = area.width as usize;
-    let text = [full, mid, short].into_iter().find(|t| t.chars().count() <= w).unwrap_or_else(|| " kas".into());
+    let text = [full, mid, short].into_iter().find(|t| t.chars().count() <= w).unwrap_or_else(|| " kast".into());
     let text = if theme.sym.ellipsis == "..." { text.replace('│', "|") } else { text };
     f.render_widget(Paragraph::new(text).style(theme.header()), area);
 }

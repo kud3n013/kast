@@ -1,4 +1,4 @@
-//! Full log file viewer (the last lines of kas.log).
+//! Full log file viewer (the last lines of kast.log).
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -16,7 +16,7 @@ pub struct LogState {
 }
 
 impl LogState {
-    /// Lines of kas.log; `[ts] [LEVEL] message` lines are coloured by their level.
+    /// Lines of kast.log; `[ts] [LEVEL] message` lines are coloured by their level.
     pub fn from_lines(lines: Vec<String>) -> Self {
         let mut log = LogBuffer::default();
         for l in lines {

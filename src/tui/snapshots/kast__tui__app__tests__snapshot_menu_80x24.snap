@@ -2,7 +2,7 @@
 source: src/tui/app.rs
 expression: "render(&app(80, 24))"
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Arch Linux / CachyOS setup ──────────────────────────────────────────────────╮
 │❯  1 Run automatic setup                                                      │
 │   2 Set up data partition                                                    │
@@ -21,7 +21,7 @@ expression: "render(&app(80, 24))"
 │progress bar and a summary at the end.                                        │
 │Changes:    /etc/pacman.conf, installed packages, /etc/pam.d files (backups   │
 │kept), Howdy config, systemd services                                         │
-│Needs root: yes (kas already runs as root)                                    │
+│Needs root: yes (kast already runs as root)                                   │
 │Automatic:  This is the automatic run (no data partition, no import).         │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯

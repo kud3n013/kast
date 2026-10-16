@@ -2,7 +2,7 @@
 source: src/tui/app.rs
 expression: render(&a)
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Overall: step 3/4 · Install Packages ────────────────────────────────────────╮
 │███████████████████████100% · 05:00 elapsed · ETA 00:00 ██████████████████████│
 ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -99,7 +99,7 @@ pub fn howdy_model_path(user: &str) -> PathBuf {
     PathBuf::from(format!("{HOWDY_MODELS_DIR}/{user}.dat"))
 }
 
-/// Root access for /etc/howdy/models when kas runs as a normal user. sudo asks for the
+/// Root access for /etc/howdy/models when kast runs as a normal user. sudo asks for the
 /// password here, once, before anything starts, and the credentials are kept fresh
 /// afterwards, so no prompt shows up part-way through a backup or restore. False when sudo
 /// would need a password and there's no terminal to type it in (the answer is remembered).

@@ -13,7 +13,7 @@ fn not_detected() -> String {
     format!("  Status:      {C_GRAY}Not detected{C_RESET}")
 }
 
-/// One application's section of `kas status`.
+/// One application's section of `kast status`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppStatus {
     pub n: u32,
@@ -64,7 +64,7 @@ pub struct HyprStatus {
     pub running: bool,
 }
 
-/// Everything `kas status` shows.
+/// Everything `kast status` shows.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatusReport {
     pub user: String,

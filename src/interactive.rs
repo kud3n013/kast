@@ -89,7 +89,7 @@ fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// Interactive restore screen (menu option 6 / `kas import` without arguments).
+/// Interactive restore screen (menu option 6 / `kast import` without arguments).
 pub fn import_data() -> Result<()> {
     let c = ctx();
     log("INFO", "Starting App Vault & Howdy Face Model import...");

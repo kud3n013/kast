@@ -120,7 +120,7 @@ pub const ITEMS: [Item; 10] = [
         root: false,
         auto: "Not part of the automatic run.",
     },
-    Item { action: Action::Quit, key: 'q', label: "Quit", about: "Leave kas.", changes: "Nothing", root: false, auto: "" },
+    Item { action: Action::Quit, key: 'q', label: "Quit", about: "Leave kast.", changes: "Nothing", root: false, auto: "" },
 ];
 
 #[derive(Default, Debug, Clone)]
@@ -186,7 +186,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
     };
     if it.action != Action::Quit {
         lines.push(Line::from(vec![Span::styled("Changes:    ", theme.bold()), Span::raw(it.changes)]));
-        let root = if it.root { "yes (kas already runs as root)" } else { "no" };
+        let root = if it.root { "yes (kast already runs as root)" } else { "no" };
         lines.push(Line::from(vec![Span::styled("Needs root: ", theme.bold()), Span::raw(root)]));
         lines.push(Line::from(vec![Span::styled("Automatic:  ", theme.bold()), Span::raw(it.auto)]));
     }
@@ -203,6 +203,6 @@ pub const HELP: [(&str, &str); 9] = [
     ("Mouse", "Click selects, double-click runs, wheel moves"),
     ("l", "Open the log file"),
     ("?", "This help"),
-    ("q  Esc", "Quit kas"),
-    ("Ctrl+C", "Quit kas"),
+    ("q  Esc", "Quit kast"),
+    ("Ctrl+C", "Quit kast"),
 ];

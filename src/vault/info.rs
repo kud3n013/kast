@@ -49,7 +49,7 @@ pub struct InfoApp {
     pub fields: Vec<(String, String)>,
 }
 
-/// Read the manifest of `zip`; the error is the message `kas info` prints.
+/// Read the manifest of `zip`; the error is the message `kast info` prints.
 pub fn read_info(zip: &Path) -> std::result::Result<InfoReport, String> {
     if !zip.is_file() {
         return Err(format!("Archive file not found: {}", zip.display()));
@@ -118,7 +118,7 @@ pub fn read_info(zip: &Path) -> std::result::Result<InfoReport, String> {
 pub fn cmd_info(file: Option<&Path>) -> Result<()> {
     let Some(zip) = file else {
         log_error("Please specify a zip archive to inspect.");
-        println!("Usage: kas info <archive.zip>");
+        println!("Usage: kast info <archive.zip>");
         return Err(reported());
     };
     match read_info(zip) {

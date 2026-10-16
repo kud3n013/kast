@@ -2,7 +2,7 @@
 source: src/tui/screens/import.rs
 expression: render(&a)
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Restore all_backup_2026-10-16_210400.zip ──────────────────────────╮╭ Manifest ──────────────────────────────────────────────────────────╮
 │❯ (•) All applications & desktop settings (recommended)             ││Created   2026-10-16T21:04:00+02:00                                 │
 │  ( ) KDE Plasma settings only                                      ││Source    archbox (p3ter)                                           │

@@ -73,7 +73,7 @@ fn install_panic_hook() {
     }));
 }
 
-pub const JOB_THREAD: &str = "kas-job";
+pub const JOB_THREAD: &str = "kast-job";
 
 // --- Input thread --------------------------------------------------------------------------
 

@@ -75,7 +75,7 @@ pub fn init() {
     let target_gid = pw.as_ref().map(|u| u.gid.as_raw()).unwrap_or(1000);
     let target_home = pw.as_ref().map(|u| u.dir.clone()).filter(|d| d.is_dir()).unwrap_or_else(|| PathBuf::from(format!("/home/{target_user}")));
 
-    let log_file = if is_root { PathBuf::from("/var/log/kas.log") } else { target_home.join(".local/state/kas.log") };
+    let log_file = if is_root { PathBuf::from("/var/log/kast.log") } else { target_home.join(".local/state/kast.log") };
     if let Some(dir) = log_file.parent() {
         let _ = fs::create_dir_all(dir);
     }
@@ -314,13 +314,13 @@ pub fn canceled() -> bool {
 
 pub const PACMAN_LOCK: &str = "/var/lib/pacman/db.lck";
 
-/// Set while a pacman that kas started (directly or through yay) is running or was
+/// Set while a pacman that kast started (directly or through yay) is running or was
 /// interrupted, and the lock was free when it started: a lock found then is that pacman's.
 /// Cleared when the command returns normally, so a later cancel never touches the lock of
 /// another tool (Discover / PackageKit, pamac hold it without a `pacman` process).
 static LOCK_WAS_FREE: AtomicBool = AtomicBool::new(false);
 
-/// Call right before kas starts a command that runs pacman.
+/// Call right before kast starts a command that runs pacman.
 pub fn note_pacman_start() {
     LOCK_WAS_FREE.store(!Path::new(PACMAN_LOCK).exists(), Ordering::SeqCst);
 }
@@ -340,9 +340,9 @@ fn pacman_running() -> bool {
     fs::read_dir("/proc").is_ok_and(|rd| rd.flatten().any(|e| fs::read_to_string(e.path().join("comm")).is_ok_and(|c| c.trim_end() == "pacman")))
 }
 
-/// The pacman lock is still there although the pacman kas started is gone. Waits up to
+/// The pacman lock is still there although the pacman kast started is gone. Waits up to
 /// `wait` for a pacman that was just stopped to exit. Never true for a lock that existed
-/// before kas started pacman, or while any pacman runs, so another pacman's lock is safe.
+/// before kast started pacman, or while any pacman runs, so another pacman's lock is safe.
 pub fn stale_pacman_lock(interrupted: bool, wait: std::time::Duration) -> bool {
     lock_is_stale(Path::new(PACMAN_LOCK), interrupted, wait, pacman_running)
 }
@@ -382,7 +382,10 @@ pub fn cleanup_vault_staging() {
     }
 }
 
-pub const YAY_SUDOERS_FILE: &str = "/etc/sudoers.d/zz-kas-yay";
+pub const YAY_SUDOERS_FILE: &str = "/etc/sudoers.d/zz-kast-yay";
+/// The rule's name before the rename to kast. A crash in an older kas build could have left
+/// it behind, so revoking removes it too and an old grant never lingers.
+const LEGACY_YAY_SUDOERS_FILE: &str = "/etc/sudoers.d/zz-kas-yay";
 
 /// yay builds as the target user and then runs `sudo pacman` itself. Behind the dashboard
 /// that password prompt is invisible and hangs forever, so for the duration of a yay call
@@ -413,8 +416,14 @@ pub fn grant_yay_sudo() -> bool {
 }
 
 pub fn revoke_yay_sudo() {
-    if Path::new(YAY_SUDOERS_FILE).exists() {
-        let _ = fs::remove_file(YAY_SUDOERS_FILE);
+    remove_existing(&[Path::new(YAY_SUDOERS_FILE), Path::new(LEGACY_YAY_SUDOERS_FILE)]);
+}
+
+fn remove_existing(paths: &[&Path]) {
+    for p in paths {
+        if p.exists() {
+            let _ = fs::remove_file(p);
+        }
     }
 }
 
@@ -464,12 +473,24 @@ mod tests {
         assert!(!lock_is_stale(&lock, true, Duration::ZERO, || false));
         fs::write(&lock, "").unwrap();
         assert!(lock_is_stale(&lock, true, Duration::ZERO, || false));
-        // The lock was already there before kas started pacman: someone else's
+        // The lock was already there before kast started pacman: someone else's
         assert!(!lock_is_stale(&lock, false, Duration::ZERO, || false));
         // A pacman still runs (another terminal, or ours not gone yet)
         assert!(!lock_is_stale(&lock, true, Duration::from_millis(250), || true));
         // Ours exits while we wait
         let n = std::sync::atomic::AtomicU32::new(0);
         assert!(lock_is_stale(&lock, true, Duration::from_secs(2), || n.fetch_add(1, Ordering::SeqCst) < 2));
+    }
+
+    #[test]
+    fn revoke_removes_current_and_legacy_rules() {
+        assert_eq!(YAY_SUDOERS_FILE, "/etc/sudoers.d/zz-kast-yay");
+        assert_eq!(LEGACY_YAY_SUDOERS_FILE, "/etc/sudoers.d/zz-kas-yay");
+        let dir = tempfile::tempdir().unwrap();
+        let (cur, legacy, missing) = (dir.path().join("zz-kast-yay"), dir.path().join("zz-kas-yay"), dir.path().join("none"));
+        fs::write(&cur, "").unwrap();
+        fs::write(&legacy, "").unwrap();
+        remove_existing(&[&cur, &legacy, &missing]);
+        assert!(!cur.exists() && !legacy.exists());
     }
 }

@@ -1,4 +1,4 @@
-//! Back up: pick what (with what kas detects and how big it is), the options that apply to
+//! Back up: pick what (with what kast detects and how big it is), the options that apply to
 //! it and where the file goes, then confirm.
 
 use std::path::{Path, PathBuf};
@@ -28,7 +28,7 @@ pub const TARGETS: [(&str, &str); 11] = [
     ("hypr", "Hyprland settings (~/.config/hypr)"),
 ];
 
-/// What kas found for one target.
+/// What kast found for one target.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetInfo {
     pub key: &'static str,
@@ -141,7 +141,7 @@ impl ExportState {
         rows
     }
 
-    /// File name for the current choice (`kas export` used the same names).
+    /// File name for the current choice (`kast export` used the same names).
     fn default_path(&self) -> PathBuf {
         if self.key() == "howdy" && self.dat {
             self.dir.join(format!("{}_face_model_{}.dat", self.user, self.ts))

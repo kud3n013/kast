@@ -2,7 +2,7 @@
 source: src/tui/screens/import.rs
 expression: "render(&loaded(80, 24))"
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Backups & face models (newest first) ────────────────────────────────────────╮
 │  Name                                                 Type             Size  │
 │❯ all_backup_2026-10-16_210400.zip                     Full System      1.2G  │

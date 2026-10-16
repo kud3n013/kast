@@ -1,4 +1,4 @@
-//! What kas detects: apps with their config folder, size and processes, then Howdy, KDE
+//! What kast detects: apps with their config folder, size and processes, then Howdy, KDE
 //! Plasma and Hyprland. Collected on a worker thread (sizes can take a moment).
 
 use ratatui::Frame;
@@ -118,7 +118,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &StatusState) {
                 lines.push(field("Profiles", Span::raw(format!("{faces} face profile(s)"))));
             }
         }
-        ModelStatus::NeedsSudo => lines.push(field("Face model", Span::styled("run kas with sudo to inspect /etc/howdy/models", theme.dim()))),
+        ModelStatus::NeedsSudo => lines.push(field("Face model", Span::styled("run kast with sudo to inspect /etc/howdy/models", theme.dim()))),
         ModelStatus::NotEnrolled { path } => {
             lines.push(field("Face model", Span::styled(format!("{} not enrolled for {} ({path})", theme.sym.warn, r.user), theme.warn())))
         }

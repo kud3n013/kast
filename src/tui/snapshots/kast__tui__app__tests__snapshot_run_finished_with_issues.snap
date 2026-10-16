@@ -2,7 +2,7 @@
 source: src/tui/app.rs
 expression: render(&a)
 ---
- kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Overall: step 4/4 · Install Packages ────────────────────────────────────────╮
 │███████████████████████100% · 05:00 elapsed · ETA 00:00 ██████████████████████│
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -16,7 +16,7 @@ expression: render(&a)
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Log (following) ─────────────────────────────────────────────────────────────╮
 │INFO  Package zotero already installed.                                       │
-│ERROR Failed to install steam. Recorded in /var/log/kas.log                   │
+│ERROR Failed to install steam. Recorded in /var/log/kast.log                  │
 │      resolving dependencies...                                               │
 │      obsidian-1.9.12   45%                                                   │
 │                                                                              │

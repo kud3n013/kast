@@ -21,7 +21,7 @@ use super::theme::Theme;
 use super::widgets::{self, Dialog, MIN_H, MIN_W};
 use crate::setup::Summary;
 
-/// Who kas runs for, shown in the header bar (copied out of `ctx()` so drawing stays pure).
+/// Who kast runs for, shown in the header bar (copied out of `ctx()` so drawing stays pure).
 #[derive(Clone, Debug, Default)]
 pub struct Header {
     pub user: String,
@@ -661,7 +661,7 @@ pub mod tests {
             home: "/home/p3ter".into(),
             host: "archbox".into(),
             root: true,
-            log_file: "/var/log/kas.log".into(),
+            log_file: "/var/log/kast.log".into(),
         }
     }
 
@@ -785,7 +785,7 @@ pub mod tests {
         a.now = 1300;
         job(&mut a, JobMsg::Progress(progress(3, 12, 41, "Installing obsidian (pacman)", None)));
         job(&mut a, JobMsg::Log { level: Level::Info, line: "Package zotero already installed.".into() });
-        job(&mut a, JobMsg::Log { level: Level::Error, line: "Failed to install steam. Recorded in /var/log/kas.log".into() });
+        job(&mut a, JobMsg::Log { level: Level::Error, line: "Failed to install steam. Recorded in /var/log/kast.log".into() });
         job(&mut a, JobMsg::Log { level: Level::Raw, line: "resolving dependencies...".into() });
         job(&mut a, JobMsg::Transient("obsidian-1.9.12   45%".into()));
         a
@@ -867,7 +867,7 @@ pub mod tests {
         assert!(matches!(a.screen, Screen::Menu));
         let t = a.toast.as_ref().unwrap();
         assert_eq!(t.kind, ToastKind::Error);
-        assert!(t.text.contains("/var/log/kas.log"));
+        assert!(t.text.contains("/var/log/kast.log"));
     }
 
     #[test]
@@ -924,7 +924,7 @@ pub mod tests {
             gid: 1000,
             partition: None,
             repo_configured: true,
-            log_file: "/var/log/kas.log".into(),
+            log_file: "/var/log/kast.log".into(),
             issues,
             howdy_enrolled: howdy,
         }

@@ -2,7 +2,7 @@
 source: src/tui/app.rs
 expression: render(&a)
 ---
- kas | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
+ kast | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
 ┌ Arch Linux / CachyOS setup ──────────────────────────────────────────────────┐
 │>  1 Run automatic setup                                                      │
 │   2 Set up data partition                                                    │
@@ -16,12 +16,12 @@ expression: render(&a)
 │   q Qu│Mouse          Click selects, double-click runs, wheel moves  │       │
 └───────│l              Open the log file                              │───────┘
 ┌ Detail│?              This help                                      │───────┐
-│Upgrade│q  Esc         Quit kas                                       │very   │
-│package│Ctrl+C         Quit kas                                       │       │
+│Upgrade│q  Esc         Quit kast                                      │very   │
+│package│Ctrl+C         Quit kast                                      │       │
 │progres│                                                              │       │
 │Changes│Press any key to close                                        │kups   │
 │kept), └──────────────────────────────────────────────────────────────┘       │
-│Needs root: yes (kas already runs as root)                                    │
+│Needs root: yes (kast already runs as root)                                   │
 │Automatic:  This is the automatic run (no data partition, no import).         │
 │                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘

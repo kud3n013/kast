@@ -139,7 +139,7 @@ pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64)
         return Ok(());
     }
     // ntfs3 mounts read-only (or refuses rw) when Windows was hibernated / Fast Startup is on
-    let probe = PathBuf::from(format!("{MOUNT_POINT}/.kas-write-test.{}", std::process::id()));
+    let probe = PathBuf::from(format!("{MOUNT_POINT}/.kast-write-test.{}", std::process::id()));
     if fs::write(&probe, b"").is_err() {
         log("ERROR", &format!("{MOUNT_POINT} is mounted but not writable (Windows Fast Startup/hibernation?). Skipping migration."));
         add_issue(format!("{MOUNT_POINT} is read-only (disable Windows Fast Startup, then re-run step 2)"));
@@ -558,7 +558,7 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 
 // --- State 1: Automatic run -------------------------------------------------------------
 // The data partition and the data import are optional and deliberately not part of it
-// (menu options 2 and 6 / `kas partition`, `kas import`).
+// (menu options 2 and 6 / `kast partition`, `kast import`).
 
 /// What the end of the automatic run reports.
 #[derive(Clone, Debug, PartialEq)]
@@ -623,8 +623,8 @@ pub fn collect_summary(o_start: i64) -> Summary {
     }
 }
 
-pub const PARTITION_HINT: &str = "not set up (optional: menu option 2 or `sudo kas partition`)";
-pub const HOWDY_RESTORE_HINT: &str = "(or restore a saved face model with menu option 6 / `sudo kas import`)";
+pub const PARTITION_HINT: &str = "not set up (optional: menu option 2 or `sudo kast partition`)";
+pub const HOWDY_RESTORE_HINT: &str = "(or restore a saved face model with menu option 6 / `sudo kast import`)";
 
 fn print_summary(s: &Summary) {
     let partition = s.partition.clone().unwrap_or_else(|| format!("{C_GRAY}{PARTITION_HINT}{C_RESET}"));
