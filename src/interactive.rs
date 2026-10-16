@@ -69,9 +69,9 @@ pub fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
     (zips, models)
 }
 
-/// Type label of a backup file (matched on the whole path, see KNOWN_ISSUES.md).
+/// Type label of a backup file, from its file name (the folder it sits in doesn't count).
 pub fn candidate_tag(p: &Path) -> &'static str {
-    let s = p.to_string_lossy();
+    let s = file_name(p).to_lowercase();
     if s.ends_with(".dat") {
         "[Howdy Face Model]"
     } else if s.contains("kde") || s.contains("plasma") {
@@ -283,7 +283,8 @@ pub fn export_data() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::glob_match;
+    use super::{candidate_tag, glob_match};
+    use std::path::Path;
 
     #[test]
     fn globs() {
@@ -293,5 +294,14 @@ mod tests {
         assert!(glob_match("p3ter.dat", "p3ter.dat"));
         assert!(!glob_match("backup.zip.txt", "*backup*.zip"));
         assert!(glob_match("backup.zip", "*backup*.zip"));
+    }
+
+    #[test]
+    fn tag_ignores_folders() {
+        assert_eq!(candidate_tag(Path::new("/home/sally/backup.zip")), "[Archive]");
+        assert_eq!(candidate_tag(Path::new("/media/data/install/kde_backup.zip")), "[KDE Plasma Backup]");
+        assert_eq!(candidate_tag(Path::new("/home/p3ter/hypr/all_2026.zip")), "[Full System Backup]");
+        assert_eq!(candidate_tag(Path::new("/home/p3ter/Hyprland.zip")), "[Hyprland Backup]");
+        assert_eq!(candidate_tag(Path::new("/media/data/all/p3ter.dat")), "[Howdy Face Model]");
     }
 }
