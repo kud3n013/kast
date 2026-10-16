@@ -160,9 +160,10 @@ impl Options {
             app: self.choices[self.choice].1.clone(),
             safety_backup: self.safety,
             kill: self.kill,
-            // With kill set, running apps are closed and this dialog already confirmed the
-            // overwrite; without it the engine asks about running apps itself
-            force: self.kill,
+            // This dialog already confirmed the overwrite. Without kill the engine still
+            // asks about running apps itself
+            force: false,
+            confirmed: true,
             dry_run: self.dry_run,
         }
     }
@@ -270,7 +271,7 @@ pub fn on_inspected(app: &mut App, path: PathBuf, pick: bool, result: Result<Opt
         Err(e) => app.toast(ToastKind::Error, e),
         Ok(None) if st.mode == Mode::Inspect => app.toast(ToastKind::Info, "A .dat face model has no manifest to show"),
         Ok(None) => {
-            let opts = ImportOpts { file: path.clone(), app: None, safety_backup: true, kill: false, force: true, dry_run: false };
+            let opts = ImportOpts { file: path.clone(), app: None, safety_backup: true, kill: false, force: false, confirmed: true, dry_run: false };
             app.modal = Some(Modal {
                 kind: ModalKind::Confirm(Box::new(crate::tui::job::JobKind::Import(opts))),
                 title: "Restore face model".into(),
@@ -794,7 +795,7 @@ mod tests {
         assert!(m.details.iter().any(|d| d.contains("No safety snapshot")));
         let ModalKind::Confirm(kind) = &m.kind else { panic!() };
         let JobKind::Import(o) = kind.as_ref() else { panic!() };
-        assert_eq!((o.app.as_deref(), o.safety_backup, o.kill, o.force, o.dry_run), (Some("kde"), false, true, true, false));
+        assert_eq!((o.app.as_deref(), o.safety_backup, o.kill, o.force, o.confirmed, o.dry_run), (Some("kde"), false, true, false, true, false));
         // Enter = Back (the safe default); y starts the job
         update(&mut a, key(KeyCode::Enter));
         assert!(a.modal.is_none());

@@ -19,7 +19,10 @@ pub struct ImportOpts {
     pub app: Option<String>,
     pub safety_backup: bool,
     pub kill: bool,
+    /// Restore over running apps without closing them
     pub force: bool,
+    /// The caller already confirmed the overwrite: skip the final "proceed?" question
+    pub confirmed: bool,
     pub dry_run: bool,
 }
 
@@ -118,7 +121,7 @@ fn import_dat(o: &ImportOpts) -> Result<()> {
         log_info(&format!("  [Dry-run] Would restore face model to {}", dest_file.display()));
         return Ok(());
     }
-    if !o.force {
+    if !o.confirmed {
         report::blank();
         log_warn(&format!("Restoring will install this face model for user '{user}' at {}.", dest_file.display()));
         if !report::ask(&Prompt::yes_no("Proceed with face model import?", false)) {
@@ -235,7 +238,7 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
         }
     }
 
-    if !o.force && !o.dry_run {
+    if !o.confirmed && !o.dry_run {
         report::blank();
         log_warn("Restoring will OVERWRITE existing application settings, login credentials, and databases!");
         if !report::ask(&Prompt::yes_no("Are you sure you want to proceed?", false)) {

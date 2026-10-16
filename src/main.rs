@@ -176,7 +176,15 @@ impl ImportArgs {
             vault::log_error("Missing zip archive parameter.");
             return Err(ctx::reported());
         };
-        Ok(ImportOpts { file, app: self.app, safety_backup: !self.no_safety_backup, kill: self.kill, force: self.force, dry_run: self.dry_run })
+        Ok(ImportOpts {
+            file,
+            app: self.app,
+            safety_backup: !self.no_safety_backup,
+            kill: self.kill,
+            force: self.force,
+            confirmed: self.force,
+            dry_run: self.dry_run,
+        })
     }
 }
 

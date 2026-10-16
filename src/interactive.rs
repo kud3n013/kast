@@ -138,7 +138,15 @@ pub fn import_data() -> Result<()> {
 
     log("INFO", &format!("Executing restore directly for file {}...", target.display()));
     ui::restore_terminal_interactive();
-    let opts = |app: Option<String>, force: bool, kill: bool| ImportOpts { file: target.clone(), app, safety_backup: true, kill, force, dry_run: false };
+    let opts = |app: Option<String>, force: bool, kill: bool| ImportOpts {
+        file: target.clone(),
+        app,
+        safety_backup: true,
+        kill,
+        force,
+        confirmed: force,
+        dry_run: false,
+    };
 
     if target.to_string_lossy().ends_with(".dat") {
         println!("\n{C_BLUE}[INFO]{C_RESET} Standalone Howdy Face Model: {}", file_name(&target));
