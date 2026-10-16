@@ -267,6 +267,12 @@ fn execute_command(app: &mut App, term: &mut Term, cmd: Command, tx: &Sender<Eve
                 let _ = tx.send(Event::Loaded(event::Loaded::ExportTargets { targets, dir, ts }));
             });
         }
+        Command::LoadStatus => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Status(Box::new(crate::vault::status::collect_status()))));
+            });
+        }
         Command::OpenLog => {
             let _ = tx.send(Event::Loaded(event::Loaded::Log(read_log_tail())));
         }

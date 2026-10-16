@@ -42,6 +42,7 @@ pub enum Loaded {
         dir: PathBuf,
         ts: String,
     },
+    Status(Box<crate::vault::status::StatusReport>),
 }
 
 /// Messages from a job thread (the engines, through `TuiReporter`).

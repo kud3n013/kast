@@ -15,6 +15,7 @@ use super::screens::import::{self, ImportState};
 use super::screens::log::{self, LogState};
 use super::screens::menu::{self, Action, ITEMS, MenuState};
 use super::screens::run::{self, Finished, RunState};
+use super::screens::status::{self, StatusState};
 use super::screens::summary;
 use super::theme::Theme;
 use super::widgets::{self, Dialog, MIN_H, MIN_W};
@@ -54,6 +55,7 @@ pub enum Screen {
     Summary(Box<Summary>),
     Import(Box<ImportState>),
     Export(Box<ExportState>),
+    Status(Box<StatusState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -100,6 +102,8 @@ pub enum Command {
     Complete(String),
     /// Detect what can be backed up (answered with `Loaded::ExportTargets`)
     LoadExportTargets,
+    /// Collect the app status (answered with `Loaded::Status`)
+    LoadStatus,
 }
 
 pub struct App {
@@ -156,7 +160,13 @@ impl App {
 
     /// Whether something on screen animates (the runtime only ticks then).
     pub fn animating(&self) -> bool {
-        self.toast.is_some() || self.job_running()
+        let loading = match &self.screen {
+            Screen::Status(s) => s.loading,
+            Screen::Import(s) => s.loading,
+            Screen::Export(s) => s.loading,
+            _ => false,
+        };
+        self.toast.is_some() || self.job_running() || loading
     }
 
     fn too_small(&self) -> bool {
@@ -169,11 +179,13 @@ impl App {
     }
 
     fn help_keys(&self) -> (&'static str, &'static [(&'static str, &'static str)]) {
-        match self.screen {
+        match &self.screen {
             Screen::Menu => ("Main menu", &menu::HELP),
             Screen::Run(_) => ("Progress", &run::HELP),
             Screen::Summary(_) => ("Summary", &summary::HELP),
+            Screen::Import(s) if s.mode == import::Mode::Inspect => ("Inspect a backup", &import::HELP),
             Screen::Import(_) => ("Backups", &import::HELP),
+            Screen::Status(_) => ("App status", &status::HELP),
             Screen::Export(_) => ("Back up", &export::HELP),
             Screen::Log(..) => ("Log", &log::HELP),
         }
@@ -223,6 +235,10 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::Completion { value, matches }) => {
             export::on_completion(app, value.clone());
             import::on_completion(app, value, matches);
+            None
+        }
+        Event::Loaded(Loaded::Status(r)) => {
+            status::on_report(app, r);
             None
         }
         Event::Loaded(Loaded::ExportTargets { targets, dir, ts }) => {
@@ -303,7 +319,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.quit = true;
                 None
             }
-            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) => {
+            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -344,6 +360,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         Screen::Log(..) => log_key(app, k),
         Screen::Import(_) => import::key(app, k),
         Screen::Export(_) => export::key(app, k),
+        Screen::Status(_) => status::key(app, k),
     }
 }
 
@@ -489,7 +506,14 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             app.screen = Screen::Export(Box::new(ExportState::new(&app.header.user)));
             return Some(Command::LoadExportTargets);
         }
-        Action::Status | Action::Info => return Some(Command::Legacy(action)),
+        Action::Status => {
+            app.screen = Screen::Status(Box::new(StatusState { loading: true, ..Default::default() }));
+            return Some(Command::LoadStatus);
+        }
+        Action::Info => {
+            app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Inspect)));
+            return Some(Command::LoadCandidates { zips_only: true });
+        }
     };
     Some(start_job(app, kind))
 }
@@ -510,6 +534,10 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
     }
     if matches!(app.screen, Screen::Export(_)) {
         return export::mouse(app, m);
+    }
+    if matches!(app.screen, Screen::Status(_)) {
+        status::mouse(app, m);
+        return None;
     }
     match &mut app.screen {
         Screen::Menu => match m.kind {
@@ -537,7 +565,7 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => st.scroll.down(3),
             _ => {}
         },
-        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) => {}
+        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) => {}
     }
     None
 }
@@ -574,6 +602,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Export(st) => {
             export::view(f, body, app, st);
             export::hints(st)
+        }
+        Screen::Status(st) => {
+            status::view(f, body, app, st);
+            &status::HINTS
         }
     };
     let hints: &[(&str, &str)] = if app.modal.is_some() { &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")] } else { hints };

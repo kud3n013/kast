@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/status.rs
+expression: render(&a)
+---
+ kas │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ App status ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│App           Status       Config folder                                                               Size   Process                     │
+│BeeperTexts   ✓ installed  /home/p3ter/.config/BeeperTexts                                             2.1G   ⚠ running (PID 4242)        │
+│ZaloData      · not found                                                                                     stopped                     │
+│Zen Browser   ✓ installed  /home/p3ter/.config/zen                                                     512M   stopped                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ System ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│Howdy face recognition                                                                                                                    │
+│  Package     howdy-next (3.0.0-1)                                                                                                        │
+│  Face model  ✓ enrolled (/etc/howdy/models/p3ter.dat, 8.0K)                                                                              │
+│  Permissions 644 root:root (expected 600 root:root)                                                                                      │
+│  Profiles    2 face profile(s)                                                                                                           │
+│  Process     idle                                                                                                                        │
+│                                                                                                                                          │
+│KDE Plasma                                                                                                                                │
+│  Settings    ✓ detected, snapshot 96M                                                                                                    │
+│  Config      /home/p3ter/.config                                                                                                         │
+│  Data        /home/p3ter/.local/share                                                                                                    │
+│  Session     ⚠ plasmashell running                                                                                                       │
+│                                                                                                                                          │
+│Hyprland                                                                                                                                  │
+│  Config      not found                                                                                                                   │
+│  Session     Hyprland not running                                                                                                        │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ r refresh  ↑/↓ scroll  Esc back  ? help
