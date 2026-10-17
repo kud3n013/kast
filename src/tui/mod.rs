@@ -138,7 +138,11 @@ fn suspend<T>(term: &mut Term, f: impl FnOnce() -> T) -> T {
         }
     }
     SUSPENDED.store(false, Ordering::SeqCst);
-    let _ = term.clear();
+    // Full redraw. Not `term.clear()`: it asks the terminal for the cursor position and waits
+    // for the answer. A blank frame makes ratatui's idea of the screen blank, so the next
+    // frame repaints every cell.
+    let _ = execute!(io::stdout(), ratatui::crossterm::terminal::Clear(ratatui::crossterm::terminal::ClearType::All));
+    let _ = term.draw(|f| f.render_widget(ratatui::widgets::Clear, f.area()));
     INPUT_PAUSED.store(false, Ordering::SeqCst);
     out
 }
