@@ -853,6 +853,34 @@ mod tests {
     }
 
     #[test]
+    fn export_to_proton_drive_is_decided_while_configuring() {
+        let mut a = app(140, 40);
+        a.drive = Some(Box::new(super::super::drive::tests::info(Some(crate::proton::Status::SignedIn))));
+        update(&mut a, key(KeyCode::Char('1')));
+        for s in [Step::Upgrade, Step::Repo, Step::Packages, Step::Services, Step::Export] {
+            flip(&mut a, s);
+        }
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::LoadExportTargets)));
+        assert_eq!(w(&a).stage, Stage::Export);
+        update(&mut a, key(KeyCode::Down));
+        update(&mut a, key(KeyCode::Enter));
+        let targets = export::TARGETS.iter().map(|(k, _)| TargetInfo { key: k, detected: true, size: String::new(), location: String::new() }).collect();
+        update(&mut a, Event::Loaded(Loaded::ExportTargets { targets, ts: "2026-10-17_101500".into() }));
+        let out = render(&a);
+        assert!(out.contains("Skip the upload if nothing changed since the last one"), "{out}");
+        insta::assert_snapshot!("wizard_export_proton_140x40", out);
+        assert!(update(&mut a, key(KeyCode::Char('s'))).is_none());
+        assert_eq!(w(&a).stage, Stage::Review);
+        let plan = w(&a).plan();
+        let up = plan.upload.clone().expect("an upload");
+        assert_eq!((up.if_unchanged, up.retention_ok, up.keep), (crate::drive::IfUnchanged::Skip, true, 5));
+        assert!(render(&a).contains("all → Proton Drive (keeps 5, skipped if unchanged)"));
+        let Some(Command::Start(JobKind::Auto(_, p))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected the run") };
+        assert_eq!(p.steps, [Step::Export]);
+        assert!(p.upload.is_some());
+    }
+
+    #[test]
     fn plan_without_packages_needs_no_list() {
         let mut a = app(80, 24);
         update(&mut a, key(KeyCode::Char('1')));
