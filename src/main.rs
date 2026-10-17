@@ -8,6 +8,7 @@ mod logio;
 mod pkglist;
 mod report;
 mod setup;
+mod snapshot;
 mod tui;
 mod ui;
 mod undo;
@@ -45,7 +46,7 @@ struct Cli {
 enum Cmd {
     /// Run the full automatic setup: upgrade, repo, packages, services (no data partition or import)
     #[command(visible_alias = "automatic")]
-    Auto(ListSource),
+    Auto(AutoArgs),
     /// Set up the universal data partition (/media/data & user dir symlinks): disabled for now
     #[command(visible_alias = "data", hide = !setup::PARTITION_ENABLED)]
     Partition,
@@ -169,6 +170,17 @@ impl ListSource {
             None => pkglist::load(false, pkglist::curl_fetch),
         })
     }
+}
+
+#[derive(Args)]
+struct AutoArgs {
+    /// Don't take a snapshot before the upgrade (by default kast takes one when / is btrfs with
+    /// snapper or Timeshift, unless snap-pac already does; without this, a failed snapshot stops
+    /// the run before the upgrade)
+    #[arg(long)]
+    no_snapshot: bool,
+    #[command(flatten)]
+    source: ListSource,
 }
 
 #[derive(Args)]
@@ -368,7 +380,20 @@ fn announce_list(source: &ListSource) -> Result<pkglist::PkgList> {
 fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
     match cmd {
         None => tui::run(tui::Start::Menu, top.known()?),
-        Some(Cmd::Auto(s)) => setup::run_automatic(&announce_list(&s.or(top))?),
+        Some(Cmd::Auto(a)) => {
+            let det = snapshot::detect();
+            for w in det.warning() {
+                println!("{w}");
+            }
+            let snap = !a.no_snapshot && det.default_on();
+            if det.offered() {
+                println!(
+                    "{}",
+                    if snap { format!("Taking a {} snapshot before the upgrade.", det.tool_name()) } else { "No snapshot before the upgrade.".into() }
+                );
+            }
+            setup::run_automatic(&announce_list(&a.source.or(top))?, snap)
+        }
         Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
         Some(Cmd::Repo) => journal::recorded(&["repo"], false, || setup::add_kud3n_repo(false, 0, 1, 1)),
         Some(Cmd::Packages(a)) if a.list => {

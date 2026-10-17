@@ -13,7 +13,7 @@ expression: render(&a)
 │    [x] Disable and stop valkey                                                       ││                                                  │
 │❯   [x] Restore /etc/pam.d/sudo  incomplete: kast stopped in the middle of this change││                                                  │
 │  [ ] Upgrade  0/1                                                                    ││                                                  │
-│    [ ] System upgrade  not undoable by kast; roll back with: sudo snapper -c root rol││                                                  │
+│    [ ] System upgrade  not undoable by kast. To roll back: sudo snapper -c root rollb││                                                  │
 │                                                                                      ││                                                  │
 │                                                                                      ││                                                  │
 │                                                                                      ││                                                  │

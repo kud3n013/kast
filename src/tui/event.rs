@@ -45,6 +45,7 @@ pub enum Loaded {
         file: PathBuf,
         bytes: u64,
     },
+    Snapshots(crate::snapshot::Detected),
     Undo(Box<crate::tui::screens::undo::UndoData>),
     Uninstall(Box<crate::tui::screens::undo::UninstallData>),
     /// Bytes freed by a prune
@@ -89,7 +90,7 @@ pub enum JobMsg {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
     /// The automatic run: show its summary screen
-    Summary(Summary),
+    Summary(Box<Summary>),
     /// Any other action: a closing message plus the issues it recorded
     Finished { message: String, issues: Vec<String> },
     /// Stopped by the user (a confirmed cancel or a declined engine prompt)

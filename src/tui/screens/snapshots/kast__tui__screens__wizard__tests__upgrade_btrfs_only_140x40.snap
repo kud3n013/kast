@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/wizard.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ System upgrade ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│⚠ System upgrades can't be undone by kast.                                                                                                │
+│                                                                                                                                          │
+│/ is btrfs, so it could have snapshots, but no snapshot tool is set up. Install snapper to get them (on CachyOS likely                    │
+│cachyos-snapper-support; check with pacman -Si). kast doesn't install it.                                                                 │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Before the upgrade · 0 of 1 selected ────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│❯ [ ] Take a snapshot before upgrading  no snapshot tool for /                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help

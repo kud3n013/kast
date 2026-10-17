@@ -41,14 +41,43 @@ impl Dash {
 
 // --- State 0: Systemwide upgrade ------------------------------------------------------
 
-pub fn system_upgrade(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
+/// The upgrade, with a snapshot before (and after) it when `snapshot` and the machine has a
+/// tool for it. If the snapshot fails, the user is asked whether to go on without one; with
+/// no one to ask, the upgrade (and the run) stops. Returns the snapshots taken.
+pub fn system_upgrade(auto: bool, o_start: i64, o_step: i64, o_total: i64, snapshot: bool) -> Result<serde_json::Value> {
     let title = "Systemwide Upgrade (pacman -Syuu)";
     let d = Dash::new(auto, o_start, o_step, o_total, title);
+    let det = crate::snapshot::detect();
+    for w in det.warning() {
+        log("INFO", &w);
+    }
+    let mut pre = None;
+    if snapshot && det.offered() {
+        d.render(0, 2, "Taking a snapshot", &format!("Taking a {} snapshot before upgrading...", det.tool_name()), None);
+        match crate::snapshot::take_pre(&det) {
+            Ok(n) => {
+                log("INFO", &format!("Took {} snapshot {n} before the upgrade", det.tool_name()));
+                pre = Some(n);
+            }
+            Err(e) => {
+                log("WARN", &format!("Snapshot before the upgrade failed: {e:#}"));
+                add_issue(format!("Snapshot before the upgrade failed: {e}"));
+                let go = crate::report::ask(&crate::report::Prompt::yes_no("Taking a snapshot before the upgrade failed. Upgrade without one?", false));
+                if !go {
+                    anyhow::bail!("Upgrade stopped: no snapshot could be taken (kast auto --no-snapshot upgrades without one)");
+                }
+            }
+        }
+    }
     log("INFO", "Starting systemwide upgrade...");
     let started = ctx::now_str("%Y-%m-%dT%H:%M:%S");
     let rc = d.exec_monitored(1, 2, "Refreshing databases & upgrading", pacman(&["-Syuu", "--noconfirm"]));
-    // Not undoable: recorded so the undo screen can say what ran when
-    journal::upgrade(&started, &ctx::now_str("%Y-%m-%dT%H:%M:%S"), serde_json::Value::Null);
+    let snap = match pre {
+        Some(p) => crate::snapshot::record(&det, p, crate::snapshot::take_post(&det, p)),
+        None => serde_json::Value::Null,
+    };
+    // Not undoable by kast: recorded with the snapshots, so the undo screen can say how to roll back
+    journal::upgrade(&started, &ctx::now_str("%Y-%m-%dT%H:%M:%S"), snap.clone());
     let finish = if rc != 0 {
         log("WARN", &format!("pacman -Syuu returned non-zero code ({rc}). Check {} for details.", ctx().log_file.display()));
         add_issue(format!("System upgrade (pacman -Syuu) failed with exit code {rc}"));
@@ -59,6 +88,10 @@ pub fn system_upgrade(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
     d.render(2, 2, "Upgrade Complete", finish, Some("✔"));
     ui::sleep_secs(1.0);
     log("INFO", "Systemwide upgrade completed.");
+    if let Some(h) = crate::snapshot::rollback_hint(&snap) {
+        log("INFO", &h);
+    }
+    Ok(snap)
 }
 
 // --- State 2: Universal data partition --------------------------------------------------
@@ -662,15 +695,21 @@ pub struct Summary {
     /// How the import / export steps went, when they ran
     pub import: Option<String>,
     pub export: Option<String>,
+    /// How to roll the upgrade back, when a snapshot was taken
+    pub rollback: Option<String>,
     pub issues: Vec<String>,
     pub howdy_enrolled: bool,
 }
 
-pub fn run_automatic(list: &PkgList) -> Result<()> {
-    let o_start = run_automatic_steps(list)?;
+/// `kast auto`: the default steps, with a snapshot before the upgrade unless `snapshot` is false.
+pub fn run_automatic(list: &PkgList, snapshot: bool) -> Result<()> {
+    let plan = AutoPlan { snapshot, ..AutoPlan::standard() };
+    let out = run_plan(&plan, Some(list))?;
     ui::restore_terminal_interactive();
     ui::clear_screen();
-    print_summary(&collect_summary(o_start, Some(list)));
+    let mut s = collect_summary(out.start, Some(list));
+    s.rollback = out.rollback;
+    print_summary(&s);
     ui::read_choice("Press Enter to return to master menu...");
     Ok(())
 }
@@ -750,12 +789,14 @@ pub struct AutoPlan {
     pub packages: Option<Vec<String>>,
     pub import: Option<crate::vault::import::ImportOpts>,
     pub export: Option<crate::vault::backup::BackupOpts>,
+    /// Take a snapshot before the upgrade (when the machine has a tool for it)
+    pub snapshot: bool,
 }
 
 impl AutoPlan {
     /// `kast auto`: upgrade, repo, packages, services.
     pub fn standard() -> Self {
-        AutoPlan { steps: Step::ALL.into_iter().filter(|s| s.standard()).collect(), packages: None, import: None, export: None }
+        AutoPlan { steps: Step::ALL.into_iter().filter(|s| s.standard()).collect(), packages: None, import: None, export: None, snapshot: false }
     }
 
     pub fn has(&self, s: Step) -> bool {
@@ -774,11 +815,8 @@ pub struct PlanOutcome {
     pub start: i64,
     pub import: Option<String>,
     pub export: Option<String>,
-}
-
-/// The automatic run's default steps; returns its start time.
-pub fn run_automatic_steps(list: &PkgList) -> Result<i64> {
-    Ok(run_plan(&AutoPlan::standard(), Some(list))?.start)
+    /// How to roll the upgrade back (when a snapshot was taken)
+    pub rollback: Option<String>,
 }
 
 /// Run the plan's steps in order. A failing step records an issue and the run goes on,
@@ -804,7 +842,7 @@ fn run_steps(plan: &AutoPlan, list: Option<&PkgList>, out: &mut PlanOutcome) -> 
         journal::set_step(step.key());
         match step {
             Step::Partition => setup_data_partition(true, o_start, o_step, o_total)?,
-            Step::Upgrade => system_upgrade(true, o_start, o_step, o_total),
+            Step::Upgrade => out.rollback = crate::snapshot::rollback_hint(&system_upgrade(true, o_start, o_step, o_total, plan.snapshot)?),
             Step::Repo => add_kud3n_repo(true, o_start, o_step, o_total)?,
             Step::Packages => match list {
                 Some(l) => install_packages(&l.list, plan.packages.as_deref(), true, o_start, o_step, o_total),
@@ -862,6 +900,7 @@ pub fn plan_summary(plan: &AutoPlan, out: &PlanOutcome, list: Option<&PkgList>) 
     s.skipped = Step::ALL.into_iter().filter(|st| !plan.has(*st)).collect();
     s.import = out.import.clone();
     s.export = out.export.clone();
+    s.rollback = out.rollback.clone();
     s
 }
 
@@ -887,6 +926,7 @@ pub fn collect_summary(o_start: i64, list: Option<&PkgList>) -> Summary {
         skipped: Vec::new(),
         import: None,
         export: None,
+        rollback: None,
         issues: ctx::take_issues(),
         howdy_enrolled: Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file(),
     }
@@ -929,6 +969,9 @@ fn print_summary(s: &Summary) {
     }
     if !s.skipped.is_empty() {
         println!("  • Skipped Steps:      {}", s.skipped.iter().map(|st| st.label()).collect::<Vec<_>>().join(", "));
+    }
+    if let Some(r) = &s.rollback {
+        println!("  • Upgrade Snapshot:   {r}");
     }
     if !issues.is_empty() {
         println!("\n{C_YELLOW}{C_BOLD}Issues:{C_RESET}");

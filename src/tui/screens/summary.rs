@@ -37,6 +37,9 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
     lines.push(field("kud3n repository", repo));
     lines.push(field("Log file", Span::raw(s.log_file.clone())));
     lines.push(field("Package list", Span::raw(crate::tui::screens::packages::sep(theme, &s.packages))));
+    if let Some(r) = &s.rollback {
+        lines.push(field("Upgrade snapshot", Span::raw(r.clone())));
+    }
     for (name, result) in [("Backup", &s.export), ("Restore", &s.import)] {
         if let Some(r) = result {
             let style = if r.starts_with("failed") { theme.error() } else { ratatui::style::Style::new() };

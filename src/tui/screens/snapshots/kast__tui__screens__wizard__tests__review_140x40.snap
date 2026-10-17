@@ -6,7 +6,7 @@ expression: render(&a)
 ╭ Review ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │These steps run in this order, without further questions:                                                                                 │
 │                                                                                                                                          │
-│  1. System upgrade                                                                                                                       │
+│  1. System upgrade: snapshot first                                                                                                       │
 │  2. kud3n's repository                                                                                                                   │
 │  3. Install packages: 35 of 36 apps (left out: zotero-mcp) · Online · kud3n013/kast@main · fetched 04:39 · 36 packages                   │
 │  4. Services                                                                                                                             │

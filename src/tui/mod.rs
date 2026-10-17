@@ -346,6 +346,12 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
                 let _ = tx.send(Event::Loaded(event::Loaded::SnapshotSize { file, bytes }));
             });
         }
+        Command::DetectSnapshots => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Snapshots(crate::snapshot::detect())));
+            });
+        }
         Command::LoadUndo => {
             let tx = tx.clone();
             std::thread::spawn(move || {

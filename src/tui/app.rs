@@ -111,6 +111,8 @@ pub enum Command {
     LoadInstalled(Vec<String>),
     /// Measure what a restore's snapshot would copy (answered with `Loaded::SnapshotSize`)
     SnapshotSize { file: std::path::PathBuf, apps: Vec<String> },
+    /// Look for btrfs and snapshot tools (answered with `Loaded::Snapshots`)
+    DetectSnapshots,
     /// Read the journal (answered with `Loaded::Undo`)
     LoadUndo,
     /// Find the installed apps (answered with `Loaded::Uninstall`)
@@ -171,6 +173,8 @@ pub struct App {
     pub installed: Installed,
     /// The automatic run's choices, kept while the menu shows
     pub wizard: Option<Box<Wizard>>,
+    /// What the machine has for snapshots (looked at once, when the automatic run opens)
+    pub snapshots: Option<crate::snapshot::Detected>,
     /// Folder check for the default folders (tests replace it)
     pub dir_exists: fn(&std::path::Path) -> bool,
     pub quit: bool,
@@ -201,6 +205,7 @@ impl App {
             packages: PkgState::Fetching,
             installed: Installed::Unknown,
             wizard: None,
+            snapshots: None,
             dir_exists: |p| p.is_dir(),
             quit: false,
             last_click: None,
@@ -224,6 +229,7 @@ impl App {
             Screen::Packages(_) => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
             Screen::Undo(s) => s.loading(),
             Screen::Auto(w) => match w.stage {
+                wizard::Stage::Upgrade => self.snapshots.is_none(),
                 wizard::Stage::Apps => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
                 wizard::Stage::Import => w.import.as_ref().is_some_and(|s| s.loading),
                 wizard::Stage::Export => w.export.as_ref().is_some_and(|s| s.loading),
@@ -311,6 +317,10 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
             import::on_snapshot_size(app, file, bytes);
             None
         }
+        Event::Loaded(Loaded::Snapshots(d)) => {
+            wizard::on_detected(app, d);
+            None
+        }
         Event::Loaded(Loaded::Undo(d)) => {
             undo_screen::on_undo(app, *d);
             None
@@ -381,7 +391,7 @@ fn on_job(app: &mut App, m: JobMsg) -> Option<Command> {
             }
             Ok(Outcome::Summary(s)) => {
                 app.toast = None;
-                app.screen = Screen::Summary(Box::new(s));
+                app.screen = Screen::Summary(s);
             }
             Ok(outcome) => {
                 let stale_lock = matches!(outcome, Outcome::CanceledStaleLock(_));
@@ -934,8 +944,8 @@ pub mod tests {
         assert!(matches!(a.screen, Screen::Run(_)));
         assert_eq!(a.menu.selected, 2);
         let mut a = app(80, 24);
-        // The automatic run starts with its step list, not the job
-        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        // The automatic run starts with its step list (and a look for snapshot tools), not the job
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::DetectSnapshots)));
         assert!(matches!(&a.screen, Screen::Auto(w) if w.stage == wizard::Stage::Steps));
         assert!(!a.quit);
     }
@@ -1148,7 +1158,9 @@ pub mod tests {
         a.now = 1000;
         update(&mut a, key(KeyCode::Char('1')));
         loaded(&mut a, online_list());
-        // Steps → apps → review → start
+        update(&mut a, Event::Loaded(Loaded::Snapshots(crate::snapshot::test_cases()[0].1.clone())));
+        // Steps → upgrade → apps → review → start
+        update(&mut a, key(KeyCode::Enter));
         update(&mut a, key(KeyCode::Enter));
         update(&mut a, key(KeyCode::Enter));
         assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Start(JobKind::Auto(..)))));
@@ -1299,6 +1311,7 @@ pub mod tests {
             skipped: Vec::new(),
             import: None,
             export: None,
+            rollback: None,
             issues,
             howdy_enrolled: howdy,
         }
@@ -1307,7 +1320,7 @@ pub mod tests {
     #[test]
     fn auto_run_ends_on_summary_and_log_returns_there() {
         let mut a = running_auto(80, 24);
-        job(&mut a, JobMsg::Done(Ok(Outcome::Summary(summary(vec![], true)))));
+        job(&mut a, JobMsg::Done(Ok(Outcome::Summary(Box::new(summary(vec![], true))))));
         assert!(matches!(a.screen, Screen::Summary(_)));
         assert!(matches!(update(&mut a, key(KeyCode::Char('l'))), Some(Command::OpenLog)));
         update(&mut a, Event::Loaded(Loaded::Log(vec!["[x] [INFO] hello".into()])));

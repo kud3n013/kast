@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/wizard.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ System upgrade ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│⚠ System upgrades can't be undone by kast.                                                                                                │
+│                                                                                                                                          │
+│/ is btrfs with Timeshift (btrfs mode): kast can take a snapshot before the upgrade, to restore from.                                     │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Before the upgrade · 1 of 1 selected ────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│❯ [x] Take a snapshot before upgrading (timeshift)                                                                                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help

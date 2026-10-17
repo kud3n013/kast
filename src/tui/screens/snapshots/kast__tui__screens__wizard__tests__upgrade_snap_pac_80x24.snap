@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/wizard.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ System upgrade ──────────────────────────────────────────────────────────────╮
+│⚠ System upgrades can't be undone by kast.                                    │
+│                                                                              │
+│/ is btrfs with snapper: kast can take a snapshot before the upgrade (and one │
+│after), to roll back to.                                                      │
+│                                                                              │
+│snap-pac is installed and already takes snapshots around every pacman run, so │
+│kast's own is off by default.                                                 │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Before the upgrade · 0 of 1 selected ────────────────────────────────────────╮
+│❯ [ ] Take a snapshot before upgrading (snapper)                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help

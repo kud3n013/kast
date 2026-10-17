@@ -26,6 +26,8 @@ use crate::vault::import::ImportOpts;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Steps,
+    /// The upgrade can't be undone: say so, offer a snapshot
+    Upgrade,
     Apps,
     Import,
     Export,
@@ -44,6 +46,8 @@ pub struct Wizard {
     pub export_opts: Option<BackupOpts>,
     /// Review: Start (true) or Back highlighted
     pub start_focused: bool,
+    /// "Take a snapshot before upgrading", built once the machine was looked at
+    pub snap: Option<Checklist>,
 }
 
 /// The checklist label, what the step does and what it changes.
@@ -111,7 +115,27 @@ impl Wizard {
             import_opts: None,
             export_opts: None,
             start_focused: true,
+            snap: None,
         }
+    }
+
+    /// The snapshot checkbox for what the machine has (on by default unless snap-pac).
+    pub fn set_detected(&mut self, d: &crate::snapshot::Detected) {
+        if self.snap.is_some() {
+            return;
+        }
+        let label = if d.offered() { format!("Take a snapshot before upgrading ({})", d.tool_name()) } else { "Take a snapshot before upgrading".into() };
+        let mut it = Item::new("snapshot", label, d.default_on());
+        if !d.offered() {
+            it.enabled = false;
+            it.checked = false;
+            it.note = Some("no snapshot tool for /".into());
+        }
+        self.snap = Some(Checklist::new(vec![Row::Item(it)]));
+    }
+
+    fn snapshot_on(&self) -> bool {
+        self.snap.as_ref().and_then(|c| c.item("snapshot")).is_some_and(Item::selected)
     }
 
     pub fn chosen(&self) -> Vec<Step> {
@@ -145,6 +169,9 @@ impl Wizard {
     /// The stages for the steps now checked, in order.
     pub fn stages(&self) -> Vec<Stage> {
         let mut v = vec![Stage::Steps];
+        if self.has(Step::Upgrade) {
+            v.push(Stage::Upgrade);
+        }
         if self.has(Step::Packages) {
             v.push(Stage::Apps);
         }
@@ -165,6 +192,7 @@ impl Wizard {
             packages: if steps.contains(&Step::Packages) { self.apps.selection() } else { None },
             import: if steps.contains(&Step::Import) { self.import_opts.clone() } else { None },
             export: if steps.contains(&Step::Export) { self.export_opts.clone() } else { None },
+            snapshot: steps.contains(&Step::Upgrade) && self.snapshot_on(),
             steps,
         }
     }
@@ -183,9 +211,24 @@ fn wiz(app: &mut App) -> Option<&mut Wizard> {
 
 /// Menu option 1: the step list, as it was left the last time.
 pub fn open(app: &mut App) -> Option<Command> {
-    let w = app.wizard.take().unwrap_or_default();
+    let mut w = app.wizard.take().unwrap_or_default();
+    let cmd = match &app.snapshots {
+        Some(d) => {
+            w.set_detected(d);
+            None
+        }
+        None => Some(Command::DetectSnapshots),
+    };
     app.screen = Screen::Auto(w);
-    None
+    cmd
+}
+
+/// The machine was looked at for snapshot tools.
+pub fn on_detected(app: &mut App, d: crate::snapshot::Detected) {
+    if let Screen::Auto(w) = &mut app.screen {
+        w.set_detected(&d);
+    }
+    app.snapshots = Some(d);
 }
 
 /// Leave to the menu, keeping the choices for the next visit.
@@ -222,6 +265,10 @@ pub fn next(app: &mut App) -> Option<Command> {
     match w.stage {
         Stage::Steps if w.chosen().is_empty() => {
             app.toast(ToastKind::Error, "Check at least one step");
+            return None;
+        }
+        Stage::Upgrade if w.snap.is_none() => {
+            app.toast(ToastKind::Info, "Still checking for snapshot tools");
             return None;
         }
         Stage::Apps => match &w.apps.picker {
@@ -270,6 +317,9 @@ pub fn back(app: &mut App) {
 /// "Skip it" on the empty-apps question: drop the packages step and go on.
 pub fn skip_packages(app: &mut App) -> Option<Command> {
     let w = wiz(app)?;
+    // The stage that came after the apps stage
+    let old = w.stages();
+    let to = old.iter().position(|s| *s == Stage::Apps).and_then(|i| old.get(i + 1)).copied().unwrap_or(Stage::Review);
     if let Some(it) = w.steps.item_mut(Step::Packages.key()) {
         it.checked = false;
     }
@@ -278,10 +328,6 @@ pub fn skip_packages(app: &mut App) -> Option<Command> {
         app.toast(ToastKind::Error, "No steps left: check at least one");
         return None;
     }
-    // From the apps stage's place: the stage after it
-    w.stage = Stage::Steps;
-    let stages = w.stages();
-    let to = stages.into_iter().nth(1).unwrap_or(Stage::Review);
     enter(app, to)
 }
 
@@ -313,6 +359,29 @@ fn start(app: &mut App) -> Option<Command> {
 pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
     let stage = wiz(app)?.stage;
     match stage {
+        Stage::Upgrade => {
+            let w = wiz(app)?;
+            let outcome = match &mut w.snap {
+                Some(c) => c.key(&k, 4),
+                None => match k.code {
+                    KeyCode::Enter => Outcome::Confirm,
+                    KeyCode::Esc => Outcome::Back,
+                    _ => Outcome::Ignored,
+                },
+            };
+            match outcome {
+                Outcome::Confirm => next(app),
+                Outcome::Back => {
+                    back(app);
+                    None
+                }
+                Outcome::Ignored if k.code == KeyCode::Char('q') => {
+                    back(app);
+                    None
+                }
+                _ => None,
+            }
+        }
         Stage::Apps => packages::key(app, k),
         Stage::Import => import::key(app, k),
         Stage::Export => export::key(app, k),
@@ -370,7 +439,7 @@ pub fn mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             }
             None
         }
-        Stage::Review => None,
+        Stage::Review | Stage::Upgrade => None,
     }
 }
 
@@ -400,12 +469,38 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, w: &Wizard) {
                 export::view(f, body, app, st);
             }
         }
-        Stage::Steps => steps_view(f, body, &app.theme, w),
+        Stage::Steps => steps_view(f, body, app, w),
+        Stage::Upgrade => upgrade_view(f, body, app, w),
         Stage::Review => review_view(f, body, app, w),
     }
 }
 
-fn steps_view(f: &mut Frame, body: Rect, theme: &Theme, w: &Wizard) {
+/// What the machine has for the upgrade, and the snapshot checkbox.
+fn upgrade_view(f: &mut Frame, body: Rect, app: &App, w: &Wizard) {
+    let theme = &app.theme;
+    let [text, list] = Layout::vertical([Constraint::Min(4), Constraint::Length(3)]).areas(body);
+    let mut lines = Vec::new();
+    match &app.snapshots {
+        None => lines.push(Line::styled(
+            format!("{} Checking for btrfs and snapshot tools{}", theme.sym.spinner[app.frame % theme.sym.spinner.len()], theme.sym.ellipsis),
+            theme.dim(),
+        )),
+        Some(d) => {
+            for (i, l) in d.warning().into_iter().enumerate() {
+                lines.push(if i == 0 { Line::styled(format!("{} {l}", theme.sym.warn), theme.warn().patch(theme.bold())) } else { Line::raw(l) });
+                lines.push(Line::raw(""));
+            }
+        }
+    }
+    f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true }).block(block(theme, " System upgrade ")), text);
+    match &w.snap {
+        Some(c) => c.view(f, list, theme, "Before the upgrade"),
+        None => f.render_widget(Paragraph::new("").block(block(theme, " Before the upgrade ")), list),
+    }
+}
+
+fn steps_view(f: &mut Frame, body: Rect, app: &App, w: &Wizard) {
+    let theme = &app.theme;
     let (list, details) = layout(body);
     w.steps.view(f, list, theme, "Automatic setup: steps");
     let mut lines = Vec::new();
@@ -419,6 +514,10 @@ fn steps_view(f: &mut Frame, body: Rect, theme: &Theme, w: &Wizard) {
         lines.push(Line::raw(about));
         lines.push(field("Changes:    ", changes));
         lines.push(field("Needs root: ", "yes (kast already runs as root)"));
+        if step == Step::Upgrade {
+            let warn = app.snapshots.as_ref().map_or_else(|| vec!["System upgrades can't be undone by kast.".to_string()], |d| d.warning());
+            lines.extend(warn.into_iter().map(|l| Line::styled(l, theme.warn())));
+        }
         let next = match step {
             Step::Packages => "Next: pick the apps.",
             Step::Import => "Next: pick the backup and what to restore.",
@@ -464,6 +563,13 @@ pub fn review_lines(theme: &Theme, w: &Wizard) -> Vec<Line<'static>> {
                 }
                 None => String::new(),
             },
+            Step::Upgrade => {
+                if plan.snapshot {
+                    "snapshot first".into()
+                } else {
+                    "no snapshot (can't be undone by kast)".into()
+                }
+            }
             Step::Export => match &plan.export {
                 Some(o) => format!("{} → {}", o.target, o.output.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
                 None => String::new(),
@@ -503,6 +609,7 @@ fn review_view(f: &mut Frame, body: Rect, app: &App, w: &Wizard) {
 pub fn hints(app: &App, w: &Wizard) -> &'static [(&'static str, &'static str)] {
     match w.stage {
         Stage::Steps => &[("Space", "toggle"), ("Enter", "continue"), ("Esc", "back"), ("?", "help"), ("a", "all"), ("n", "none"), ("i", "invert")],
+        Stage::Upgrade => &[("Space", "toggle"), ("Enter", "continue"), ("Esc", "back"), ("?", "help")],
         Stage::Apps => packages::hints(app),
         Stage::Import => w.import.as_ref().map_or(&[], import::hints),
         Stage::Export => w.export.as_ref().map_or(&[], export::hints),
@@ -513,6 +620,7 @@ pub fn hints(app: &App, w: &Wizard) -> &'static [(&'static str, &'static str)] {
 pub fn help(w: &Wizard) -> (&'static str, &'static [(&'static str, &'static str)]) {
     match w.stage {
         Stage::Steps => ("Automatic setup: steps", &STEPS_HELP),
+        Stage::Upgrade => ("System upgrade", &UPGRADE_HELP),
         Stage::Apps => ("Apps to install", &packages::HELP),
         Stage::Import => ("Backup to restore", &import::HELP),
         Stage::Export => ("Back up", &export::HELP),
@@ -529,6 +637,9 @@ pub const STEPS_HELP: [(&str, &str); 7] = [
     ("Enter", "Continue: a stage for each checked step that needs choices, then a review"),
     ("Esc  q", "Back to the menu (your choices are kept)"),
 ];
+
+pub const UPGRADE_HELP: [(&str, &str); 3] =
+    [("Space", "Take a snapshot before upgrading, or not"), ("Enter", "Continue"), ("Esc  q", "Back to the steps (choices are kept)")];
 
 pub const REVIEW_HELP: [(&str, &str); 4] =
     [("Enter", "Start, or Back when highlighted"), ("←/→  Tab", "Switch between Start and Back"), ("s", "Start"), ("Esc  q", "Back to the previous stage")];
@@ -553,10 +664,19 @@ mod tests {
 
     fn opened(width: u16, height: u16) -> App {
         let mut a = app(width, height);
-        assert!(update(&mut a, key(KeyCode::Char('1'))).is_none(), "option 1 doesn't start a job any more");
+        assert!(matches!(update(&mut a, key(KeyCode::Char('1'))), Some(Command::DetectSnapshots)), "option 1 doesn't start a job any more");
+        update(&mut a, Event::Loaded(Loaded::Snapshots(crate::snapshot::test_cases()[0].1.clone())));
         loaded(&mut a, online_list());
         installed(&mut a, &["zotero"]);
         a
+    }
+
+    /// Steps → (upgrade) → the next stage.
+    fn past_steps(a: &mut App) {
+        update(a, key(KeyCode::Enter));
+        if w(a).stage == Stage::Upgrade {
+            update(a, key(KeyCode::Enter));
+        }
     }
 
     /// Check or uncheck the step with this key.
@@ -572,8 +692,8 @@ mod tests {
     fn defaults_are_the_standard_run() {
         let a = opened(80, 24);
         assert_eq!(w(&a).chosen(), [Step::Upgrade, Step::Repo, Step::Packages, Step::Services]);
-        assert_eq!(w(&a).stages(), [Stage::Steps, Stage::Apps, Stage::Review]);
-        assert_eq!(w(&a).plan(), AutoPlan::standard());
+        assert_eq!(w(&a).stages(), [Stage::Steps, Stage::Upgrade, Stage::Apps, Stage::Review]);
+        assert_eq!(w(&a).plan(), AutoPlan { snapshot: true, ..AutoPlan::standard() }, "snapper without snap-pac: a snapshot by default");
     }
 
     #[test]
@@ -586,7 +706,7 @@ mod tests {
 
         // Packages on, no app checked: offer to skip the step instead of running it empty
         let mut a = opened(80, 24);
-        update(&mut a, key(KeyCode::Enter));
+        past_steps(&mut a);
         assert_eq!(w(&a).stage, Stage::Apps);
         update(&mut a, key(KeyCode::Char('n')));
         update(&mut a, key(KeyCode::Enter));
@@ -607,7 +727,7 @@ mod tests {
         flip(&mut a, Step::Export);
         flip(&mut a, Step::Import);
         flip(&mut a, Step::Upgrade);
-        assert_eq!(w(&a).stages(), [Stage::Steps, Stage::Apps, Stage::Import, Stage::Export, Stage::Review]);
+        assert_eq!(w(&a).stages(), [Stage::Steps, Stage::Apps, Stage::Import, Stage::Export, Stage::Review], "no upgrade, no upgrade stage");
 
         // Apps: leave gimp out
         update(&mut a, key(KeyCode::Enter));
@@ -717,6 +837,12 @@ mod tests {
         update(&mut a, key(KeyCode::Char('1')));
         flip(&mut a, Step::Packages);
         update(&mut a, key(KeyCode::Enter));
+        assert_eq!(w(&a).stage, Stage::Upgrade);
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        assert_eq!(w(&a).stage, Stage::Upgrade, "waits for the snapshot check");
+        update(&mut a, Event::Loaded(Loaded::Snapshots(crate::snapshot::test_cases()[4].1.clone())));
+        assert!(!w(&a).snap.as_ref().unwrap().item("snapshot").unwrap().enabled, "ext4: nothing to take it with");
+        update(&mut a, key(KeyCode::Enter));
         assert_eq!(w(&a).stage, Stage::Review);
         let Some(Command::Start(JobKind::Auto(None, plan))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a start") };
         assert_eq!(plan.steps, [Step::Upgrade, Step::Repo, Step::Services]);
@@ -730,13 +856,35 @@ mod tests {
             let mut a = opened(wd, h);
             flip(&mut a, Step::Partition);
             insta::assert_snapshot!(format!("steps_{wd}x{h}"), render(&a));
-            update(&mut a, key(KeyCode::Enter));
+            past_steps(&mut a);
             update(&mut a, key(KeyCode::Char('n')));
             update(&mut a, key(KeyCode::Char('a')));
             update(&mut a, key(KeyCode::End));
             update(&mut a, key(KeyCode::Char(' ')));
             update(&mut a, key(KeyCode::Enter));
             insta::assert_snapshot!(format!("review_{wd}x{h}"), render(&a));
+        }
+    }
+
+    #[test]
+    fn upgrade_warning_for_each_machine() {
+        for (name, d) in crate::snapshot::test_cases() {
+            for (wd, h) in [(80, 24), (140, 40)] {
+                let mut a = app(wd, h);
+                update(&mut a, key(KeyCode::Char('1')));
+                update(&mut a, Event::Loaded(Loaded::Snapshots(d.clone())));
+                update(&mut a, key(KeyCode::Enter));
+                assert_eq!(w(&a).stage, Stage::Upgrade);
+                let out = render(&a);
+                assert!(out.contains("System upgrades can't be undone by kast."), "{name}");
+                insta::assert_snapshot!(format!("upgrade_{name}_{wd}x{h}"), out);
+                // The choice ends up in the plan
+                assert_eq!(w(&a).plan().snapshot, d.default_on(), "{name}");
+                if d.offered() {
+                    update(&mut a, key(KeyCode::Char(' ')));
+                    assert_eq!(w(&a).plan().snapshot, !d.default_on(), "{name}");
+                }
+            }
         }
     }
 }

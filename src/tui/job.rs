@@ -214,7 +214,7 @@ fn run_job(kind: JobKind) -> Result<Outcome> {
                 report::log(Level::Info, &format!("Package list: {}", l.source_line()));
             }
             let out = setup::run_plan(&plan, list.as_deref())?;
-            Outcome::Summary(setup::plan_summary(&plan, &out, list.as_deref()))
+            Outcome::Summary(Box::new(setup::plan_summary(&plan, &out, list.as_deref())))
         }
         JobKind::Partition => {
             setup::setup_data_partition(false, 0, 1, 1)?;

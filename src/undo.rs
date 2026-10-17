@@ -275,13 +275,9 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
 
 /// How to roll the upgrade back, when a snapshot was taken.
 pub fn upgrade_hint(snapshot: &Value) -> String {
-    match (snapshot["tool"].as_str(), snapshot["pre"].as_u64(), snapshot["post"].as_u64()) {
-        (Some("snapper"), Some(pre), post) => {
-            let range = post.map_or(String::new(), |p| format!(", or file by file: sudo snapper -c root undochange {pre}..{p}"));
-            format!("not undoable by kast; roll back with: sudo snapper -c root rollback {pre} and reboot{range}")
-        }
-        (Some("timeshift"), ..) => "not undoable by kast; roll back with: sudo timeshift --restore (pick the \"kast before upgrade\" snapshot)".into(),
-        _ => "System upgrades can't be undone by kast".into(),
+    match crate::snapshot::rollback_hint(snapshot) {
+        Some(h) => format!("not undoable by kast. {h}"),
+        None => "System upgrades can't be undone by kast".into(),
     }
 }
 
