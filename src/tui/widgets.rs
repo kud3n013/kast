@@ -83,7 +83,7 @@ pub fn toast(f: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Rows `text` takes when word-wrapped at `width` columns.
-fn wrapped_rows(text: &str, width: usize) -> usize {
+pub fn wrapped_rows(text: &str, width: usize) -> usize {
     let (mut rows, mut col) = (1, 0);
     for word in text.split(' ') {
         let n = word.chars().count();

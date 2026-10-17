@@ -182,6 +182,10 @@ pub struct Options {
     pub dry_run: bool,
     /// Highlighted row: choices, then the 3 toggles, then Start
     pub focus: usize,
+    /// Size of what the snapshot would copy (None: still measuring)
+    pub snap_bytes: Option<u64>,
+    /// Turning the snapshot off asked once: the next Space confirms it
+    pub confirm_off: bool,
 }
 
 impl Options {
@@ -197,7 +201,7 @@ impl Options {
         for k in keys.iter().filter(|k| !matches!(**k, "kde" | "hypr")) {
             choices.push((format!("Only {k}"), Some(k.to_string())));
         }
-        Options { file, inspected, choices, choice: 0, kill: true, safety: true, dry_run: false, focus: 0 }
+        Options { file, inspected, choices, choice: 0, kill: true, safety: true, dry_run: false, focus: 0, snap_bytes: None, confirm_off: false }
     }
 
     fn rows(&self) -> usize {
@@ -218,7 +222,7 @@ impl Options {
         }
     }
 
-    fn apps(&self) -> Vec<String> {
+    pub fn apps(&self) -> Vec<String> {
         match &self.choices[self.choice].1 {
             Some(a) => vec![a.clone()],
             None => self.inspected.info.apps.iter().map(|a| a.key.clone()).collect(),
@@ -407,11 +411,24 @@ pub fn on_inspected(app: &mut App, path: PathBuf, pick: bool, result: Result<Opt
             if st.mode == Mode::Inspect {
                 st.preview = Some((path, Ok(Some(ins))));
             } else {
-                st.stage = Stage::Options(Box::new(Options::new(path, ins)));
+                let o = Options::new(path.clone(), ins);
+                let apps = o.inspected.info.apps.iter().map(|a| a.key.clone()).collect();
+                st.stage = Stage::Options(Box::new(o));
+                return Some(Command::SnapshotSize { file: path, apps });
             }
         }
     }
     None
+}
+
+/// The size of what the snapshot would copy.
+pub fn on_snapshot_size(app: &mut App, file: PathBuf, bytes: u64) {
+    if let Some(st) = state(app)
+        && let Stage::Options(o) = &mut st.stage
+        && o.file == file
+    {
+        o.snap_bytes = Some(bytes);
+    }
 }
 
 pub fn on_completion(app: &mut App, value: String, matches: Vec<String>) {
@@ -544,6 +561,14 @@ fn options_key(app: &mut App, k: KeyEvent) -> Option<Command> {
     let n = o.rows();
     let n_choices = o.choices.len();
     match k.code {
+        // A pending "go without a snapshot?" is dropped by anything but its Space
+        _ if o.confirm_off && k.code != KeyCode::Char(' ') => {
+            o.confirm_off = false;
+            if matches!(k.code, KeyCode::Esc | KeyCode::Char('q')) {
+                return None;
+            }
+            return options_key(app, k);
+        }
         KeyCode::Up | KeyCode::Char('k') => o.focus = o.focus.checked_sub(1).unwrap_or(n - 1),
         KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => o.focus = (o.focus + 1) % n,
         KeyCode::Home => o.focus = 0,
@@ -560,7 +585,13 @@ fn options_key(app: &mut App, k: KeyEvent) -> Option<Command> {
             } else if f == n_choices {
                 o.kill = !o.kill;
             } else if f == n_choices + 1 {
-                o.safety = !o.safety;
+                // Off only after the warning was shown once: this restore couldn't be undone
+                if o.safety && !o.confirm_off {
+                    o.confirm_off = true;
+                } else {
+                    o.safety = !o.safety;
+                    o.confirm_off = false;
+                }
             } else if f == n_choices + 2 {
                 o.dry_run = !o.dry_run;
             } else {
@@ -851,6 +882,12 @@ pub fn manifest_lines<'a>(theme: &Theme, info: &'a InfoReport) -> Vec<Line<'a>> 
     lines
 }
 
+/// The folders a restore of the chosen apps overwrites.
+fn overwritten(o: &Options) -> Vec<String> {
+    let apps = o.apps();
+    o.inspected.destinations.iter().filter(|(a, _)| apps.contains(a)).flat_map(|(_, d)| d.clone()).collect()
+}
+
 fn options_view(f: &mut Frame, body: Rect, theme: &Theme, o: &Options, auto: bool) {
     let wide = body.width >= 100;
     let (list_area, panel) = if wide {
@@ -858,6 +895,27 @@ fn options_view(f: &mut Frame, body: Rect, theme: &Theme, o: &Options, auto: boo
         (l, Some(p))
     } else {
         (body, None)
+    };
+    // Under the options: what declining the snapshot means
+    let warning = if o.confirm_off {
+        Some(format!(
+            "{} Without a snapshot this import cannot be undone: your current data in {} will be overwritten permanently. Press Space again to go without it, Esc to keep it.",
+            theme.sym.warn,
+            overwritten(o).join(", ")
+        ))
+    } else if !o.safety {
+        Some(format!("{} No snapshot: this import cannot be undone.", theme.sym.warn))
+    } else {
+        None
+    };
+    let list_area = match &warning {
+        Some(w) => {
+            let rows = crate::tui::widgets::wrapped_rows(w, list_area.width.saturating_sub(2) as usize) as u16 + 2;
+            let [l, wa] = Layout::vertical([Constraint::Min(4), Constraint::Length(rows.min(list_area.height / 2))]).areas(list_area);
+            f.render_widget(Paragraph::new(w.clone()).style(theme.error()).wrap(Wrap { trim: true }).block(block(theme, " Snapshot ")), wa);
+            l
+        }
+        None => list_area,
     };
     let mut items: Vec<ListItem> = o
         .choices
@@ -870,7 +928,11 @@ fn options_view(f: &mut Frame, body: Rect, theme: &Theme, o: &Options, auto: boo
         .collect();
     let toggle = |on: bool, label: &str| ListItem::new(format!("{} {label}", if on { theme.sym.on } else { theme.sym.off }));
     items.push(toggle(o.kill, "Close running apps first"));
-    items.push(toggle(o.safety, "Keep a safety snapshot of the current files"));
+    let size = match o.snap_bytes {
+        None => format!("measuring{}", theme.sym.ellipsis),
+        Some(b) => format!("≈ {}, ~{} s", crate::undo::human(b), (b / 150_000_000).max(1)),
+    };
+    items.push(toggle(o.safety, &format!("Snapshot your current app data before importing? ({size})")));
     items.push(toggle(o.dry_run, "Dry run (change nothing)"));
     let start = match (auto, o.dry_run) {
         (true, false) => "Use this restore",
@@ -1004,13 +1066,19 @@ mod tests {
         let Stage::Options(o) = &st(&a).stage else { panic!("no options") };
         let labels: Vec<&str> = o.choices.iter().map(|(l, _)| l.as_str()).collect();
         assert_eq!(labels, ["All applications & desktop settings (recommended)", "KDE Plasma settings only", "Only beeper", "Only zen"]);
-        // Choose "KDE only", turn off the safety snapshot, start
+        // Choose "KDE only", turn off the safety snapshot (asked twice), start
         update(&mut a, key(KeyCode::Down));
         update(&mut a, key(KeyCode::Char(' ')));
         for _ in 0..4 {
             update(&mut a, key(KeyCode::Down));
         }
         update(&mut a, key(KeyCode::Char(' ')));
+        let Stage::Options(o) = &st(&a).stage else { panic!() };
+        assert!(o.safety && o.confirm_off, "the first Space only warns");
+        assert!(render(&a).contains("cannot be undone"));
+        update(&mut a, key(KeyCode::Char(' ')));
+        let Stage::Options(o) = &st(&a).stage else { panic!() };
+        assert!(!o.safety && !o.confirm_off);
         update(&mut a, key(KeyCode::Char('s')));
         let m = a.modal.as_ref().unwrap();
         assert!(!m.yes_selected);
@@ -1212,5 +1280,43 @@ mod tests {
         assert_eq!(complete_path(&abs, home).0, format!("{abs}.zip"));
         assert_eq!(complete_path("~/nothing", home), ("~/nothing".to_string(), vec![]));
         assert_eq!(complete_path("~/.hi", home).0, "~/.hidden");
+    }
+
+    #[test]
+    fn snapshot_question_has_a_size_and_esc_keeps_it() {
+        let mut a = loaded(80, 24);
+        let Some(Command::Inspect { path, .. }) = update(&mut a, key(KeyCode::Enter)) else { panic!() };
+        let Some(Command::SnapshotSize { file, apps }) = update(&mut a, Event::Loaded(Loaded::Inspected { path, pick: true, result: Ok(Some(inspected())) }))
+        else {
+            panic!("the size is measured off the UI thread")
+        };
+        assert_eq!(apps, ["beeper", "zen", "kde"]);
+        assert!(render(&a).contains("before importing? (measuring…)"));
+        update(&mut a, Event::Loaded(Loaded::SnapshotSize { file, bytes: 1_288_490_189 }));
+        let out = render(&a);
+        assert!(out.contains("Snapshot your current app data before importing? (≈ 1.2 GiB, ~8 s)"), "{out}");
+        insta::assert_snapshot!("import_snapshot_question_80x24", out);
+        // Space warns, Esc keeps the snapshot (and stays on the options)
+        for _ in 0..5 {
+            update(&mut a, key(KeyCode::Down));
+        }
+        update(&mut a, key(KeyCode::Char(' ')));
+        insta::assert_snapshot!("import_no_snapshot_warning_80x24", render(&a));
+        update(&mut a, key(KeyCode::Esc));
+        let Stage::Options(o) = &st(&a).stage else { panic!("still on the options") };
+        assert!(o.safety && !o.confirm_off);
+    }
+
+    #[test]
+    fn snapshot_warning_140x40() {
+        let mut a = loaded(140, 40);
+        let Some(Command::Inspect { path, .. }) = update(&mut a, key(KeyCode::Enter)) else { panic!() };
+        update(&mut a, Event::Loaded(Loaded::Inspected { path: path.clone(), pick: true, result: Ok(Some(inspected())) }));
+        update(&mut a, Event::Loaded(Loaded::SnapshotSize { file: path, bytes: 52_428_800 }));
+        for _ in 0..5 {
+            update(&mut a, key(KeyCode::Down));
+        }
+        update(&mut a, key(KeyCode::Char(' ')));
+        insta::assert_snapshot!("import_no_snapshot_warning_140x40", render(&a));
     }
 }

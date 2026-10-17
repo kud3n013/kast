@@ -41,6 +41,10 @@ pub enum Loaded {
         targets: Vec<TargetInfo>,
         ts: String,
     },
+    SnapshotSize {
+        file: PathBuf,
+        bytes: u64,
+    },
     Undo(Box<crate::tui::screens::undo::UndoData>),
     Uninstall(Box<crate::tui::screens::undo::UninstallData>),
     /// Bytes freed by a prune

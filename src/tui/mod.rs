@@ -339,6 +339,13 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
                 let _ = tx.send(Event::Loaded(event::Loaded::Candidates(screens::import::load_candidates(&dir, &user, zips_only))));
             });
         }
+        Command::SnapshotSize { file, apps } => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let bytes = crate::vault::import::bytes_of(&crate::vault::import::snapshot_paths(&apps));
+                let _ = tx.send(Event::Loaded(event::Loaded::SnapshotSize { file, bytes }));
+            });
+        }
         Command::LoadUndo => {
             let tx = tx.clone();
             std::thread::spawn(move || {

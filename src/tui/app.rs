@@ -109,6 +109,8 @@ pub enum Command {
     LoadCandidates { dir: std::path::PathBuf, user: String, zips_only: bool },
     /// Which of these packages are installed (answered with `Loaded::Installed`)
     LoadInstalled(Vec<String>),
+    /// Measure what a restore's snapshot would copy (answered with `Loaded::SnapshotSize`)
+    SnapshotSize { file: std::path::PathBuf, apps: Vec<String> },
     /// Read the journal (answered with `Loaded::Undo`)
     LoadUndo,
     /// Find the installed apps (answered with `Loaded::Uninstall`)
@@ -304,6 +306,10 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
             app.packages = PkgState::Ready(std::sync::Arc::new(*pl));
             app.installed = Installed::Unknown;
             packages::sync(app)
+        }
+        Event::Loaded(Loaded::SnapshotSize { file, bytes }) => {
+            import::on_snapshot_size(app, file, bytes);
+            None
         }
         Event::Loaded(Loaded::Undo(d)) => {
             undo_screen::on_undo(app, *d);

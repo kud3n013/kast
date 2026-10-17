@@ -73,6 +73,40 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
     }
 }
 
+/// What a restore of `apps` would overwrite that exists now (what its safety snapshot copies).
+pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
+    let c = ctx();
+    let mut out = Vec::new();
+    for app in apps {
+        match app.as_str() {
+            "howdy" => out.push(PathBuf::from(HOWDY_MODELS_DIR)),
+            "kde" => out.extend(crate::vault::kde_existing_paths()),
+            other => {
+                if let Some(spec) = restore_spec(other) {
+                    out.push(c.config_home.join(spec.folder));
+                }
+            }
+        }
+    }
+    out.retain(|p| p.exists());
+    out
+}
+
+/// Total size of `paths` in bytes (`du -sbc`; runs off the UI thread).
+pub fn bytes_of(paths: &[PathBuf]) -> u64 {
+    if paths.is_empty() {
+        return 0;
+    }
+    let out = Command::new("du").arg("-sbc").args(paths).stderr(Stdio::null()).output();
+    out.ok().and_then(|o| String::from_utf8_lossy(&o.stdout).lines().last().and_then(|l| l.split_whitespace().next()).and_then(|n| n.parse().ok())).unwrap_or(0)
+}
+
+/// The warning for a restore without a safety snapshot.
+pub fn no_snapshot_warning(apps: &[String]) -> String {
+    let folders: Vec<String> = apps.iter().flat_map(|a| restore_destinations(a)).collect();
+    format!("Without a snapshot this import cannot be undone: your current data in {} will be overwritten permanently.", folders.join(", "))
+}
+
 fn chmod(path: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(mode))?;
@@ -289,6 +323,9 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
         log_info(&format!("Auto-detected apps in archive: {C_BOLD}{}{C_RESET}", apps.join(" ")));
     }
 
+    if !o.safety_backup && !o.dry_run {
+        log_warn(&no_snapshot_warning(&apps));
+    }
     let safety_dir = safety_backup_dir();
     let rollback = safety_dir.join(format!("safety_rollback_{}", ctx::now_str("%Y-%m-%d_%H%M%S")));
     if !o.dry_run {

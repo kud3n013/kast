@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/import.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore all_backup_2026-10-16_210400.zip ────────────────────────────────────╮
+│❯ (•) All applications & desktop settings (recommended)                       │
+│  ( ) KDE Plasma settings only                                                │
+│  ( ) Only beeper                                                             │
+│  ( ) Only zen                                                                │
+│  [x] Close running apps first                                                │
+│  [x] Snapshot your current app data before importing? (≈ 1.2 GiB, ~8 s)      │
+│  [ ] Dry run (change nothing)                                                │
+│  ▶ Start restore                                                             │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Space toggle  Enter choose  s start  Esc back  ? help

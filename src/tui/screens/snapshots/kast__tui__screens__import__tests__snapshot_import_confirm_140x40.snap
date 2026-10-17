@@ -9,7 +9,7 @@ expression: render(&a)
 │  ( ) Only beeper                                                   ││Target    all                                                       │
 │  ( ) Only zen                                                      ││Media     true                                                      │
 │  [x] Close running apps first                                      ││Size      1.2G                                                      │
-│  [x] Keep a safety snapshot of the current files                   ││                                                                    │
+│  [x] Snapshot your current app data before importing? (measuring…) ││                                                                    │
 │  [ ] Dry run (change nothing)                                      ││Contains 3 item(s):                                                 │
 │  ▶ Start restore                                                   ││• BEEPER                                                            │
 │                                                                    ││    Folder:      ~/.config/BeeperTexts                              │
