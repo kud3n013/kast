@@ -108,6 +108,12 @@ pub enum Command {
     OpenLogFile,
     /// Show the log file in the file manager (answered with `Loaded::LogIo`)
     ShowLogFile,
+    /// Copy the log of this session or job (answered with `Loaded::LogIo` or `Loaded::Osc52`)
+    CopyLog(LogScope),
+    /// Copy the log file's path (answered like `CopyLog`)
+    CopyLogPath,
+    /// Write this OSC 52 clipboard sequence to the terminal, between frames
+    Osc52(Vec<u8>),
 }
 
 /// Which part of the log `y` copies.
@@ -241,6 +247,10 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::LogIo(r)) => {
             app.toast(if r.ok { ToastKind::Ok } else { ToastKind::Error }, r.text);
             None
+        }
+        Event::Loaded(Loaded::Osc52 { bytes, report }) => {
+            app.toast(ToastKind::Info, report.text);
+            Some(Command::Osc52(bytes))
         }
         Event::Loaded(Loaded::Log(lines)) => {
             let back = std::mem::replace(&mut app.screen, Screen::Menu);
@@ -461,11 +471,13 @@ fn ask_cancel(app: &mut App) -> Option<Command> {
 /// `e E o f y Y`: get the log out of kast. While a job runs only the copies are allowed (the
 /// others suspend the terminal or start programs).
 fn log_action(k: &KeyEvent, scope: LogScope, running: bool) -> Option<Command> {
-    if k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) || running {
+    if k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
         return None;
     }
-    let _ = scope;
     match k.code {
+        KeyCode::Char('y') => Some(Command::CopyLog(scope)),
+        KeyCode::Char('Y') => Some(Command::CopyLogPath),
+        _ if running => None,
         KeyCode::Char('e') => Some(Command::ViewLog { editor: false }),
         KeyCode::Char('E') => Some(Command::ViewLog { editor: true }),
         KeyCode::Char('o') => Some(Command::OpenLogFile),
@@ -992,24 +1004,80 @@ pub mod tests {
         Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT))
     }
 
+    /// The command each log key gives, as a short name.
+    fn log_keys(a: &mut App) -> Vec<(char, String)> {
+        let mut out = Vec::new();
+        for c in ['e', 'E', 'o', 'f', 'y', 'Y'] {
+            let ev = if c.is_uppercase() { shift(c) } else { key(KeyCode::Char(c)) };
+            let screen_before = std::mem::discriminant(&a.screen);
+            let got = match update(a, ev) {
+                Some(Command::ViewLog { editor }) => if editor { "editor" } else { "pager" }.to_string(),
+                Some(Command::OpenLogFile) => "open".into(),
+                Some(Command::ShowLogFile) => "show".into(),
+                Some(Command::CopyLog(LogScope::Session)) => "copy session".into(),
+                Some(Command::CopyLog(LogScope::Job)) => "copy job".into(),
+                Some(Command::CopyLogPath) => "copy path".into(),
+                Some(other) => format!("{other:?}"),
+                None => "-".into(),
+            };
+            assert_eq!(screen_before, std::mem::discriminant(&a.screen), "{c} changed the screen");
+            out.push((c, got));
+        }
+        out
+    }
+
+    fn expect(scope: &str) -> Vec<(char, String)> {
+        [('e', "pager"), ('E', "editor"), ('o', "open"), ('f', "show"), ('y', scope), ('Y', "copy path")].into_iter().map(|(c, s)| (c, s.to_string())).collect()
+    }
+
     #[test]
-    fn e_o_f_work_except_while_a_job_runs() {
+    fn log_keys_on_each_screen() {
         let mut a = app(80, 24);
-        assert!(matches!(update(&mut a, key(KeyCode::Char('e'))), Some(Command::ViewLog { editor: false })));
-        assert!(matches!(update(&mut a, shift('E')), Some(Command::ViewLog { editor: true })));
+        assert_eq!(log_keys(&mut a), expect("copy session"));
         assert!(update(&mut a, ctrl('e')).is_none());
+
         let mut a = running_auto(80, 24);
-        assert!(update(&mut a, key(KeyCode::Char('e'))).is_none());
-        assert!(update(&mut a, shift('E')).is_none());
-        assert!(update(&mut a, key(KeyCode::Char('o'))).is_none());
-        assert!(update(&mut a, key(KeyCode::Char('f'))).is_none());
+        let running: Vec<(char, String)> = expect("copy job").into_iter().map(|(c, s)| (c, if "yY".contains(c) { s } else { "-".into() })).collect();
+        assert_eq!(log_keys(&mut a), running);
+
         job(&mut a, JobMsg::Done(Ok(Outcome::Finished { message: "Done".into(), issues: vec![] })));
-        assert!(matches!(update(&mut a, key(KeyCode::Char('e'))), Some(Command::ViewLog { editor: false })));
-        assert!(matches!(update(&mut a, key(KeyCode::Char('o'))), Some(Command::OpenLogFile)));
-        assert!(matches!(update(&mut a, key(KeyCode::Char('f'))), Some(Command::ShowLogFile)));
-        // A failed launch comes back as an error toast
+        assert_eq!(log_keys(&mut a), expect("copy job"));
+
+        a.screen = Screen::Summary(Box::new(summary(vec![], true)));
+        assert_eq!(log_keys(&mut a), expect("copy job"));
+
+        update(&mut a, Event::Loaded(Loaded::Log(vec!["[x] [INFO] hello".into()])));
+        assert!(matches!(a.screen, Screen::Log(..)));
+        assert_eq!(log_keys(&mut a), expect("copy session"));
+    }
+
+    #[test]
+    fn log_keys_leave_dialogs_and_text_fields_alone() {
+        // A question takes y as its answer
+        let mut a = running_auto(80, 24);
+        job(&mut a, JobMsg::Ask { id: 4, prompt: Prompt::yes_no("q", false) });
+        assert!(matches!(update(&mut a, key(KeyCode::Char('y'))), Some(Command::Answer { id: 4, yes: true })));
+        // A typed path takes the letters
+        let mut a = app(80, 24);
+        let mut st = ImportState::new(import::Mode::Restore);
+        st.path = Some(widgets::Input::new("/tmp/"));
+        a.screen = Screen::Import(Box::new(st));
+        for c in "eofyY".chars() {
+            assert!(update(&mut a, key(KeyCode::Char(c))).is_none());
+        }
+        let Screen::Import(st) = &a.screen else { panic!() };
+        assert_eq!(st.path.as_ref().unwrap().value, "/tmp/eofyY");
+    }
+
+    #[test]
+    fn log_action_results_become_toasts_or_osc52() {
+        let mut a = app(80, 24);
         update(&mut a, Event::Loaded(Loaded::LogIo(crate::logio::Report::err("No pager found"))));
         assert_eq!(a.toast.as_ref().map(|t| (t.kind, t.text.as_str())), Some((ToastKind::Error, "No pager found")));
+        let report = crate::logio::Report::ok("Copied 3 lines via terminal (OSC 52)");
+        let cmd = update(&mut a, Event::Loaded(Loaded::Osc52 { bytes: b"\x1b]52;c;eA==\x07".to_vec(), report }));
+        assert!(matches!(cmd, Some(Command::Osc52(ref b)) if b.starts_with(b"\x1b]52")));
+        assert_eq!(a.toast.as_ref().unwrap().kind, ToastKind::Info);
     }
 
     #[test]

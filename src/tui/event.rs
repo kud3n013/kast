@@ -45,6 +45,11 @@ pub enum Loaded {
     Status(Box<crate::vault::status::StatusReport>),
     /// How a log action went (shown as a toast)
     LogIo(crate::logio::Report),
+    /// No clipboard program worked: copy through the terminal with these bytes
+    Osc52 {
+        bytes: Vec<u8>,
+        report: crate::logio::Report,
+    },
 }
 
 /// Messages from a job thread (the engines, through `TuiReporter`).

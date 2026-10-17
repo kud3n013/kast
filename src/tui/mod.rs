@@ -207,8 +207,10 @@ pub fn run(start: Start) -> Result<()> {
         Start::Import => app::activate(&mut app, Action::Import),
         Start::Export => app::activate(&mut app, Action::Export),
     };
+    let len = log_len();
+    let mut marks = LogMarks { session: len, job: len };
     if let Some(cmd) = first {
-        execute_command(cmd, &tx, &replies);
+        execute_command(cmd, &tx, &replies, &mut marks);
     }
     loop {
         app.now = crate::ui::now();
@@ -227,7 +229,14 @@ pub fn run(start: Start) -> Result<()> {
                     let _ = tx.send(Event::Loaded(event::Loaded::LogIo(r)));
                 }
             }
-            Some(cmd) => execute_command(cmd, &tx, &replies),
+            Some(Command::Osc52(bytes)) => {
+                use std::io::Write;
+                let out = term.backend_mut();
+                if let Err(e) = out.write_all(&bytes).and_then(|_| out.flush()) {
+                    let _ = tx.send(Event::Loaded(event::Loaded::LogIo(logio::os::copy_failed(&e, logio::TUI_HINT))));
+                }
+            }
+            Some(cmd) => execute_command(cmd, &tx, &replies, &mut marks),
             None => {}
         }
         if app.quit {
@@ -263,6 +272,25 @@ fn read_log_tail() -> Vec<String> {
     lines[skip..].iter().map(|l| crate::ui::sanitize_log(l)).collect()
 }
 
+/// Log file lengths when the app and the last job started: where `y` copies from.
+struct LogMarks {
+    session: u64,
+    job: u64,
+}
+
+fn log_len() -> u64 {
+    std::fs::metadata(&ctx().log_file).map(|m| m.len()).unwrap_or(0)
+}
+
+/// Hand a copy result to the app: a toast, or OSC 52 bytes for the event loop to write.
+fn copied(tx: &Sender<Event>, c: logio::os::Copied) {
+    let ev = match c {
+        logio::os::Copied::Done(r) => event::Loaded::LogIo(r),
+        logio::os::Copied::Osc52 { bytes, report } => event::Loaded::Osc52 { bytes, report },
+    };
+    let _ = tx.send(Event::Loaded(ev));
+}
+
 /// Reply channels of engine questions that wait for an answer, by question id.
 #[derive(Default)]
 pub struct Replies(Mutex<HashMap<u64, Sender<bool>>>);
@@ -285,9 +313,12 @@ impl Replies {
     }
 }
 
-fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>) {
+fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, marks: &mut LogMarks) {
     match cmd {
-        Command::Start(kind) => job::spawn(kind, tx.clone(), replies.clone()),
+        Command::Start(kind) => {
+            marks.job = log_len();
+            job::spawn(kind, tx.clone(), replies.clone())
+        }
         Command::Answer { id, yes } => replies.answer(id, yes),
         Command::Cancel => {
             report::request_cancel();
@@ -326,6 +357,20 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>) {
         }
         // Needs the terminal: handled in the event loop
         Command::ViewLog { .. } => {}
+        Command::CopyLog(scope) => {
+            let from = match scope {
+                app::LogScope::Session => marks.session,
+                app::LogScope::Job => marks.job,
+            };
+            let tx = tx.clone();
+            std::thread::spawn(move || copied(&tx, logio::os::copy_log(&ctx().log_file, from)));
+        }
+        Command::CopyLogPath => {
+            let tx = tx.clone();
+            std::thread::spawn(move || copied(&tx, logio::os::copy(&ctx().log_file.display().to_string(), "the log path")));
+        }
+        // Written by the event loop, between frames
+        Command::Osc52(_) => {}
         Command::OpenLogFile | Command::ShowLogFile => {
             let tx = tx.clone();
             let show = matches!(cmd, Command::ShowLogFile);
