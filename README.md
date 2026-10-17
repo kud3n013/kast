@@ -377,3 +377,13 @@ kast carries a copy of archrepo's signing key (`assets/archrepo.asc`, imported b
 step). If archrepo's key ever changes, replace that file and `REPO_KEY_FPR` in
 `src/setup.rs`, then cut a new release. Running the workflow by hand
 (Actions → Release → Run workflow) builds everything without publishing.
+
+## Credits and license
+
+kast is released under the GNU General Public License, version 3 or later (`LICENSE`).
+
+The Plasma settings export/import module (`kast plasma`, `src/plasma/`) is a Rust port of the logic of
+[konsave](https://github.com/Prayag2/konsave) by Prayag2 and contributors, and of its refactored fork
+[urban-1/konsave](https://github.com/urban-1/konsave) (both GPL-3.0). Thank you both: the profile model, the
+save/export split, the config placeholders and the `config-check` idea come from them. The exact versions studied and
+the differences are listed in `docs/konsave-notes.md`; `THIRD_PARTY.md` has the notice.
