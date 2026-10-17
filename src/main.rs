@@ -6,7 +6,11 @@ mod interactive;
 mod journal;
 mod logio;
 mod pkglist;
+#[allow(dead_code)] // wired up in the next commits
+mod proton;
 mod report;
+#[allow(dead_code)]
+mod settings;
 mod setup;
 mod snapshot;
 mod tui;

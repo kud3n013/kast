@@ -10,6 +10,7 @@ chrono = "0.4.45"
 clap = { version = "4.6.7", features = ["derive"] }
 filetime = "0.2.29"
 libc = "0.2.190"
+qrcode = { version = "0.14.1", default-features = false }
 nix = { version = "0.31.3", features = ["user", "fs", "signal", "term", "poll", "hostname", "ioctl"] }
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm", "layout-cache", "underline-color"] }
 regex = "1.13.1"
