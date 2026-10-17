@@ -51,7 +51,14 @@ pub struct Row {
 
 pub fn looks_like_settings(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    !n.starts_with('.') && (n.ends_with("rc") || n.starts_with('k') || n.starts_with("plasma") || n.starts_with("gtk") || n.contains("kde") || n == "latte" || n == "xsettingsd")
+    !n.starts_with('.')
+        && (n.ends_with("rc")
+            || n.starts_with('k')
+            || n.starts_with("plasma")
+            || n.starts_with("gtk")
+            || n.contains("kde")
+            || n == "latte"
+            || n == "xsettingsd")
 }
 
 pub fn scan_dirs(roots: &Roots) -> Vec<PathBuf> {
@@ -68,7 +75,8 @@ pub fn check(roots: &Roots, cfg: &Config) -> Result<Vec<Row>> {
     }
     let mut rows = Vec::new();
     for dir in scan_dirs(roots) {
-        let names: BTreeSet<String> = fs::read_dir(&dir).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
+        let names: BTreeSet<String> =
+            fs::read_dir(&dir).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
         for name in &names {
             let child = dir.join(name);
             let mut sections = BTreeSet::new();

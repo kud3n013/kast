@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/plasma.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Plasma profiles ─────────────────╮╭ Details ─────────────────────────────────╮
+│❯ work                            ││Profile   work                            │
+│                                  ││Made      2026-10-18T12:30:05+02:00 on    │
+│                                  ││testhost                                  │
+│                                  ││Plasma    6.8.0 (kast 0.5.1)              │
+│                                  ││Size      12 files, 4.0 KB                │
+│                                  ││Covers    appearance, shortcuts, panels,  │
+│                                  ││windows, gtk, autostart                   │
+│                                  ││                                          │
+│                                  ││Applying never deletes files, and         │
+│                                  ││snapshots what it overwrites first.       │
+│                                  ││                                          │
+│                                  ││                                          │
+│                                  ││                                          │
+│                                  ││                                          │
+│                                  ││                                          │
+│                                  ││                                          │
+│                                  ││                                          │
+╰──────────────────────────────────╯╰──────────────────────────────────────────╯
+╭ Last result ─────────────────────────────────────────────────────────────────╮
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  a apply  s save  e export  i import  d remove  p packages  c check

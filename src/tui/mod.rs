@@ -529,6 +529,14 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
                 let _ = tx.send(Event::Loaded(event::Loaded::PackageList(Box::new(pl))));
             });
         }
+        Command::Plasma(req) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let (roots, amb) = (crate::plasma::paths::Roots::from_ctx(), crate::plasma::profile::Ambient::detect());
+                let resp = screens::plasma::run(&roots, &amb, req);
+                let _ = tx.send(Event::Loaded(event::Loaded::Plasma(Box::new(resp))));
+            });
+        }
         Command::LoadStatus => {
             let tx = tx.clone();
             std::thread::spawn(move || {

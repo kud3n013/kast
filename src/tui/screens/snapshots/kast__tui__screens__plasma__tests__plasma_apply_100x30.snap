@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/plasma.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Apply work ──────────────────────╮╭ Dry run: what would happen ──────────────╮
+│❯ [x] appearance                  ││appearance: themes, colors, icons, fonts, │
+│  [x] shortcuts                   ││splash, lock screen                       │
+│  [x] panels                      ││  create    /home/p3ter/.config/kwinrc    │
+│  [x] windows                     ││  overwrite /home/p3ter/.config/kdeglobals│
+│  [x] gtk                         ││  skip      /home/p3ter/.config/x  (a     │
+│  [x] autostart                   ││folder is in the way)                     │
+│  [ ] restart Plasma around apply ││1 to create, 1 to overwrite, 4 unchanged, │
+│                                  ││1 skipped                                 │
+│                                  ││                                          │
+│                                  ││Plasma rewrites its settings when it      │
+│                                  ││quits, so files restored while it runs can│
+│                                  ││be overwritten again. Restarting the shell│
+│                                  ││around the apply avoids that; a full log  │
+│                                  ││out and in is the most reliable. KWin     │
+│                                  ││(window manager) settings need a log out  │
+│                                  ││or a KWin reconfigure.                    │
+│                                  ││                                          │
+│                                  ││              ╭───────────────────────────╮
+│                                  ││              │ ✓ Saved "work": 12 files. │
+│                                  ││              ╰───────────────────────────╯
+╰──────────────────────────────────╯╰──────────────────────────────────────────╯
+ ↑/↓ move  Space toggle  Enter apply  PgUp/PgDn preview  Esc back

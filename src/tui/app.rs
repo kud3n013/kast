@@ -16,6 +16,7 @@ use super::screens::import::{self, ImportState};
 use super::screens::log::{self, LogState};
 use super::screens::menu::{self, Action, ITEMS, MenuState};
 use super::screens::packages::{self, Installed, PackagesState, PkgState};
+use super::screens::plasma::{self, PlasmaReq, PlasmaState};
 use super::screens::run::{self, Finished, RunState};
 use super::screens::status::{self, StatusState};
 use super::screens::summary;
@@ -68,6 +69,8 @@ pub enum Screen {
     Undo(Box<UndoState>),
     /// `s` the scheduled backup
     Schedule(Box<super::screens::schedule::ScheduleState>),
+    /// `p` KDE Plasma settings: profiles, save, apply, export, import, config check
+    Plasma(Box<PlasmaState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -90,6 +93,8 @@ pub enum ModalKind {
     /// Keyring locked: Yes keeps the session in pass from now on
     DriveUsePass,
     DriveSignOut,
+    /// Run this Plasma request on Yes
+    Plasma(Box<PlasmaReq>),
 }
 
 /// A yes/no dialog over the current screen. Esc always answers No.
@@ -199,6 +204,8 @@ pub enum Command {
     ScheduleRun,
     CopySignIn(crate::proton::SignInUrl),
     OpenSignIn(crate::proton::SignInUrl),
+    /// A Plasma settings request (answered with `Loaded::Plasma`)
+    Plasma(PlasmaReq),
 }
 
 /// Which part of the log `y` copies.
@@ -293,6 +300,7 @@ impl App {
             Screen::Packages(_) => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
             Screen::Undo(s) => s.loading(),
             Screen::Schedule(s) => s.loading || s.busy,
+            Screen::Plasma(s) => s.working(),
             Screen::Auto(w) => match w.stage {
                 wizard::Stage::Upgrade => self.snapshots.is_none(),
                 wizard::Stage::Apps => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
@@ -329,6 +337,7 @@ impl App {
             Screen::Undo(s) if s.mode == undo_screen::Mode::Uninstall => ("Uninstall apps", &undo_screen::HELP),
             Screen::Undo(_) => ("Undo changes", &undo_screen::HELP),
             Screen::Schedule(_) => ("Scheduled backup", &super::screens::schedule::HELP),
+            Screen::Plasma(_) => ("KDE Plasma settings", &plasma::HELP),
         }
     }
 
@@ -360,6 +369,7 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Paste(text) => {
             import::on_paste(app, &text);
             export::on_paste(app, &text);
+            plasma::on_paste(app, &text);
             None
         }
         Event::Key(k) if k.kind == KeyEventKind::Release => None,
@@ -412,6 +422,7 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
             None
         }
         Event::Loaded(Loaded::ScheduleDone(r)) => super::screens::schedule::on_done(app, r),
+        Event::Loaded(Loaded::Plasma(r)) => plasma::on_resp(app, *r),
         Event::Loaded(Loaded::DriveHosts(r)) => {
             import::on_hosts(app, r);
             None
@@ -550,7 +561,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.screen = Screen::Menu;
                 Some(Command::DriveWipeRestore)
             }
-            Screen::Summary(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) | Screen::Schedule(_) => {
+            Screen::Summary(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) | Screen::Schedule(_) | Screen::Plasma(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -596,12 +607,13 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         Screen::Auto(_) => wizard::key(app, k),
         Screen::Undo(_) => undo_screen::key(app, k),
         Screen::Schedule(_) => super::screens::schedule::key(app, k),
+        Screen::Plasma(_) => plasma::key(app, k),
     }
 }
 
 /// A text field has the keyboard (letters must reach it, not shortcuts).
 fn text_field_open(app: &App) -> bool {
-    import::state_ref(app).is_some_and(ImportState::typing) || export::editing(app)
+    import::state_ref(app).is_some_and(ImportState::typing) || export::editing(app) || plasma::editing(app)
 }
 
 fn modal_key(app: &mut App, k: KeyEvent) -> Option<Command> {
@@ -650,7 +662,13 @@ fn answer(app: &mut App, yes: bool) -> Option<Command> {
         ModalKind::DriveRecheck if yes => Some(drive::check(app, true)),
         ModalKind::DriveUsePass if yes => Some(Command::DriveSetStore("pass".into())),
         ModalKind::DriveSignOut if yes => Some(Command::DriveLogout),
-        ModalKind::DriveInstall | ModalKind::DriveRecheck | ModalKind::DriveUsePass | ModalKind::DriveSignOut => None,
+        ModalKind::Plasma(req) if yes => {
+            if let Screen::Plasma(s) = &mut app.screen {
+                s.busy = true;
+            }
+            Some(Command::Plasma(*req))
+        }
+        ModalKind::DriveInstall | ModalKind::DriveRecheck | ModalKind::DriveUsePass | ModalKind::DriveSignOut | ModalKind::Plasma(_) => None,
     }
 }
 
@@ -700,7 +718,7 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::Enter => return activate(app, app.menu.action()),
         KeyCode::Char('q') | KeyCode::Esc => app.quit = true,
         KeyCode::Char('l') => return Some(Command::OpenLog),
-        KeyCode::Char(c @ ('u' | 'x' | 's')) => {
+        KeyCode::Char(c @ ('u' | 'x' | 's' | 'p')) => {
             app.menu.selected = ITEMS.iter().position(|i| i.key == c).unwrap_or(0);
             return activate(app, app.menu.action());
         }
@@ -807,6 +825,7 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             return Some(Command::LoadUninstall);
         }
         Action::Schedule => return super::screens::schedule::open(app),
+        Action::Plasma => return plasma::open(app),
         Action::Info => {
             let dir = import::default_dir(&app.header.home, app.dir_exists);
             app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Inspect, false, dir)));
@@ -875,7 +894,7 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
         Screen::Packages(_) => return packages::mouse(app, m),
         Screen::Auto(_) => return wizard::mouse(app, m),
         Screen::Undo(_) => return undo_screen::mouse(app, m),
-        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Schedule(_) => {}
+        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Schedule(_) | Screen::Plasma(_) => {}
     }
     None
 }
@@ -932,6 +951,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Schedule(st) => {
             super::screens::schedule::view(f, body, app, st);
             &super::screens::schedule::HINTS
+        }
+        Screen::Plasma(st) => {
+            plasma::view(f, body, app, st);
+            plasma::hints(st)
         }
     };
     let hints: &[(&str, &str)] = if let Some(s) = &app.signin {

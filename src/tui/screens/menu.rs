@@ -19,6 +19,7 @@ pub enum Action {
     Export,
     Status,
     Info,
+    Plasma,
     Schedule,
     Undo,
     Uninstall,
@@ -35,7 +36,7 @@ pub struct Item {
     pub auto: &'static str,
 }
 
-pub const ITEMS: [Item; 13] = [
+pub const ITEMS: [Item; 14] = [
     Item {
         action: Action::Auto,
         key: '1',
@@ -121,6 +122,16 @@ pub const ITEMS: [Item; 13] = [
         label: "Inspect a backup",
         about: "Shows what a backup archive contains: when and where it was made and which apps are inside.",
         changes: "Nothing (read-only)",
+        root: false,
+        auto: "Not part of the automatic run.",
+    },
+    Item {
+        action: Action::Plasma,
+        key: 'p',
+        label: "KDE Plasma settings",
+        about: "Save, apply, export and import your Plasma settings as profiles (a Rust port of konsave's logic). Apply shows a dry-run \
+                first, lets you pick categories (panels, shortcuts, appearance, ...) and snapshots what it overwrites.",
+        changes: "Profiles in ~/.local/share/kast/plasma; only an apply you confirm writes to ~/.config and ~/.local/share",
         root: false,
         auto: "Not part of the automatic run.",
     },

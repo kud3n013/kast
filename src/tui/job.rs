@@ -39,6 +39,8 @@ pub enum JobKind {
     InstallProton,
     /// Remove /var/lib/pacman/db.lck after a canceled pacman left it behind
     RemovePacmanLock,
+    /// Install the packages a Plasma profile needs (pacman -S --needed)
+    PlasmaDeps(Vec<String>),
     /// Scripted messages, for tests of the run screen and prompts
     #[cfg(test)]
     Fake(Vec<FakeStep>),
@@ -67,6 +69,7 @@ impl JobKind {
             JobKind::Export(o) => format!("Back up {}", o.target),
             JobKind::Upload(o, _) => format!("Back up {} to Proton Drive", o.target),
             JobKind::RemovePacmanLock => "Remove the pacman lock".into(),
+            JobKind::PlasmaDeps(_) => "Install Plasma profile packages".into(),
             JobKind::Undo(_) => "Undo changes".into(),
             JobKind::Uninstall(_) => "Uninstall apps".into(),
             #[cfg(test)]
@@ -294,6 +297,14 @@ fn run_job(kind: JobKind) -> Result<Outcome> {
                 ctx::add_issue(format!("Not removed: {f}"));
             }
             finished(&format!("{} app(s) removed", out.done.len()))
+        }
+        JobKind::PlasmaDeps(pkgs) => {
+            let mut args = vec!["-S", "--needed", "--noconfirm"];
+            args.extend(pkgs.iter().map(String::as_str));
+            if !ctx::ok_logged("pacman", &args) {
+                anyhow::bail!("pacman could not install {}", pkgs.join(" "));
+            }
+            finished(&format!("{} package(s) installed", pkgs.len()))
         }
         JobKind::RemovePacmanLock => {
             if ctx::remove_stale_pacman_lock() {

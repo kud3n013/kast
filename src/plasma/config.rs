@@ -66,9 +66,10 @@ impl Category {
     pub fn parse_list(s: &str) -> Result<Vec<Category>> {
         let mut out = Vec::new();
         for w in s.split(',').map(str::trim).filter(|w| !w.is_empty()) {
-            let c = Category::ALL.iter().find(|c| c.name() == w.to_ascii_lowercase()).with_context(|| {
-                format!("unknown category {w:?} (use: {})", Category::ALL.iter().map(|c| c.name()).collect::<Vec<_>>().join(", "))
-            })?;
+            let c = Category::ALL
+                .iter()
+                .find(|c| c.name() == w.to_ascii_lowercase())
+                .with_context(|| format!("unknown category {w:?} (use: {})", Category::ALL.iter().map(|c| c.name()).collect::<Vec<_>>().join(", ")))?;
             if !out.contains(c) {
                 out.push(*c);
             }

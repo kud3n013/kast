@@ -51,7 +51,6 @@ pub struct PlanItem {
 
 #[derive(Debug, Clone, Default)]
 pub struct Plan {
-    pub profile: String,
     pub items: Vec<PlanItem>,
     /// Problems with whole sections or entries (not in the local list, location not found)
     pub notes: Vec<String>,
@@ -149,17 +148,25 @@ fn classify(loc: &Path, dest: &Path, kind: &ItemKind, src: &Path) -> Action {
     }
     match kind {
         ItemKind::Link(t) => {
-            if fs::read_link(dest).is_ok_and(|cur| &cur == t) { Action::Unchanged } else { Action::Overwrite }
+            if fs::read_link(dest).is_ok_and(|cur| &cur == t) {
+                Action::Unchanged
+            } else {
+                Action::Overwrite
+            }
         }
         ItemKind::File => {
-            if m.is_file() && fsops::same_content(src, dest) { Action::Unchanged } else { Action::Overwrite }
+            if m.is_file() && fsops::same_content(src, dest) {
+                Action::Unchanged
+            } else {
+                Action::Overwrite
+            }
         }
     }
 }
 
 /// Plan the apply of `profile`, optionally only for some categories.
 pub fn plan(roots: &Roots, cfg: &Config, profile: &Profile, only: Option<&[Category]>) -> Result<Plan> {
-    let mut plan = Plan { profile: profile.name.clone(), ..Default::default() };
+    let mut plan = Plan::default();
     let files = profile.files_dir();
     for stored in &profile.manifest.sections {
         if only.is_some_and(|o| !o.contains(&stored.category)) {
@@ -196,7 +203,16 @@ pub fn plan(roots: &Roots, cfg: &Config, profile: &Profile, only: Option<&[Categ
                 } else if m.is_file() {
                     ItemKind::File
                 } else {
-                    plan.items.push(PlanItem { section: stored.id.clone(), category: stored.category, section_kind: stored.kind, rel, src, dest, kind: ItemKind::File, action: Action::Skip("not a regular file".into()) });
+                    plan.items.push(PlanItem {
+                        section: stored.id.clone(),
+                        category: stored.category,
+                        section_kind: stored.kind,
+                        rel,
+                        src,
+                        dest,
+                        kind: ItemKind::File,
+                        action: Action::Skip("not a regular file".into()),
+                    });
                     continue;
                 };
                 let action = match &kind {
@@ -247,7 +263,13 @@ fn take_snapshot(roots: &Roots, plan: &Plan, amb: &Ambient) -> Result<Option<Str
         let mut warnings = Vec::new();
         for it in overwrites {
             let sec_dir = stage.join("files").join(&it.section);
-            fsops::copy_tree(it.dest.parent().expect("dest has a parent"), Path::new(it.dest.file_name().expect("dest has a name")), &sec_dir.join(it.rel.parent().unwrap_or(Path::new(""))), roots.owner, &mut warnings)?;
+            fsops::copy_tree(
+                it.dest.parent().expect("dest has a parent"),
+                Path::new(it.dest.file_name().expect("dest has a name")),
+                &sec_dir.join(it.rel.parent().unwrap_or(Path::new(""))),
+                roots.owner,
+                &mut warnings,
+            )?;
             let rel = it.rel.to_string_lossy().into_owned();
             match manifest.sections.iter_mut().find(|s| s.id == it.section) {
                 Some(s) => s.entries.push(rel),
@@ -397,7 +419,12 @@ mod tests {
         fs::create_dir_all(p.files_dir().join("evil")).unwrap();
         fs::write(p.files_dir().join("evil/x"), "evil").unwrap();
         p.manifest.sections[0].entries.push(".ssh".into());
-        p.manifest.sections.push(StoredSection { id: "evil".into(), category: Category::Apps, kind: super::super::config::Kind::Save, entries: vec!["x".into()] });
+        p.manifest.sections.push(StoredSection {
+            id: "evil".into(),
+            category: Category::Apps,
+            kind: super::super::config::Kind::Save,
+            entries: vec!["x".into()],
+        });
         let pl = plan(&r, &cfg, &p, None).unwrap();
         assert!(pl.items.iter().all(|i| !i.dest.to_string_lossy().contains(".ssh") && i.section != "evil"));
         assert!(pl.notes.iter().any(|n| n.contains(".ssh")) && pl.notes.iter().any(|n| n.contains("evil")));

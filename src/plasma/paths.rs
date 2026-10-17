@@ -27,7 +27,8 @@ pub struct Roots {
 }
 
 impl Roots {
-    /// The conventional layout below `home` (tests, and users without XDG overrides).
+    /// The conventional layout below `home` (tests).
+    #[cfg(test)]
     pub fn under_home(home: &Path) -> Self {
         Roots {
             home: home.to_path_buf(),
@@ -172,7 +173,7 @@ pub fn expand_location(template: &str, roots: &Roots) -> Result<Expanded> {
         out.push_str(&rest[..i]);
         rest = &rest[i + 1..];
         if let Some(body) = rest.strip_prefix('{') {
-            let Some(end) = body.find('}') else { bail!("{template:?}: unclosed ${{")};
+            let Some(end) = body.find('}') else { bail!("{template:?}: unclosed ${{") };
             let (name, arg) = parse_function(&body[..end]).ok_or_else(|| anyhow::anyhow!("{template:?}: expected ${{NAME=\"text\"}}"))?;
             rest = &body[end + 1..];
             if !(out.ends_with('/') && (rest.is_empty() || rest.starts_with('/'))) {
@@ -187,7 +188,9 @@ pub fn expand_location(template: &str, roots: &Roots) -> Result<Expanded> {
                 })
                 .unwrap_or_default();
             matches.sort();
-            let Some(first) = matches.first() else { bail!("{template:?}: no folder in {out} {} {arg:?}", if name == "ENDS_WITH" { "ends with" } else { "begins with" }) };
+            let Some(first) = matches.first() else {
+                bail!("{template:?}: no folder in {out} {} {arg:?}", if name == "ENDS_WITH" { "ends with" } else { "begins with" })
+            };
             if matches.len() > 1 {
                 warnings.push(format!("{template}: {} folders match {arg:?} ({}); using {first}", matches.len(), matches.join(", ")));
             }

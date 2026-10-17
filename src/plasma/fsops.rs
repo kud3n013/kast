@@ -126,7 +126,8 @@ fn read_full(f: &mut File, buf: &mut [u8]) -> io::Result<usize> {
 /// Files and links below a path (not following links), relative to `root`, sorted.
 pub fn list_files(root: &Path, rel: &Path) -> Vec<PathBuf> {
     WalkDir::new(root.join(rel))
-        .follow_links(false).follow_root_links(false)
+        .follow_links(false)
+        .follow_root_links(false)
         .sort_by_file_name()
         .into_iter()
         .flatten()
@@ -137,7 +138,15 @@ pub fn list_files(root: &Path, rel: &Path) -> Vec<PathBuf> {
 
 /// Total size of the files below a path.
 pub fn tree_size(path: &Path) -> u64 {
-    WalkDir::new(path).follow_links(false).follow_root_links(false).into_iter().flatten().filter(|e| e.file_type().is_file()).filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum()
+    WalkDir::new(path)
+        .follow_links(false)
+        .follow_root_links(false)
+        .into_iter()
+        .flatten()
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
 }
 
 pub fn human_size(bytes: u64) -> String {
@@ -174,7 +183,8 @@ mod tests {
         assert!(m.is_file());
         assert_eq!(m.mode() & 0o777, 0o640);
         assert_eq!(FileTime::from_last_modification_time(&m).unix_seconds(), 1_600_000_000);
-        let leftovers: Vec<_> = fs::read_dir(dst.parent().unwrap()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with(".kast-")).collect();
+        let leftovers: Vec<_> =
+            fs::read_dir(dst.parent().unwrap()).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().starts_with(".kast-")).collect();
         assert!(leftovers.is_empty());
     }
 

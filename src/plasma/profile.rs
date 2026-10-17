@@ -147,7 +147,8 @@ pub fn load(roots: &Roots, name: &str) -> Result<Profile> {
     }
     let manifest: Manifest = toml::from_str(&fs::read_to_string(dir.join("profile.toml"))?).with_context(|| format!("{name}: profile.toml"))?;
     validate_manifest(&manifest).with_context(|| format!("{name}: profile.toml"))?;
-    let meta: Meta = toml::from_str(&fs::read_to_string(dir.join("meta.toml")).with_context(|| format!("{name}: meta.toml"))?).with_context(|| format!("{name}: meta.toml"))?;
+    let meta: Meta = toml::from_str(&fs::read_to_string(dir.join("meta.toml")).with_context(|| format!("{name}: meta.toml"))?)
+        .with_context(|| format!("{name}: meta.toml"))?;
     Ok(Profile { name: name.to_string(), dir, meta, manifest })
 }
 
@@ -326,7 +327,6 @@ pub struct SaveOpts<'a> {
 #[derive(Debug, Clone)]
 pub struct SaveReport {
     pub name: String,
-    pub sections: Vec<StoredSection>,
     pub missing: Vec<String>,
     pub warnings: Vec<String>,
     pub requires: Vec<Requirement>,
@@ -349,13 +349,23 @@ pub fn save(roots: &Roots, cfg: &Config, name: &str, opts: SaveOpts, amb: &Ambie
         let want = |s: &Section| (s.kind == Kind::Save || opts.assets) && opts.only.is_none_or(|o| o.contains(&s.category));
         let mut cap = capture(roots, cfg, &files, &want)?;
         if cap.sections.is_empty() {
-            bail!("nothing to save: none of the listed Plasma files exist here{}", if cap.warnings.is_empty() { String::new() } else { format!(" ({})", cap.warnings.join("; ")) });
+            bail!(
+                "nothing to save: none of the listed Plasma files exist here{}",
+                if cap.warnings.is_empty() { String::new() } else { format!(" ({})", cap.warnings.join("; ")) }
+            );
         }
         cap.warnings.extend(scan_secrets(&files));
         let requires = deps::detect(&files, &amb.system_share, &*amb.pkgs);
         let manifest = Manifest { sections: cap.sections.clone() };
         install_staged(roots, &stage, name, &manifest, &amb.meta(ProfileKind::Profile, requires.clone()), opts.force)?;
-        Ok(SaveReport { name: name.to_string(), sections: cap.sections, missing: cap.missing, warnings: cap.warnings, requires, files: cap.files, bytes: fsops::tree_size(&dest.join("files")) })
+        Ok(SaveReport {
+            name: name.to_string(),
+            missing: cap.missing,
+            warnings: cap.warnings,
+            requires,
+            files: cap.files,
+            bytes: fsops::tree_size(&dest.join("files")),
+        })
     })();
     if result.is_err() {
         let _ = fs::remove_dir_all(&stage);

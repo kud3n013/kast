@@ -70,7 +70,7 @@ entries = ["kwinrc", "kwinrulesrc", "kwinoutputconfig.json", "ksmserverrc", "kac
 id = "input"
 category = "input"
 location = "$CONFIG_DIR"
-entries = ["kcminputrc", "kxkbrc", "touchpadrc"]
+entries = ["kcminputrc", "kxkbrc", "touchpadrc", "kaccessrc"]
 
 [[section]]
 id = "apps"
@@ -88,6 +88,13 @@ entries = [
   "plasma-systemmonitorrc",
   "xdg-desktop-portal-kderc",
   "mimeapps.list",
+  "katevirc",
+  "kate-externaltoolspluginrc",
+  "gwenviewrc",
+  "arkrc",
+  "baloofilerc",
+  "powerdevilrc",
+  "powermanagementprofilesrc",
 ]
 
 [[section]]

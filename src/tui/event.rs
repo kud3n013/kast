@@ -68,6 +68,8 @@ pub enum Loaded {
     DriveStore(Result<(), String>),
     DriveHosts(Result<Vec<String>, String>),
     Schedule(Box<crate::tui::screens::schedule::ScheduleInfo>),
+    /// The answer to a Plasma settings request
+    Plasma(Box<crate::tui::screens::plasma::PlasmaResp>),
     /// A schedule change or run finished (the message for a toast)
     ScheduleDone(Result<String, String>),
     DriveBackups {

@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 1408
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -13,11 +14,11 @@ expression: render(&a)
 │   7 Export data                      ││Needs root: yes (kast already runs as root)                                                       │
 │   8 App status                       ││Automatic:  A step of the automatic run (on by default).                                          │
 │   9 Inspect a backup                 ││                                                                                                  │
+│   p KDE Plasma settings              ││                                                                                                  │
 │   s Scheduled backup                 ││                                                                                                  │
 │   u Undo changes                     ││                                                                                                  │
 │   x Uninstall apps                   ││                                                                                                  │
 │   q Quit                             ││                                                                                                  │
-│                                      ││                                                                                                  │
 │                                      ││                                                                                                  │
 │                                      ││                                                                                                  │
 │                                      ││                                                                                                  │

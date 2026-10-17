@@ -250,7 +250,9 @@ pub fn run(cmd: PlasmaCmd) -> Result<()> {
             }
         }
         PlasmaCmd::Remove { name, yes } => {
-            profile::load(&roots, &name).map(|_| ()).or_else(|e| if profile::profile_dir(&roots, &name).is_ok_and(|d| d.is_dir()) { Ok(()) } else { Err(e) })?;
+            profile::load(&roots, &name)
+                .map(|_| ())
+                .or_else(|e| if profile::profile_dir(&roots, &name).is_ok_and(|d| d.is_dir()) { Ok(()) } else { Err(e) })?;
             if !yes && !confirm(&format!("Remove profile {name:?}?")) {
                 bail!("not removed (use --yes to skip the question)");
             }
@@ -270,7 +272,14 @@ pub fn run(cmd: PlasmaCmd) -> Result<()> {
             let rep = archive::import(&roots, &file, &ImportOpts { name, force, dry_run })?;
             let s = rep.stats;
             let verb = if dry_run { "Would create" } else { "Created" };
-            println!("{verb} profile {:?}{}: {} files, {} links, {}.", rep.name, if rep.replaces { " (replacing the existing one)" } else { "" }, s.files, s.links, human_size(s.bytes));
+            println!(
+                "{verb} profile {:?}{}: {} files, {} links, {}.",
+                rep.name,
+                if rep.replaces { " (replacing the existing one)" } else { "" },
+                s.files,
+                s.links,
+                human_size(s.bytes)
+            );
             println!("From {} (Plasma {}, kast {}).", rep.meta.hostname, rep.meta.plasma_version.as_deref().unwrap_or("?"), rep.meta.kast_version);
             if dry_run {
                 println!("Dry run: nothing was written. The archive passed every safety check.");

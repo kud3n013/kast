@@ -54,7 +54,10 @@ pub fn ini_value(text: &str, section: &str, key: &str) -> Option<String> {
         let line = line.trim();
         if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             in_section = name == section;
-        } else if in_section && let Some((k, v)) = line.split_once('=') && k.trim() == key {
+        } else if in_section
+            && let Some((k, v)) = line.split_once('=')
+            && k.trim() == key
+        {
             let v = v.trim();
             return (!v.is_empty()).then(|| v.to_string());
         }
@@ -87,7 +90,9 @@ fn candidates(kind: &str, name: &str, share: &Path) -> Vec<PathBuf> {
 pub fn detect(files: &Path, share: &Path, pkgs: &dyn PkgOwner) -> Vec<Requirement> {
     let mut wanted: Vec<(&str, String)> = Vec::new();
     if let Some(t) = find_saved(files, "kdeglobals") {
-        for (kind, section, key) in [("icon-theme", "Icons", "Theme"), ("color-scheme", "General", "ColorScheme"), ("look-and-feel", "KDE", "LookAndFeelPackage")] {
+        for (kind, section, key) in
+            [("icon-theme", "Icons", "Theme"), ("color-scheme", "General", "ColorScheme"), ("look-and-feel", "KDE", "LookAndFeelPackage")]
+        {
             wanted.extend(ini_value(&t, section, key).map(|v| (kind, v)));
         }
     }
@@ -103,7 +108,9 @@ pub fn detect(files: &Path, share: &Path, pkgs: &dyn PkgOwner) -> Vec<Requiremen
     }
     if let Some(t) = find_saved(files, "plasma-org.kde.plasma.desktop-appletsrc") {
         for line in t.lines() {
-            if let Some(id) = line.trim().strip_prefix("plugin=") && !id.is_empty() {
+            if let Some(id) = line.trim().strip_prefix("plugin=")
+                && !id.is_empty()
+            {
                 wanted.push(("plasmoid", id.to_string()));
             }
         }
@@ -177,7 +184,11 @@ mod tests {
         fs::create_dir_all(files.join("panels")).unwrap();
         fs::write(files.join("appearance/kdeglobals"), "[Icons]\nTheme=Papirus-Dark\n[General]\nColorScheme=Nord\n").unwrap();
         fs::write(files.join("appearance/plasmarc"), "[Theme]\nname=Layan\n").unwrap();
-        fs::write(files.join("panels/plasma-org.kde.plasma.desktop-appletsrc"), "[Containments][1]\nplugin=org.kde.panel\n[Applets][2]\nplugin=org.kde.plasma.kickoff\nplugin=org.kde.plasma.kickoff\n").unwrap();
+        fs::write(
+            files.join("panels/plasma-org.kde.plasma.desktop-appletsrc"),
+            "[Containments][1]\nplugin=org.kde.panel\n[Applets][2]\nplugin=org.kde.plasma.kickoff\nplugin=org.kde.plasma.kickoff\n",
+        )
+        .unwrap();
         let share = d.path().join("usr/share");
         fs::create_dir_all(share.join("icons/Papirus-Dark")).unwrap();
         fs::create_dir_all(share.join("plasma/plasmoids/org.kde.plasma.kickoff")).unwrap();

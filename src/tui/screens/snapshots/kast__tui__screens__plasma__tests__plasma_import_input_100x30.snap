@@ -1,0 +1,34 @@
+---
+source: src/tui/screens/plasma.rs
+expression: render(&b)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Import an archive ───────────────────────────────────────────────────────────────────────────────╮
+│Archive file                                                                                      │
+│/home/p3ter/                                                                                      │
+│Profile name (optional, default: from the file name)                                              │
+│                                                                                                  │
+│Checked and previewed first. Importing only creates a profile; nothing is applied.                │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Enter go  Tab switch/toggle  Esc cancel

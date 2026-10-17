@@ -258,7 +258,8 @@ fn unpack(archive: &Path, dest: Option<&Path>, owner: fsops::Owner) -> Result<(S
                 } else if let Some(dest) = dest {
                     let target = dest.join(&path);
                     fsops::mkdir_owned(target.parent().expect("member has a parent"), owner)?;
-                    let mut f = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&target).with_context(|| format!("creating {}", target.display()))?;
+                    let mut f =
+                        OpenOptions::new().write(true).create_new(true).mode(0o600).open(&target).with_context(|| format!("creating {}", target.display()))?;
                     let copied = io::copy(&mut e.by_ref().take(size), &mut f)?;
                     if copied != size {
                         bail!("archive member {} is truncated", path.display());
@@ -324,7 +325,6 @@ pub struct ImportReport {
     pub replaces: bool,
     pub meta: Meta,
     pub manifest: Manifest,
-    pub dry_run: bool,
 }
 
 pub fn import(roots: &Roots, archive: &Path, opts: &ImportOpts) -> Result<ImportReport> {
@@ -346,7 +346,7 @@ pub fn import(roots: &Roots, archive: &Path, opts: &ImportOpts) -> Result<Import
     if opts.dry_run {
         let (stats, m, t) = unpack(archive, None, None)?;
         let (manifest, meta) = parse(m, t)?;
-        return Ok(ImportReport { name, stats, replaces, meta, manifest, dry_run: true });
+        return Ok(ImportReport { name, stats, replaces, meta, manifest });
     }
     let stage = profile::new_stage(roots, ".import-")?;
     let result = (|| -> Result<ImportReport> {
@@ -354,7 +354,7 @@ pub fn import(roots: &Roots, archive: &Path, opts: &ImportOpts) -> Result<Import
         let (manifest, meta) = parse(m, t)?;
         fsops::mkdir_owned(&stage.join("files"), roots.owner)?;
         profile::install_staged(roots, &stage, &name, &manifest, &meta, opts.force)?;
-        Ok(ImportReport { name: name.clone(), stats, replaces, meta, manifest, dry_run: false })
+        Ok(ImportReport { name: name.clone(), stats, replaces, meta, manifest })
     })();
     if result.is_err() {
         let _ = fs::remove_dir_all(&stage);
@@ -420,14 +420,16 @@ mod tests {
         let (_d, _r, _cfg, tgz) = exported();
         let (_d2, r2) = other_machine();
         let rep = import(&r2, &tgz, &ImportOpts { dry_run: true, ..Default::default() }).unwrap();
-        assert!(rep.dry_run && rep.stats.files > 5);
+        assert!(rep.stats.files > 5);
         assert!(!r2.profiles.exists());
         let bad = evil_archive(&r2, &[("../escape", None, b"x")]);
         assert!(import(&r2, &bad, &ImportOpts { dry_run: true, ..Default::default() }).is_err());
     }
 
+    type Member<'a> = (&'a str, Option<(EntryType, &'a str)>, &'a [u8]);
+
     /// An archive built byte by byte, because the tar crate refuses to write `..` itself.
-    fn evil_archive(r: &Roots, members: &[(&str, Option<(EntryType, &str)>, &[u8])]) -> PathBuf {
+    fn evil_archive(r: &Roots, members: &[Member]) -> PathBuf {
         let path = r.home.join(format!("evil-{}.tar.gz", members.len()));
         let mut b = tar::Builder::new(GzEncoder::new(File::create(&path).unwrap(), Compression::default()));
         let mut put = |name: &str, kind: EntryType, link: Option<&str>, data: &[u8]| {
@@ -454,7 +456,7 @@ mod tests {
         path
     }
 
-    fn rejected(members: &[(&str, Option<(EntryType, &str)>, &[u8])]) -> String {
+    fn rejected(members: &[Member]) -> String {
         let (_d, r) = other_machine();
         let a = evil_archive(&r, members);
         let err = import(&r, &a, &ImportOpts::default()).unwrap_err();
@@ -504,7 +506,10 @@ mod tests {
         import(&r, &a, &ImportOpts::default()).unwrap();
         let bad_manifest = r.home.join("bm.tar.gz");
         let mut b = tar::Builder::new(GzEncoder::new(File::create(&bad_manifest).unwrap(), Compression::default()));
-        for (n, t) in [("profile.toml", "[[section]]\nid='a'\ncategory='apps'\nkind='save'\nentries=['../../.ssh']\n"), ("meta.toml", "kast_version='1'\nhostname='h'\ncreated='c'\ndefault_list_commit='x'\n")] {
+        for (n, t) in [
+            ("profile.toml", "[[section]]\nid='a'\ncategory='apps'\nkind='save'\nentries=['../../.ssh']\n"),
+            ("meta.toml", "kast_version='1'\nhostname='h'\ncreated='c'\ndefault_list_commit='x'\n"),
+        ] {
             let mut h = Header::new_gnu();
             h.set_size(t.len() as u64);
             h.set_mode(0o644);
@@ -528,7 +533,11 @@ mod tests {
         let tgz = r.home.join("claim.tar.gz");
         let mut b = tar::Builder::new(GzEncoder::new(File::create(&tgz).unwrap(), Compression::default()));
         let manifest = "[[section]]\nid='appearance'\ncategory='appearance'\nkind='save'\nentries=['.ssh']\n";
-        for (n, t) in [("profile.toml", manifest), ("meta.toml", "kast_version='1'\nhostname='h'\ncreated='c'\ndefault_list_commit='x'\n"), ("files/appearance/.ssh/authorized_keys", "evil")] {
+        for (n, t) in [
+            ("profile.toml", manifest),
+            ("meta.toml", "kast_version='1'\nhostname='h'\ncreated='c'\ndefault_list_commit='x'\n"),
+            ("files/appearance/.ssh/authorized_keys", "evil"),
+        ] {
             let mut h = Header::new_gnu();
             h.set_size(t.len() as u64);
             h.set_mode(0o644);

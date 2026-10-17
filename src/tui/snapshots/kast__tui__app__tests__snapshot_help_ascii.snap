@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 1423
 expression: render(&a)
 ---
  kast | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
@@ -13,16 +14,16 @@ expression: render(&a)
 │   7 Ex│1-9  u  x      Run that action directly                       │       │
 │   8 Ap│Mouse          Click selects, double-click runs, wheel moves  │       │
 │   9 In│l              Open the log file                              │       │
-│   s Sc│e / E          View in a pager ($KAST_PAGER) / editor         │       │
-│   u Un│o / f          Open with the default app / file manager       │       │
-│   x Un│y / Y          Copy this session's log / the log's path       │       │
-│   q Qu│tmux           For y: set -g set-clipboard on                 │       │
-└───────│?              This help                                      │───────┘
-┌ Detail│q  Esc         Quit kast                                      │───────┐
-│Choose │Ctrl+C         Quit kast                                      │ally   │
-│export │                                                              │nd     │
-│where t│Press any key to close                                        │an     │
-│overall└──────────────────────────────────────────────────────────────┘       │
-│Changes:    /etc/pacman.conf, installed packages, /etc/pam.d files (backups   │
+│   p KD│e / E          View in a pager ($KAST_PAGER) / editor         │       │
+│   s Sc│o / f          Open with the default app / file manager       │       │
+│   u Un│y / Y          Copy this session's log / the log's path       │       │
+│   x Un│tmux           For y: set -g set-clipboard on                 │       │
+│   q Qu│?              This help                                      │       │
+└───────│q  Esc         Quit kast                                      │───────┘
+┌ Detail│Ctrl+C         Quit kast                                      │───────┐
+│Choose │                                                              │ally   │
+│export │Press any key to close                                        │nd     │
+│where t└──────────────────────────────────────────────────────────────┘an     │
+│overall progress bar and a summary at the end.                                │
 └──────────────────────────────────────────────────────────────────────────────┘
  Up/Down move  Enter run  1-9 pick  l log  ? help  q quit  e view  y copy
