@@ -1072,6 +1072,7 @@ mod tests {
         list[0].bytes = 4096;
         if let Some(m) = list[0].meta.as_mut() {
             m.created = "2026-10-18T12:30:05+02:00".into();
+            m.kast_version = "0.0.0".into();
         }
         feed(&mut a, PlasmaResp::Profiles(Ok(list)));
         a

@@ -2,7 +2,8 @@
 
 Arch Linux / CachyOS post-install tool, ported from `arch-setup.sh`. Run without
 arguments it opens a full-screen app (Ratatui) for the setup steps and the App Vault
-backup/restore engine for app data, KDE Plasma, Hyprland and Howdy face models.
+backup/restore engine for app data, KDE Plasma, Hyprland and Howdy face models, plus
+`kast plasma` profiles for your Plasma settings.
 Every subcommand still works from scripts, with plain text output.
 
 ## Install
@@ -196,6 +197,68 @@ them install everything, as before.
 
 Checking the system upgrade adds a stage that says plainly that upgrades can't be undone by
 kast, and offers a snapshot first when the machine can take one (see below).
+
+## KDE Plasma settings
+
+`kast plasma` (menu key `p`) saves your Plasma settings as named profiles, applies them again
+and moves them between machines as a `.kast-plasma.tar.gz`. It is a Rust port of the logic of
+[konsave](https://github.com/Prayag2/konsave) (see [Credits](#credits-and-license) and
+`docs/konsave-notes.md`), with a safer apply. It works as your own user, no sudo.
+
+```sh
+kast plasma save work                      # profile of what exists in ~/.config (add --assets for themes, icons, plasmoids)
+kast plasma list
+kast plasma apply work --dry-run           # exactly what would be created, overwritten or skipped
+kast plasma apply work --only panels,shortcuts --restart-plasma
+kast plasma export work -o ~/Downloads/    # -> work.kast-plasma.tar.gz
+kast plasma import ~/Downloads/work.kast-plasma.tar.gz --name laptop --dry-run
+kast plasma deps laptop --install          # themes / icon themes / plasmoids it needs, via pacman
+kast plasma config-check                   # the list against ~/.config and ~/.local/share/plasma
+kast plasma remove work
+```
+
+**Categories** (for `--only` and the checkboxes in the app): `appearance` (themes, colors,
+icons, splash, lock screen), `shortcuts`, `panels` (panels, widgets, plasmoids), `windows`
+(KWin, rules, screens), `input`, `apps` (Dolphin, Konsole, Kate, KRunner...), `gtk`, `autostart`.
+
+**Safety**
+
+- `apply` builds one plan, then runs exactly that plan; `--dry-run` only prints it. Before it
+  overwrites anything it snapshots those files as a profile named `pre-apply-<date>-<time>`
+  (undo with `kast plasma apply pre-apply-...`). It never deletes files, and skips (with the
+  reason) a folder in the way or a symlink pointing outside.
+- Writes are atomic (a temp file in the same folder, then a rename); modes and times are kept
+  and symlinks stay symlinks.
+- Where files go comes only from your list (below), never from a profile or archive: a hostile
+  archive cannot make `apply` write to `~/.ssh`. Archives are unpacked defensively: no absolute
+  or `..` paths, no writing through symlinks, no hard links or devices, no links leaving their
+  section, and an existing profile is only replaced with `--force`. `import` never touches your
+  live settings; only a confirmed `apply` does.
+- `save --force` replaces a profile (it is rebuilt, not merged). Settings that look like
+  credentials (a calendar widget's token in `plasma-org.kde.plasma.desktop-appletsrc`) are flagged
+  on save and export, by key name only.
+- Plasma rewrites its settings when it quits, so files restored while it runs can be written
+  over. `--restart-plasma` (the app has a checkbox) quits plasmashell, applies, then starts it
+  (`kquitapp6`/`kstart`, or the `5` ones on Plasma 5). A log out and in is the most reliable;
+  KWin settings need that or a KWin reconfigure.
+- Each profile has a `meta.toml` (kast and Plasma version, host, date, the kast commit of the
+  built-in list and the packages it needs). Profiles live in `~/.local/share/kast/plasma/profiles`.
+
+**The list** is TOML, built into kast (`kast plasma default-config` prints it). Put your own at
+`~/.config/kast/plasma.toml` to replace it:
+
+```toml
+[[section]]
+id = "firefox"                  # lowercase letters, digits, dashes
+category = "apps"               # appearance shortcuts panels windows input apps gtk autostart
+kind = "save"                   # "save": small settings; "export": large assets (--assets / export)
+location = "$HOME/.mozilla/firefox/${ENDS_WITH='.default-release'}"
+entries = ["chrome", "user.js", "plasma*rc"]   # * and ? in the last component
+```
+
+Placeholders: `$HOME`, `$CONFIG_DIR`, `$SHARE_DIR`, `$BIN_DIR`, `${ENDS_WITH="x"}`,
+`${BEGINS_WITH="x"}` (a whole path component, sorted, several matches warn). A location must be
+inside your home. Entries that do not exist on a machine are skipped.
 
 ## Proton Drive
 

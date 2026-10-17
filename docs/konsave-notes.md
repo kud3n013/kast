@@ -180,8 +180,8 @@ apply|remove|export|import|config-check>` and a TUI screen `screens/plasma.rs`. 
 
 **Config.** TOML (kast's format) with serde: `[[section]]` with `id`, `category`, `location` (placeholders) and `entries`.
 Entries may use globs. Embedded via `include_str!("default.toml")`; a user file `~/.config/kast/plasma.toml`
-replaces it when present. `kind = "save"|"export"` mirrors konsave: both are stored in the profile (`files/save/<id>`
-and `files/export/<id>`), the distinction only controls the default and the size warning. Placeholders resolve against
+replaces it when present. `kind = "save"|"export"` mirrors konsave's two sections: `save` entries are always stored in
+the profile, `export` entries (large assets) only by `save --assets`, or live at `export` time. Placeholders resolve against
 an injected `Roots { home, config, share, bin, profiles }` and **only** from kast's table: locations must stay under
 `home` (absolute paths and `..` rejected), so a hostile archive can never choose where files go; destination roots
 come from the local config, never from the archive. `ENDS_WITH`/`BEGINS_WITH` are replaced with sorted candidates;
@@ -204,3 +204,21 @@ the profiles dir, then rename (also the collision check).
 
 **Plasma reload.** quit plasmashell, apply, `kstart plasmashell` (the order that survives Plasma's write-on-exit);
 binaries found with `which` (`kquitapp6`/`kquitapp5`, `kstart`/`kstart5`), run as the target user via `run_as_user`.
+
+## As built (deviations from konsave, and from this design)
+
+- `import` only creates a profile; it never writes live files (konsave overwrote the live
+  `export` locations on import). Applying writes both kinds, from the profile.
+- A profile stores no locations: `apply` takes the location of each section from the *local*
+  list by section id and only restores entries that list covers (konsave trusted the archive's
+  own `conf.yaml`).
+- Dry run is the plan that `apply` and `import` run (one code path), plus a snapshot
+  `pre-apply-<time>` of the files about to be overwritten. Files an apply creates are not removed
+  when the snapshot is restored (nothing is ever deleted).
+- Wildcards are `*` and `?` in the last component, matched by a small built-in matcher instead
+  of the `glob` crate (no new dependency for ten lines of logic).
+- Not done: the `find -mmin` discovery of changed files (needs a person changing settings in
+  System Settings). The list was checked with read-only `test -e` on a Plasma 6.8.0 machine
+  instead; names missing here are kept, because many (`plasmarc`, `kscreenlockerrc`, `khotkeysrc`...)
+  only appear once a setting is changed.
+- Reading konsave's `.knsv` zip files is not implemented (a possible follow-up).

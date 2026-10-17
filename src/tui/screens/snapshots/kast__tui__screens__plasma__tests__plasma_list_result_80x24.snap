@@ -7,7 +7,7 @@ expression: render(&a)
 │❯ work                            ││Profile   work                            │
 │                                  ││Made      2026-10-18T12:30:05+02:00 on    │
 │                                  ││testhost                                  │
-│                                  ││Plasma    6.8.0 (kast 0.5.1)              │
+│                                  ││Plasma    6.8.0 (kast 0.0.0)              │
 │                                  ││Size      12 files, 4.0 KB                │
 │                                  ││Covers    appearance, shortcuts, panels,  │
 │                                  ││windows, gtk, autostart                   │
