@@ -295,7 +295,7 @@ fn announce_list(source: &ListSource) -> Result<pkglist::PkgList> {
 
 fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
     match cmd {
-        None => tui::run(tui::Start::Menu),
+        None => tui::run(tui::Start::Menu, top.known()?),
         Some(Cmd::Auto(s)) => setup::run_automatic(&announce_list(&s.or(top))?),
         Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
         Some(Cmd::Repo) => setup::add_kud3n_repo(false, 0, 1, 1),
@@ -318,10 +318,10 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             Ok(())
         }
         Some(Cmd::Services) => setup::setup_services(false, 0, 1, 1),
-        Some(Cmd::Import(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Import),
+        Some(Cmd::Import(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Import, top.known()?),
         Some(Cmd::Import(a)) if a.is_empty() => interactive::import_data(),
         Some(Cmd::Import(a)) => cmd_import(a.into_opts()?),
-        Some(Cmd::Export(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Export),
+        Some(Cmd::Export(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Export, top.known()?),
         Some(Cmd::Export(a)) if a.is_empty() => interactive::export_data(),
         Some(Cmd::Export(a)) => cmd_backup(a.into_opts()),
         Some(Cmd::Status) | Some(Cmd::Vault { cmd: VaultCmd::Status }) => {

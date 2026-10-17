@@ -1,6 +1,6 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1140
+assertion_line: 1254
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -13,8 +13,8 @@ expression: render(&a)
 │  Data partition    /media/data mounted & user folders symlinked                                                                          │
 │  kud3n repository  configured in /etc/pacman.conf                                                                                        │
 │  Log file          /var/log/kast.log                                                                                                     │
+│  Package list      Online · kud3n013/kast@main · fetched 04:39 · 36 packages                                                             │
 │  Howdy face model  ✓ enrolled for p3ter                                                                                                  │
-│                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │

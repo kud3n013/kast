@@ -1,0 +1,44 @@
+---
+source: src/tui/app.rs
+expression: "render(&packages_app(140, 40, pl()))"
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Package list ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│⚠ Built-in · kast 0.0.0 · 36 packages · offline: could not reach raw.githubusercontent.com (timeout)                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Automatic setup · 36 packages ───────────────────────────────────────────────────────────────╮╭ Details ─────────────────────────────────╮
+│Official repositories (23)                                                                    ││The automatic run upgrades the system,    │
+│  zen-browser-bin                                                                             ││adds kud3n's repository, installs these   │
+│  zotero                                                                                      ││packages, then sets up services.          │
+│  proton-vpn-cli                                                                              ││                                          │
+│  inkscape                                                                                    ││The list built into this kast, because:   │
+│  chromium                                                                                    ││  offline: could not reach                │
+│  obsidian                                                                                    ││raw.githubusercontent.com (timeout)       │
+│  fcitx5                                                                                      ││                                          │
+│  fcitx5-configtool                                                                           ││                                          │
+│  fcitx5-gtk                                                                                  ││                                          │
+│  fcitx5-qt                                                                                   ││                                          │
+│  fcitx5-unikey                                                                               ││                                          │
+│  vesktop-bin                   → fallback vesktop                                            ││                                          │
+│  valkey                                                                                      ││                                          │
+│  kdenlive                                                                                    ││                                          │
+│  steam                                                                                       ││                                          │
+│  zed-globalmenu                replaces zed                                                  ││                                          │
+│  wine                                                                                        ││                                          │
+│  wine-gecko                                                                                  ││                                          │
+│  wine-mono                                                                                   ││                                          │
+│  gwenview                                                                                    ││                                          │
+│  haruna                                                                                      ││                                          │
+│  libreoffice-fresh                                                                           ││                                          │
+│  libreoffice-fresh-vi                                                                        ││                                          │
+│                                                                                              ││                                          │
+│kud3n's repository (6)                                                                        ││                                          │
+│  beeper                                                                                      ││                                          │
+│  howdy-next                                                                                  ││                                          │
+│  gdlauncher-carbon                                                                           ││                                          │
+│  searxng                                                                                     ││                                          │
+│  archrepo/freedownloadmanager  replaces freedownloadmanager-bin                              ││                                          │
+│  archrepo/sine                 replaces sine-bin                                             ││                                          │
+│                                                                                              ││                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────╯
+ Enter start  ↑/↓ scroll  ? help  Esc back  r retry download

@@ -43,6 +43,8 @@ pub enum Loaded {
         ts: String,
     },
     Status(Box<crate::vault::status::StatusReport>),
+    /// The package list for this session (downloaded, or the built-in one and why)
+    PackageList(Box<crate::pkglist::PkgList>),
     /// How a log action went (shown as a toast)
     LogIo(crate::logio::Report),
     /// No clipboard program worked: copy through the terminal with these bytes

@@ -1,0 +1,44 @@
+---
+source: src/tui/app.rs
+expression: "render(&packages_app(140, 40, Some(online_list())))"
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Package list ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│✓ Online · kud3n013/kast@main · fetched 04:39 · 36 packages                                                                               │
+│  +1 added / −1 removed vs built-in: +gimp −steam                                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Automatic setup · 36 packages ───────────────────────────────────────────────────────────────╮╭ Details ─────────────────────────────────╮
+│Official repositories (23)                                                                    ││The automatic run upgrades the system,    │
+│  zen-browser-bin                                                                             ││adds kud3n's repository, installs these   │
+│  zotero                                                                                      ││packages, then sets up services.          │
+│  proton-vpn-cli                                                                              ││                                          │
+│  inkscape                                                                                    ││Downloaded from kud3n013/kast's main      │
+│  chromium                                                                                    ││branch for this session.                  │
+│  obsidian                                                                                    ││                                          │
+│  fcitx5                                                                                      ││+1 added / −1 removed vs built-in         │
+│  fcitx5-configtool                                                                           ││  + gimp                                  │
+│  fcitx5-gtk                                                                                  ││  − steam                                 │
+│  fcitx5-qt                                                                                   ││                                          │
+│  fcitx5-unikey                                                                               ││                                          │
+│  vesktop-bin                   → fallback vesktop                                            ││                                          │
+│  valkey                                                                                      ││                                          │
+│  kdenlive                                                                                    ││                                          │
+│  zed-globalmenu                replaces zed                                                  ││                                          │
+│  wine                                                                                        ││                                          │
+│  wine-gecko                                                                                  ││                                          │
+│  wine-mono                                                                                   ││                                          │
+│  gwenview                                                                                    ││                                          │
+│  haruna                                                                                      ││                                          │
+│  gimp                                                                                        ││                                          │
+│  libreoffice-fresh                                                                           ││                                          │
+│  libreoffice-fresh-vi                                                                        ││                                          │
+│                                                                                              ││                                          │
+│kud3n's repository (6)                                                                        ││                                          │
+│  beeper                                                                                      ││                                          │
+│  howdy-next                                                                                  ││                                          │
+│  gdlauncher-carbon                                                                           ││                                          │
+│  searxng                                                                                     ││                                          │
+│  archrepo/freedownloadmanager  replaces freedownloadmanager-bin                              ││                                          │
+│  archrepo/sine                 replaces sine-bin                                             ││                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────╯
+ Enter start  ↑/↓ scroll  ? help  Esc back

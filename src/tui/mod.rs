@@ -192,7 +192,9 @@ pub enum Start {
     Export,
 }
 
-pub fn run(start: Start) -> Result<()> {
+/// `list`: the package list when it's known up front (`--offline`, `--packages-file`);
+/// otherwise it's downloaded in the background while the menu shows.
+pub fn run(start: Start, list: Option<crate::pkglist::PkgList>) -> Result<()> {
     install_panic_hook();
     enter_terminal()?;
     let _guard = TerminalGuard;
@@ -212,6 +214,10 @@ pub fn run(start: Start) -> Result<()> {
     };
     let len = log_len();
     let mut marks = LogMarks { session: len, job: len };
+    match list {
+        Some(pl) => app.packages = screens::packages::PkgState::Ready(Arc::new(pl)),
+        None => execute_command(Command::FetchPackages, &tx, &replies, &mut marks),
+    }
     if let Some(cmd) = first {
         execute_command(cmd, &tx, &replies, &mut marks);
     }
@@ -347,6 +353,13 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
                 let targets = screens::export::load_targets();
                 let (dir, ts) = screens::export::default_destination();
                 let _ = tx.send(Event::Loaded(event::Loaded::ExportTargets { targets, dir, ts }));
+            });
+        }
+        Command::FetchPackages => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let pl = crate::pkglist::load(false, crate::pkglist::curl_fetch);
+                let _ = tx.send(Event::Loaded(event::Loaded::PackageList(Box::new(pl))));
             });
         }
         Command::LoadStatus => {

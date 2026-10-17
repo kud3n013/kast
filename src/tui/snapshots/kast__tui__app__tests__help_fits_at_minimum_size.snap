@@ -1,6 +1,6 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1108
+assertion_line: 1222
 expression: "format!(\"{menu}{run}\")"
 ---
  kast │ p3ter (1000:1000) │ archbox │ root
@@ -32,9 +32,9 @@ expression: "format!(\"{menu}{run}\")"
 ╰│Mouse wheel     Scroll the log                           │
 ╭│Esc  Ctrl+C  q  Cancel the running job (asks first)      │
 ││Enter           Back to the menu once the job is done    │
-╰│l               Open the full log file (when done)       │
-╭│e / E           Pager ($KAST_PAGER) / editor, when done  │
-││o / f           Default app / file manager, when done    │
+││l               Open the full log file (when done)       │
+╰│e / E           Pager ($KAST_PAGER) / editor, when done  │
+╭│o / f           Default app / file manager, when done    │
 ││y / Y           Copy this job's log / the log's path     │
 ││tmux            For y: set -g set-clipboard on           │
 ││?               This help                                │

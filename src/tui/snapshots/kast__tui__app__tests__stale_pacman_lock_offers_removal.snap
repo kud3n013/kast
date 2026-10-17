@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 996
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -11,11 +12,11 @@ expression: render(&a)
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Status ──────────────────────────────────────────────────────────────────────╮
 │⚠ C╭ pacman lock ─────────────────────────────────────────────────────────╮   │
-╰───│Remove the lock pacman left behind?                                   │───╯
-╭ Lo│                                                                      │───╮
-│INF│  pacman was stopped mid-run and left /var/lib/pacman/db.lck behind.  │   │
-│ERR│  No pacman is running now. Until the lock is gone, every pacman run  │   │
-│   │  fails with "unable to lock database".                               │   │
+│✓ O│Remove the lock pacman left behind?                                   │   │
+╰───│                                                                      │───╯
+╭ Lo│  pacman was stopped mid-run and left /var/lib/pacman/db.lck behind.  │───╮
+│INF│  No pacman is running now. Until the lock is gone, every pacman run  │   │
+│ERR│  fails with "unable to lock database".                               │   │
 │   │                                                                      │   │
 │   │                            Remove     Keep                           │   │
 │   ╰──────────────────────────────────────────────────────────────────────╯   │

@@ -14,6 +14,7 @@ use super::screens::help;
 use super::screens::import::{self, ImportState};
 use super::screens::log::{self, LogState};
 use super::screens::menu::{self, Action, ITEMS, MenuState};
+use super::screens::packages::{self, PackagesState, PkgState};
 use super::screens::run::{self, Finished, RunState};
 use super::screens::status::{self, StatusState};
 use super::screens::summary;
@@ -56,6 +57,8 @@ pub enum Screen {
     Import(Box<ImportState>),
     Export(Box<ExportState>),
     Status(Box<StatusState>),
+    /// What the packages step will install, before the automatic run or option 4 starts
+    Packages(Box<PackagesState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -114,6 +117,8 @@ pub enum Command {
     CopyLogPath,
     /// Write this OSC 52 clipboard sequence to the terminal, between frames
     Osc52(Vec<u8>),
+    /// Download the package list again (answered with `Loaded::PackageList`)
+    FetchPackages,
 }
 
 /// Which part of the log `y` copies.
@@ -139,6 +144,8 @@ pub struct App {
     pub help: bool,
     pub modal: Option<Modal>,
     pub toast: Option<Toast>,
+    /// The package list, fetched in the background when the app opens
+    pub packages: PkgState,
     pub quit: bool,
     last_click: Option<(usize, u64)>,
 }
@@ -164,6 +171,7 @@ impl App {
             help: false,
             modal: None,
             toast: None,
+            packages: PkgState::Fetching,
             quit: false,
             last_click: None,
         }
@@ -183,6 +191,7 @@ impl App {
             Screen::Status(s) => s.loading,
             Screen::Import(s) => s.loading,
             Screen::Export(s) => s.loading,
+            Screen::Packages(_) => matches!(self.packages, PkgState::Fetching),
             _ => false,
         };
         self.toast.is_some() || self.job_running() || loading
@@ -192,7 +201,7 @@ impl App {
         self.size.0 < MIN_W || self.size.1 < MIN_H
     }
 
-    fn body_area(&self) -> Rect {
+    pub(crate) fn body_area(&self) -> Rect {
         let [_, body, _] = areas(Rect::new(0, 0, self.size.0, self.size.1));
         body
     }
@@ -207,6 +216,7 @@ impl App {
             Screen::Status(_) => ("App status", &status::HELP),
             Screen::Export(_) => ("Back up", &export::HELP),
             Screen::Log(..) => ("Log", &log::HELP),
+            Screen::Packages(_) => ("Package list", &packages::HELP),
         }
     }
 
@@ -251,6 +261,10 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::Osc52 { bytes, report }) => {
             app.toast(ToastKind::Info, report.text);
             Some(Command::Osc52(bytes))
+        }
+        Event::Loaded(Loaded::PackageList(pl)) => {
+            app.packages = PkgState::Ready(std::sync::Arc::new(*pl));
+            None
         }
         Event::Loaded(Loaded::Log(lines)) => {
             let back = std::mem::replace(&mut app.screen, Screen::Menu);
@@ -362,7 +376,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.quit = true;
                 None
             }
-            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) => {
+            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -404,6 +418,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         Screen::Import(_) => import::key(app, k),
         Screen::Export(_) => export::key(app, k),
         Screen::Status(_) => status::key(app, k),
+        Screen::Packages(_) => packages::key(app, k),
     }
 }
 
@@ -563,10 +578,13 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             app.quit = true;
             return None;
         }
-        Action::Auto => JobKind::Auto,
+        // Both show the package list and where it came from first
+        Action::Auto | Action::Packages => {
+            app.screen = Screen::Packages(Box::new(PackagesState { auto: action == Action::Auto, scroll: 0 }));
+            return None;
+        }
         Action::Partition => JobKind::Partition,
         Action::Repo => JobKind::Repo,
-        Action::Packages => JobKind::Packages,
         Action::Services => JobKind::Services,
         Action::Import => {
             app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Restore)));
@@ -590,7 +608,9 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
 
 pub fn start_job(app: &mut App, kind: JobKind) -> Command {
     app.toast = None;
-    app.screen = Screen::Run(Box::new(RunState::new(kind.title(), kind.is_auto(), app.now)));
+    let mut run = RunState::new(kind.title(), kind.is_auto(), app.now);
+    run.packages = kind.packages().map(|pl| packages::source_text(&app.theme, pl));
+    app.screen = Screen::Run(Box::new(run));
     Command::Start(kind)
 }
 
@@ -635,6 +655,11 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => st.scroll.down(3),
             _ => {}
         },
+        Screen::Packages(st) => match m.kind {
+            MouseEventKind::ScrollUp => st.scroll = st.scroll.saturating_sub(3),
+            MouseEventKind::ScrollDown => st.scroll += 3,
+            _ => {}
+        },
         Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) => {}
     }
     None
@@ -677,6 +702,10 @@ pub fn view(app: &App, f: &mut Frame) {
             status::view(f, body, app, st);
             &status::HINTS
         }
+        Screen::Packages(st) => {
+            packages::view(f, body, app, st);
+            packages::hints(app)
+        }
     };
     let hints: &[(&str, &str)] = if app.modal.is_some() { &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")] } else { hints };
     widgets::footer(f, bottom, hints, &app.theme);
@@ -704,6 +733,7 @@ fn modal_view(f: &mut Frame, area: Rect, app: &App, m: &Modal) {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::pkglist::{PkgList, Reason, Source};
     use crate::report::{Level, Progress, Prompt};
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
@@ -793,8 +823,89 @@ pub mod tests {
         assert!(matches!(a.screen, Screen::Run(_)));
         assert_eq!(a.menu.selected, 2);
         let mut a = app(80, 24);
-        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Start(JobKind::Auto))));
+        // The automatic run shows the package list first
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        assert!(matches!(&a.screen, Screen::Packages(st) if st.auto));
         assert!(!a.quit);
+    }
+
+    fn online_list() -> PkgList {
+        let edited = crate::pkglist::BUILTIN
+            .replace("  { name = \"steam\" },\n", "")
+            .replace("  { name = \"haruna\" },", "  { name = \"haruna\" },\n  { name = \"gimp\" },");
+        PkgList { source: Source::Online { fetched: "04:39".into() }, list: crate::pkglist::parse(&edited).unwrap() }
+    }
+
+    fn loaded(a: &mut App, pl: PkgList) {
+        update(a, Event::Loaded(Loaded::PackageList(Box::new(pl))));
+    }
+
+    #[test]
+    fn packages_screen_waits_for_the_list_then_starts_with_it() {
+        let mut a = app(80, 24);
+        assert!(update(&mut a, key(KeyCode::Char('4'))).is_none());
+        assert!(matches!(&a.screen, Screen::Packages(st) if !st.auto));
+        assert!(a.animating(), "the spinner turns while fetching");
+        // Nothing starts before the list is on screen
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        assert!(a.toast.as_ref().is_some_and(|t| t.text.starts_with("Still fetching")));
+        assert!(update(&mut a, key(KeyCode::Char('r'))).is_none(), "no retry while fetching");
+
+        loaded(&mut a, online_list());
+        assert!(!a.animating() || a.toast.is_some());
+        update(&mut a, key(KeyCode::PageDown));
+        let Some(Command::Start(JobKind::Packages(pl))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a start") };
+        assert!(pl.list.contains("gimp"));
+        let Screen::Run(r) = &a.screen else { panic!("run screen") };
+        assert!(r.packages.as_ref().is_some_and(|l| l.to_string().contains("Online · kud3n013/kast@main · fetched 04:39 · 36 packages")));
+        assert!(render(&a).contains("✓ Online · kud3n013/kast@main · fetched 04:39"));
+
+        // Esc goes back without installing anything
+        let mut a = app(80, 24);
+        update(&mut a, key(KeyCode::Char('1')));
+        assert!(update(&mut a, key(KeyCode::Esc)).is_none());
+        assert!(matches!(a.screen, Screen::Menu));
+    }
+
+    #[test]
+    fn retry_only_after_a_failed_download() {
+        let mut a = app(80, 24);
+        update(&mut a, key(KeyCode::Char('4')));
+        loaded(&mut a, PkgList::builtin(Reason::Offline));
+        assert!(update(&mut a, key(KeyCode::Char('r'))).is_none(), "--offline was asked for");
+        loaded(&mut a, PkgList::builtin(Reason::Network("timeout".into())));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('r'))), Some(Command::FetchPackages)));
+        assert!(matches!(a.packages, PkgState::Fetching));
+        loaded(&mut a, online_list());
+        assert!(update(&mut a, key(KeyCode::Char('r'))).is_none());
+    }
+
+    fn packages_app(w: u16, h: u16, list: Option<PkgList>) -> App {
+        let mut a = app(w, h);
+        update(&mut a, key(KeyCode::Char('1')));
+        if let Some(pl) = list {
+            loaded(&mut a, pl);
+        }
+        a
+    }
+
+    #[test]
+    fn snapshot_packages_online() {
+        insta::assert_snapshot!("packages_online_80x24", render(&packages_app(80, 24, Some(online_list()))));
+        insta::assert_snapshot!("packages_online_140x40", render(&packages_app(140, 40, Some(online_list()))));
+    }
+
+    #[test]
+    fn snapshot_packages_builtin_with_reason() {
+        let pl = || Some(PkgList::builtin(Reason::Network("timeout".into())));
+        insta::assert_snapshot!("packages_builtin_80x24", render(&packages_app(80, 24, pl())));
+        insta::assert_snapshot!("packages_builtin_140x40", render(&packages_app(140, 40, pl())));
+    }
+
+    #[test]
+    fn snapshot_packages_fetching() {
+        insta::assert_snapshot!("packages_fetching_80x24", render(&packages_app(80, 24, None)));
+        insta::assert_snapshot!("packages_fetching_140x40", render(&packages_app(140, 40, None)));
     }
 
     #[test]
@@ -838,6 +949,8 @@ pub mod tests {
         let mut a = app(w, h);
         a.now = 1000;
         update(&mut a, key(KeyCode::Char('1')));
+        loaded(&mut a, online_list());
+        update(&mut a, key(KeyCode::Enter));
         a.now = 1300;
         job(&mut a, JobMsg::Progress(progress(3, 12, 41, "Installing obsidian (pacman)", None)));
         job(&mut a, JobMsg::Log { level: Level::Info, line: "Package zotero already installed.".into() });

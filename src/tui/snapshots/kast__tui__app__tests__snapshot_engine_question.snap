@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 1085
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -11,11 +12,11 @@ expression: render(&a)
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Status ──────────────────────────────────────────────────────────────────────╮
 │⠋╭ Question ─────────────────────────────────────────────────────────────────╮│
-╰─│Close/kill running application(s) (zen obsidian) to proceed with restore?  │╯
-╭ │                                                                           │╮
-│I│  zen (PID: 4242 4243)                                                     ││
-│E│  obsidian (PID: 5150)                                                     ││
-│ │                                                                           ││
+│✓│Close/kill running application(s) (zen obsidian) to proceed with restore?  ││
+╰─│                                                                           │╯
+╭ │  zen (PID: 4242 4243)                                                     │╮
+│I│  obsidian (PID: 5150)                                                     ││
+│E│                                                                           ││
 │ │                                Yes     No                                 ││
 │ ╰───────────────────────────────────────────────────────────────────────────╯│
 │                                                                              │

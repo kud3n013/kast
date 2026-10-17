@@ -95,6 +95,8 @@ pub struct RunState {
     pub failures: Vec<String>,
     pub cancel_requested: bool,
     pub finished: Option<Finished>,
+    /// Which package list the job installs (automatic run and option 4)
+    pub packages: Option<Line<'static>>,
 }
 
 pub const AUTO_STEPS: [&str; 4] = ["System upgrade", "kud3n's repository", "Packages", "Services"];
@@ -111,6 +113,7 @@ impl RunState {
             failures: Vec::new(),
             cancel_requested: false,
             finished: None,
+            packages: None,
         }
     }
 
@@ -149,10 +152,12 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
     let spinner = theme.sym.spinner[app.frame % theme.sym.spinner.len()];
 
     let gauges_h = if st.auto { 6 } else { 3 };
-    let status_h = 2 + st.finished.as_ref().map_or(1, |f| match f {
-        Finished::Ok { issues, .. } => 1 + issues.len().min(5) as u16,
-        Finished::Canceled(_) => 1,
-    });
+    let status_h = 2
+        + u16::from(st.packages.is_some())
+        + st.finished.as_ref().map_or(1, |f| match f {
+            Finished::Ok { issues, .. } => 1 + issues.len().min(5) as u16,
+            Finished::Canceled(_) => 1,
+        });
     let [top, status, log_area] = Layout::vertical([Constraint::Length(gauges_h), Constraint::Length(status_h), Constraint::Min(3)]).areas(body);
 
     let (gauge_area, steps_area) = if st.auto && wide {
@@ -241,6 +246,9 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
             }
         }
         Some(Finished::Canceled(msg)) => lines.push(Line::styled(format!("{} {msg}", theme.sym.warn), theme.warn())),
+    }
+    if let Some(src) = &st.packages {
+        lines.push(src.clone());
     }
     f.render_widget(Paragraph::new(Text::from(lines)).block(block(theme, " Status ")), status);
 

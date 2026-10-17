@@ -3,6 +3,7 @@ pub mod help;
 pub mod import;
 pub mod log;
 pub mod menu;
+pub mod packages;
 pub mod run;
 pub mod status;
 pub mod summary;

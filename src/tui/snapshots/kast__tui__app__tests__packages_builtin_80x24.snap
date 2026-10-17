@@ -1,0 +1,28 @@
+---
+source: src/tui/app.rs
+expression: "render(&packages_app(80, 24, pl()))"
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Package list ────────────────────────────────────────────────────────────────╮
+│⚠ Built-in · kast 0.0.0 · 36 packages · offline: could not reach raw.github…  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Automatic setup · 36 packages ───────────────────────────────────────────────╮
+│Official repositories (23)                                                    │
+│  zen-browser-bin                                                             │
+│  zotero                                                                      │
+│  proton-vpn-cli                                                              │
+│  inkscape                                                                    │
+│  chromium                                                                    │
+│  obsidian                                                                    │
+│  fcitx5                                                                      │
+│  fcitx5-configtool                                                           │
+│  fcitx5-gtk                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│The automatic run upgrades the system, adds kud3n's repository, installs these│
+│packages, then sets up services.                                              │
+│                                                                              │
+│The list built into this kast, because:                                       │
+│  offline: could not reach raw.githubusercontent.com (timeout)                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Enter start  ↑/↓ scroll  ? help  Esc back  r retry download

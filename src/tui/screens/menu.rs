@@ -66,8 +66,8 @@ pub const ITEMS: [Item; 10] = [
         action: Action::Packages,
         key: '4',
         label: "Install packages",
-        about: "Installs the official, CachyOS, kud3n and add-on package lists. Anything pacman can't install is retried with yay \
-                as your user.",
+        about: "Installs the official, CachyOS, kud3n and add-on package lists (downloaded from kud3n013/kast, or the built-in \
+                copy), shown first. Anything pacman can't install is retried with yay as your user.",
         changes: "Installed packages; a temporary sudoers rule for yay, removed right after",
         root: true,
         auto: "Part of the automatic run (step 3).",

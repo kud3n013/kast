@@ -1,6 +1,6 @@
 ---
 source: src/tui/app.rs
-assertion_line: 958
+assertion_line: 1071
 expression: "render(&running_auto(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -12,13 +12,13 @@ expression: "render(&running_auto(80, 24))"
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Status ──────────────────────────────────────────────────────────────────────╮
 │⠋ 12/41: Installing obsidian (pacman)                                         │
+│✓ Online · kud3n013/kast@main · fetched 04:39 · 36 packages                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Log (following) ─────────────────────────────────────────────────────────────╮
 │INFO  Package zotero already installed.                                       │
 │ERROR Failed to install steam. Recorded in /var/log/kast.log                  │
 │      resolving dependencies...                                               │
 │      obsidian-1.9.12   45%                                                   │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

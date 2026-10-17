@@ -11,6 +11,7 @@ use anyhow::Result;
 use super::JOB_THREAD;
 use super::event::{Event, JobMsg, Outcome};
 use crate::ctx::{self, Reported};
+use crate::pkglist::PkgList;
 use crate::report::{self, JobCanceled, Level, Progress, Prompt, Reporter};
 use crate::setup;
 use crate::vault::backup::{BackupOpts, cmd_backup};
@@ -18,10 +19,11 @@ use crate::vault::import::{ImportOpts, cmd_import};
 
 #[derive(Debug, Clone)]
 pub enum JobKind {
-    Auto,
+    /// With the package list the user saw before starting
+    Auto(Arc<PkgList>),
     Partition,
     Repo,
-    Packages,
+    Packages(Arc<PkgList>),
     Services,
     Import(ImportOpts),
     Export(BackupOpts),
@@ -45,10 +47,10 @@ pub enum FakeStep {
 impl JobKind {
     pub fn title(&self) -> String {
         match self {
-            JobKind::Auto => "Automatic setup".into(),
+            JobKind::Auto(_) => "Automatic setup".into(),
             JobKind::Partition => "Set up data partition".into(),
             JobKind::Repo => "Add kud3n's repository".into(),
-            JobKind::Packages => "Install packages".into(),
+            JobKind::Packages(_) => "Install packages".into(),
             JobKind::Services => "Set up services".into(),
             JobKind::Import(o) => format!("Restore {}", o.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             JobKind::Export(o) => format!("Back up {}", o.target),
@@ -59,7 +61,15 @@ impl JobKind {
     }
 
     pub fn is_auto(&self) -> bool {
-        matches!(self, JobKind::Auto)
+        matches!(self, JobKind::Auto(_))
+    }
+
+    /// The package list the job installs, if it installs packages.
+    pub fn packages(&self) -> Option<&PkgList> {
+        match self {
+            JobKind::Auto(pl) | JobKind::Packages(pl) => Some(pl),
+            _ => None,
+        }
     }
 }
 
@@ -169,8 +179,8 @@ fn run(kind: JobKind) -> Result<Outcome> {
         ctx::clear_issues();
     }
     Ok(match kind {
-        JobKind::Auto => {
-            let list = crate::pkglist::load(false, crate::pkglist::curl_fetch);
+        JobKind::Auto(list) => {
+            report::log(Level::Info, &format!("Package list: {}", list.source_line()));
             let start = setup::run_automatic_steps(&list)?;
             Outcome::Summary(setup::collect_summary(start, &list))
         }
@@ -182,8 +192,9 @@ fn run(kind: JobKind) -> Result<Outcome> {
             setup::add_kud3n_repo(false, 0, 1, 1)?;
             finished("Repository step finished")
         }
-        JobKind::Packages => {
-            setup::install_packages(&crate::pkglist::load(false, crate::pkglist::curl_fetch).list, false, 0, 1, 1);
+        JobKind::Packages(list) => {
+            report::log(Level::Info, &format!("Package list: {}", list.source_line()));
+            setup::install_packages(&list.list, false, 0, 1, 1);
             finished("Package installation finished")
         }
         JobKind::Services => {

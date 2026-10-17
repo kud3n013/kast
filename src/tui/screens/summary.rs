@@ -25,6 +25,7 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
         if s.repo_configured { Span::raw("configured in /etc/pacman.conf") } else { Span::styled(format!("{} not configured", theme.sym.warn), theme.warn()) };
     lines.push(field("kud3n repository", repo));
     lines.push(field("Log file", Span::raw(s.log_file.clone())));
+    lines.push(field("Package list", Span::raw(crate::tui::screens::packages::sep(theme, &s.packages))));
     if s.howdy_enrolled {
         lines.push(field("Howdy face model", Span::styled(format!("{} enrolled for {}", theme.sym.ok, s.user), theme.ok())));
     }

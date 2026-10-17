@@ -1,6 +1,6 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1150
+assertion_line: 1264
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -14,13 +14,13 @@ expression: render(&a)
 │⚠ Services step finished, with 2 issue(s):                                    │
 │  ✗ Package failed to install: steam                                          │
 │  ✗ Could not enable/start searxng                                            │
+│✓ Online · kud3n013/kast@main · fetched 04:39 · 36 packages                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Log (following) ─────────────────────────────────────────────────────────────╮
 │INFO  Package zotero already installed.                                       │
 │ERROR Failed to install steam. Recorded in /var/log/kast.log                  │
 │      resolving dependencies...                                               │
 │      obsidian-1.9.12   45%                                                   │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

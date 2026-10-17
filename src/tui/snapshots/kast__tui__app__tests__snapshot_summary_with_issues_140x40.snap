@@ -1,6 +1,6 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1131
+assertion_line: 1245
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -13,6 +13,7 @@ expression: render(&a)
 │  Data partition    not set up (optional: menu option 2 or `sudo kast partition`)                                                         │
 │  kud3n repository  configured in /etc/pacman.conf                                                                                        │
 │  Log file          /var/log/kast.log                                                                                                     │
+│  Package list      Online · kud3n013/kast@main · fetched 04:39 · 36 packages                                                             │
 │                                                                                                                                          │
 │  Issues                                                                                                                                  │
 │    ✗ System upgrade (pacman -Syuu) failed with exit code 1                                                                               │
@@ -21,7 +22,6 @@ expression: render(&a)
 │  Howdy: no face model enrolled yet. Run:                                                                                                 │
 │    sudo howdy -U p3ter add                                                                                                               │
 │    (or restore a saved face model with menu option 6 / `sudo kast import`)                                                               │
-│                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │
