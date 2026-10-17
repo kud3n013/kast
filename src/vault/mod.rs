@@ -455,11 +455,66 @@ pub fn relaunch_plan(apps: &[String]) -> Vec<Relaunch> {
     out
 }
 
-/// Start the closed apps again, as the user, in the background with no output.
+/// The desktop the user runs, for starting apps in the background.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Desktop {
+    /// Plasma: `kstart --iconify` starts a window minimized
+    Kde,
+    /// Hyprland (no minimizing): a hidden special workspace, without focus
+    Hyprland,
+    Other,
+}
+
+pub fn desktop_kind(current_desktop: &str) -> Desktop {
+    let d = current_desktop.to_ascii_lowercase();
+    if d.split(':').any(|p| p == "kde") {
+        Desktop::Kde
+    } else if d.split(':').any(|p| p == "hyprland") {
+        Desktop::Hyprland
+    } else {
+        Desktop::Other
+    }
+}
+
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// How to start a closed app again in the background: in its tray when the app can do that
+/// itself (Vesktop), else minimized (Plasma) or on a hidden workspace (Hyprland). An app
+/// without a window (fcitx5), or another desktop: as it was started.
+pub fn background_argv(app: &str, argv: &[String], desktop: Desktop, kstart: Option<&str>) -> Vec<String> {
+    if app == "fcitx5" {
+        return argv.to_vec();
+    }
+    if app == "vesktop" {
+        let mut v = argv.to_vec();
+        if !v.iter().any(|a| a == "--start-minimized") {
+            v.push("--start-minimized".into());
+        }
+        return v;
+    }
+    match (desktop, kstart) {
+        (Desktop::Kde, Some(k)) => [k, "--iconify", "--"].iter().map(|s| s.to_string()).chain(argv.iter().cloned()).collect(),
+        (Desktop::Hyprland, _) => {
+            let cmd: Vec<String> = argv.iter().map(|a| shell_quote(a)).collect();
+            vec!["hyprctl".into(), "dispatch".into(), "exec".into(), format!("[workspace special:kast silent] {}", cmd.join(" "))]
+        }
+        _ => argv.to_vec(),
+    }
+}
+
+/// Start the closed apps again, as the user, in the background (see `background_argv`).
 pub fn relaunch(list: &[Relaunch]) {
+    let (desktop, extra) = crate::logio::os::desktop_kind();
+    let kstart = ["kstart", "kstart6", "kstart5"].into_iter().find(|k| crate::ctx::have(k));
     for r in list {
-        match crate::logio::os::start_detached(&r.argv, r.cwd.as_deref()) {
-            Ok(()) => log_info(&format!("Started {} again.", r.app)),
+        let argv = background_argv(&r.app, &r.argv, desktop, kstart);
+        let started = crate::logio::os::start_detached(&argv, r.cwd.as_deref(), &extra)
+            // The wrapper (kstart, hyprctl) didn't work out: start it plainly
+            .or_else(|e| if argv == r.argv { Err(e) } else { crate::logio::os::start_detached(&r.argv, r.cwd.as_deref(), &extra) });
+        match started {
+            Ok(()) => log_info(&format!("Started {} again in the background.", r.app)),
             Err(e) => log_warn(&format!("Could not start {} again ({e}); start it yourself.", r.app)),
         }
     }
@@ -604,5 +659,26 @@ mod tests {
         assert_eq!(stat_ppid("garbage"), None);
         assert_eq!(cmdline_argv(b"/opt/beeper/beepertexts\0--no-sandbox\0\0"), vec!["/opt/beeper/beepertexts".to_string(), "--no-sandbox".into()]);
         assert!(cmdline_argv(b"").is_empty());
+    }
+
+    #[test]
+    fn apps_come_back_in_the_background() {
+        let argv = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let beeper = argv(&["/opt/beeper/beepertexts", "--no-sandbox"]);
+        assert_eq!(desktop_kind("KDE"), Desktop::Kde);
+        assert_eq!(desktop_kind("Hyprland"), Desktop::Hyprland);
+        assert_eq!(desktop_kind("ubuntu:GNOME"), Desktop::Other);
+        assert_eq!(
+            background_argv("beeper", &beeper, Desktop::Kde, Some("kstart")),
+            argv(&["kstart", "--iconify", "--", "/opt/beeper/beepertexts", "--no-sandbox"])
+        );
+        assert_eq!(background_argv("beeper", &beeper, Desktop::Kde, None), beeper);
+        assert_eq!(
+            background_argv("zen", &argv(&["/opt/zen/zen-bin", "it's"]), Desktop::Hyprland, None),
+            argv(&["hyprctl", "dispatch", "exec", "[workspace special:kast silent] '/opt/zen/zen-bin' 'it'\\''s'"])
+        );
+        assert_eq!(background_argv("vesktop", &argv(&["vesktop"]), Desktop::Kde, Some("kstart")), argv(&["vesktop", "--start-minimized"]));
+        assert_eq!(background_argv("fcitx5", &argv(&["fcitx5", "-d"]), Desktop::Kde, Some("kstart")), argv(&["fcitx5", "-d"]));
+        assert_eq!(background_argv("obsidian", &argv(&["obsidian"]), Desktop::Other, Some("kstart")), argv(&["obsidian"]));
     }
 }

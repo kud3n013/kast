@@ -143,8 +143,9 @@ pub fn open_file(path: &Path, hint: &str) -> Report {
 
 /// Start a desktop app as the user, in its own session, with no output, and don't wait for
 /// it (an app kast closed for a backup, started again).
-pub fn start_detached(argv: &[String], cwd: Option<&Path>) -> io::Result<()> {
-    let (user, desktop) = desktop_session();
+pub fn start_detached(argv: &[String], cwd: Option<&Path>, more_env: &[(String, String)]) -> io::Result<()> {
+    let (user, mut desktop) = desktop_session();
+    desktop.extend(more_env.iter().cloned());
     let mut cmd = Launch::as_user(ctx().is_root, &user, &desktop, argv).command();
     cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     if let Some(d) = cwd.filter(|d| d.is_dir()) {
@@ -152,8 +153,36 @@ pub fn start_detached(argv: &[String], cwd: Option<&Path>) -> io::Result<()> {
     }
     detach(&mut cmd);
     let mut child = cmd.spawn()?;
+    // A launcher (kstart, hyprctl) that fails at once: report it so the caller can fall back
+    std::thread::sleep(Duration::from_millis(300));
+    if let Some(st) = child.try_wait()?
+        && !st.success()
+    {
+        return Err(io::Error::other(format!("{} exited with {st}", argv[0])));
+    }
     std::thread::spawn(move || child.wait());
     Ok(())
+}
+
+/// The user's desktop, and for Hyprland the instance hyprctl should talk to (its socket
+/// folder in the user's runtime dir, when there's exactly one).
+pub fn desktop_kind() -> (crate::vault::Desktop, Vec<(String, String)>) {
+    let (user, extra) = desktop_session();
+    let current = extra.iter().find(|(k, _)| k == "XDG_CURRENT_DESKTOP").map(|(_, v)| v.clone()).or_else(|| env("XDG_CURRENT_DESKTOP")).unwrap_or_default();
+    let kind = crate::vault::desktop_kind(&current);
+    let mut more = Vec::new();
+    if kind == crate::vault::Desktop::Hyprland {
+        let sig = env("HYPRLAND_INSTANCE_SIGNATURE").or_else(|| {
+            let dirs: Vec<String> = fs::read_dir(format!("{}/hypr", user.runtime_dir()))
+                .map(|rd| rd.flatten().filter(|e| e.path().is_dir()).map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+                .unwrap_or_default();
+            (dirs.len() == 1).then(|| dirs[0].clone())
+        });
+        if let Some(s) = sig {
+            more.push(("HYPRLAND_INSTANCE_SIGNATURE".to_string(), s));
+        }
+    }
+    (kind, more)
 }
 
 /// Open a web address in the user's browser (the sign-in link).

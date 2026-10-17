@@ -16,7 +16,7 @@ expression: "render(&loaded(80, 24))"
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                    │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                           │
 │  [x] Include large media (attachments, site data)                            │
-│  [x] Close running apps first (started again after)                          │
+│  [x] Close running apps first (reopened in the background)                   │
 │  File name: all_backup_2026-10-17_101500.zip                                 │
 │  ▶ Start backup                                                              │
 │                                                                              │

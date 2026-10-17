@@ -16,7 +16,7 @@ expression: "render(&proton(140, 40))"
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││this kind; older ones go to Proton Drive's trash.            │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
 │  [x] Include large media (attachments, site data)                         ││Built in a private folder (0700) and removed after the upload│
-│  [x] Close running apps first (started again after)                       ││unless you keep a copy.                                      │
+│  [x] Close running apps first (reopened in the background)                ││unless you keep a copy.                                      │
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
 │                                                                           ││                                                             │
