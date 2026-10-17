@@ -588,6 +588,7 @@ mod tests {
             return;
         }
         let c = ctx::init_for_tests();
+        let _staging = ctx::staging_test_lock();
         crate::report::install(std::sync::Arc::new(NoPrompts));
         let t = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(c.config_home.join("fcitx5")).unwrap();

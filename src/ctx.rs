@@ -97,6 +97,14 @@ pub fn init() {
     let _ = CTX.set(Ctx { is_root, target_user, target_uid, target_gid, target_home, sudo_user, log_file, config_home, data_home, state_home, cache_home });
 }
 
+/// The vault's staging folder is one per process, and every job's end wipes it: tests that
+/// run a backup and tests that run jobs take turns.
+#[cfg(test)]
+pub fn staging_test_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// A context for tests that need one: the current user, with a throwaway home (kept for the
 /// whole test run) for config, state, cache and the log.
 #[cfg(test)]

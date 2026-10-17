@@ -340,6 +340,8 @@ mod tests {
         let replies = Arc::new(Replies::default());
         let mut a = app(80, 24);
         let Command::Start(kind) = start_job(&mut a, JobKind::Fake(steps)) else { panic!() };
+        // Until the job has ended (its cleanup wipes the vault's staging folder)
+        let _staging = ctx::staging_test_lock();
         spawn(kind, tx, replies.clone());
         loop {
             let ev = rx.recv_timeout(Duration::from_secs(10)).expect("job hung");
