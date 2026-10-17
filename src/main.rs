@@ -4,6 +4,7 @@
 mod ctx;
 mod interactive;
 mod logio;
+mod pkglist;
 mod report;
 mod setup;
 mod tui;
@@ -229,11 +230,11 @@ fn needs_root(cmd: &Option<Cmd>) -> bool {
 fn dispatch(cmd: Option<Cmd>) -> Result<()> {
     match cmd {
         None => tui::run(tui::Start::Menu),
-        Some(Cmd::Auto) => setup::run_automatic(),
+        Some(Cmd::Auto) => setup::run_automatic(&pkglist::builtin()),
         Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
         Some(Cmd::Repo) => setup::add_kud3n_repo(false, 0, 1, 1),
         Some(Cmd::Packages) => {
-            setup::install_packages(false, 0, 1, 1);
+            setup::install_packages(&pkglist::builtin(), false, 0, 1, 1);
             Ok(())
         }
         Some(Cmd::Services) => setup::setup_services(false, 0, 1, 1),

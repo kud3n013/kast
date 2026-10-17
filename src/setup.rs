@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 
 use crate::ctx::{self, add_issue, ctx, have, log, ok, ok_logged, output, run_as_user};
+use crate::pkglist::{Parsed, Pkg};
 use crate::ui::{self, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW, Dash};
 
 pub const MOUNT_POINT: &str = "/media/data";
@@ -319,45 +320,6 @@ pub fn add_kud3n_repo(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 
 // --- State 4: Packages ----------------------------------------------------------------
 
-const PKGS_OFFICIAL: &[&str] = &[
-    "zen-browser-bin",
-    "zotero",
-    "proton-vpn-cli",
-    "inkscape",
-    "chromium",
-    "obsidian",
-    "fcitx5",
-    "fcitx5-configtool",
-    "fcitx5-gtk",
-    "fcitx5-qt",
-    "fcitx5-unikey",
-    "vesktop-bin",
-    "valkey",
-    "kdenlive",
-    "steam",
-    "zed-globalmenu",
-    "wine",
-    "wine-gecko",
-    "wine-mono",
-    "gwenview",
-    "haruna",
-    "libreoffice-fresh",
-    "libreoffice-fresh-vi",
-];
-const PKGS_KUD3N: &[&str] = &["beeper", "howdy-next", "gdlauncher-carbon", "searxng", "archrepo/freedownloadmanager", "archrepo/sine"];
-const PKGS_ADDONS: &[&str] =
-    &["freedownloadmanager-elephant", "zotero-better-bibtex", "zotmoov", "zotero-better-notes", "zotero-ocr", "zotero-pdf-translate", "zotero-mcp"];
-
-/// Ensure archrepo versions are used instead of legacy/AUR packages.
-fn canonical_pkg(pkg: &str) -> &str {
-    match pkg {
-        "freedownloadmanager" => "archrepo/freedownloadmanager",
-        "sine" | "sine-bin" => "archrepo/sine",
-        "zed" => "zed-globalmenu",
-        p => p,
-    }
-}
-
 /// `pacman -Si` output in the C locale, so the field labels are the English ones.
 fn sync_info(pkg: &str) -> Option<String> {
     let out = pacman(&["-Si", pkg]).env("LC_ALL", "C").stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
@@ -384,30 +346,23 @@ fn pkg_installed(pkg: &str) -> bool {
     }
 }
 
-pub fn install_packages(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
+pub fn install_packages(list: &Parsed, auto: bool, o_start: i64, o_step: i64, o_total: i64) {
     let c = ctx();
     let d = Dash::new(auto, o_start, o_step, o_total, "Install Packages");
-    let all: Vec<&str> = PKGS_OFFICIAL.iter().chain(PKGS_KUD3N).chain(PKGS_ADDONS).copied().collect();
-    let s_total = all.len() as i64;
+    let all: Vec<&Pkg> = list.packages().collect();
+    let s_total = list.count() as i64;
     log("INFO", &format!("Starting installation of {s_total} packages..."));
 
-    for (i, raw) in all.iter().enumerate() {
+    for (i, p) in all.iter().enumerate() {
         let idx = i as i64 + 1;
-        let pkg = canonical_pkg(raw);
-        let name = pkg.split_once('/').map_or(pkg, |(_, n)| n);
+        let pkg = p.name.as_str();
 
         // Replace a conflicting legacy/bin package, but only when the replacement is
         // actually available, otherwise the app would just disappear.
-        let legacy = match name {
-            "freedownloadmanager" => Some("freedownloadmanager-bin"),
-            "sine" => Some("sine-bin"),
-            "zed-globalmenu" => Some("zed"),
-            _ => None,
-        };
         // The swap happens in the install transaction itself (pacman removes the conflicting
         // package there), so a failed or canceled install leaves the legacy package in place.
         let mut swap = false;
-        if let Some(legacy) = legacy.filter(|l| ok("pacman", &["-Qq", l])) {
+        if let Some(legacy) = p.replaces.as_deref().filter(|l| ok("pacman", &["-Qq", l])) {
             match sync_info(pkg) {
                 Some(info) if conflicts_with(&info, legacy) => {
                     log("INFO", &format!("Detected {legacy}; replacing it with {pkg}..."));
@@ -424,7 +379,10 @@ pub fn install_packages(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
             continue;
         }
 
-        let install = if pkg == "vesktop-bin" && !ok("pacman", &["-Si", "vesktop-bin"]) && ok("pacman", &["-Si", "vesktop"]) { "vesktop" } else { pkg };
+        let install = match p.fallback.as_deref() {
+            Some(f) if !ok("pacman", &["-Si", pkg]) && ok("pacman", &["-Si", f]) => f,
+            _ => pkg,
+        };
 
         // --ask=4 answers yes to "remove the conflicting package?", which --noconfirm declines
         let args: &[&str] = if swap { &["-S", "--needed", "--noconfirm", "--ask=4", install] } else { &["-S", "--needed", "--noconfirm", install] };
@@ -622,8 +580,8 @@ pub struct Summary {
     pub howdy_enrolled: bool,
 }
 
-pub fn run_automatic() -> Result<()> {
-    let o_start = run_automatic_steps()?;
+pub fn run_automatic(list: &Parsed) -> Result<()> {
+    let o_start = run_automatic_steps(list)?;
     ui::restore_terminal_interactive();
     ui::clear_screen();
     print_summary(&collect_summary(o_start));
@@ -632,7 +590,7 @@ pub fn run_automatic() -> Result<()> {
 }
 
 /// The four steps of the automatic run; returns its start time.
-pub fn run_automatic_steps() -> Result<i64> {
+pub fn run_automatic_steps(list: &Parsed) -> Result<i64> {
     let o_start = ui::now();
     let o_total = 4;
     ctx::clear_issues();
@@ -642,7 +600,7 @@ pub fn run_automatic_steps() -> Result<i64> {
 
     system_upgrade(true, o_start, 1, o_total);
     add_kud3n_repo(true, o_start, 2, o_total)?;
-    install_packages(true, o_start, 3, o_total);
+    install_packages(list, true, o_start, 3, o_total);
     setup_services(true, o_start, 4, o_total)?;
     Ok(o_start)
 }
@@ -773,12 +731,6 @@ mod tests {
         assert!(!conflicts_with("Conflicts With  : None\n", "sine-bin"));
     }
 
-    #[test]
-    fn legacy_names_map_to_archrepo() {
-        assert_eq!(canonical_pkg("sine-bin"), "archrepo/sine");
-        assert_eq!(canonical_pkg("zed"), "zed-globalmenu");
-        assert_eq!(canonical_pkg("zotero"), "zotero");
-    }
     #[test]
     fn migration_moves_relinks_and_keeps_on_failure() {
         use std::os::unix::fs::PermissionsExt;

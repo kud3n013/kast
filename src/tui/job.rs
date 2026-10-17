@@ -170,7 +170,7 @@ fn run(kind: JobKind) -> Result<Outcome> {
     }
     Ok(match kind {
         JobKind::Auto => {
-            let start = setup::run_automatic_steps()?;
+            let start = setup::run_automatic_steps(&crate::pkglist::builtin())?;
             Outcome::Summary(setup::collect_summary(start))
         }
         JobKind::Partition => {
@@ -182,7 +182,7 @@ fn run(kind: JobKind) -> Result<Outcome> {
             finished("Repository step finished")
         }
         JobKind::Packages => {
-            setup::install_packages(false, 0, 1, 1);
+            setup::install_packages(&crate::pkglist::builtin(), false, 0, 1, 1);
             finished("Package installation finished")
         }
         JobKind::Services => {

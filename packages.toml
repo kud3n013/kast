@@ -1,0 +1,82 @@
+# What `kast packages` (menu option 4) and the automatic run install, in this order.
+#
+# kast downloads this file from the main branch on every run
+# (https://raw.githubusercontent.com/kud3n013/kast/main/packages.toml), so an edit pushed to
+# main reaches every user on their next run, with no release. The copy built into each kast
+# binary is the fallback: offline, on a download error, or when this file fails validation.
+#
+# Format rules:
+# - `schema` is the format version. Add new optional fields freely: older kast versions
+#   ignore fields they don't know. Bump `schema` only for a breaking change, and only after
+#   a kast release that understands the new version is out; older versions then fall back
+#   to their built-in list and tell the user to update.
+# - Groups: official, cachyos, kud3n, addons (any other id is skipped with a warning).
+# - Per package: `name` (required), `description`, `fallback` (installed instead when `name`
+#   isn't in the sync databases but the fallback is), `replaces` (an installed legacy package
+#   swapped out, only if `name` declares a conflict with it), `requires` (the package this
+#   add-on belongs to; must be in this file).
+# - Names: lowercase package names, optionally prefixed with a known repo (`archrepo/`).
+#   `cargo test` validates this file, and so does kast before using a downloaded copy.
+
+schema = 1
+
+[[group]]
+id = "official"
+name = "Official repositories"
+packages = [
+  { name = "zen-browser-bin" },
+  { name = "zotero" },                                    # from archrepo
+  { name = "proton-vpn-cli" },
+  { name = "inkscape" },
+  { name = "chromium" },
+  { name = "obsidian" },
+  { name = "fcitx5" },
+  { name = "fcitx5-configtool" },
+  { name = "fcitx5-gtk" },
+  { name = "fcitx5-qt" },
+  { name = "fcitx5-unikey" },
+  { name = "vesktop-bin", fallback = "vesktop" },        # used when vesktop-bin isn't in the sync DBs
+  { name = "valkey" },
+  { name = "kdenlive" },
+  { name = "steam" },
+  { name = "zed-globalmenu", replaces = "zed" },         # from archrepo; swaps only when it declares the conflict
+  { name = "wine" },
+  { name = "wine-gecko" },
+  { name = "wine-mono" },
+  { name = "gwenview" },
+  { name = "haruna" },
+  { name = "libreoffice-fresh" },
+  { name = "libreoffice-fresh-vi" },
+]
+
+# Packages only the CachyOS repositories carry. Empty for now: which of the entries above
+# come from cachyos* repos hasn't been verified on a CachyOS machine yet.
+[[group]]
+id = "cachyos"
+name = "CachyOS repositories"
+packages = []
+
+[[group]]
+id = "kud3n"
+name = "kud3n's repository"
+packages = [
+  { name = "beeper" },
+  { name = "howdy-next" },
+  { name = "gdlauncher-carbon" },
+  { name = "searxng" },
+  { name = "archrepo/freedownloadmanager", replaces = "freedownloadmanager-bin" },
+  { name = "archrepo/sine", replaces = "sine-bin" },
+]
+
+[[group]]
+id = "addons"
+name = "Add-ons"
+packages = [
+  { name = "freedownloadmanager-elephant", requires = "archrepo/freedownloadmanager" },
+  { name = "zotero-better-bibtex", requires = "zotero" },
+  { name = "zotmoov", requires = "zotero" },
+  { name = "zotero-better-notes", requires = "zotero" },
+  { name = "zotero-ocr", requires = "zotero" },
+  { name = "zotero-pdf-translate", requires = "zotero" },
+  { name = "zotero-mcp", requires = "zotero" },
+]
