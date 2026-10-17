@@ -29,6 +29,8 @@ pub enum JobKind {
     Services,
     Import(ImportOpts),
     Export(BackupOpts),
+    /// Back up and upload to Proton Drive
+    Upload(BackupOpts, crate::drive::UploadOpts),
     /// Undo these changes (in this order)
     Undo(Vec<crate::undo::Item>),
     /// Remove these packages
@@ -63,6 +65,7 @@ impl JobKind {
             JobKind::InstallProton => "Install proton-drive".into(),
             JobKind::Import(o) => format!("Restore {}", o.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             JobKind::Export(o) => format!("Back up {}", o.target),
+            JobKind::Upload(o, _) => format!("Back up {} to Proton Drive", o.target),
             JobKind::RemovePacmanLock => "Remove the pacman lock".into(),
             JobKind::Undo(_) => "Undo changes".into(),
             JobKind::Uninstall(_) => "Uninstall apps".into(),
@@ -203,6 +206,7 @@ fn run(kind: JobKind) -> Result<Outcome> {
         JobKind::InstallProton => ("packages", false),
         JobKind::Import(o) => ("import", o.dry_run),
         JobKind::Export(o) => ("export", o.dry_run),
+        JobKind::Upload(..) => ("export", false),
         _ => return run_job(kind),
     };
     crate::journal::recorded(&[step], dry, || run_job(kind))
@@ -259,6 +263,17 @@ fn run_job(kind: JobKind) -> Result<Outcome> {
             cmd_backup(o)?;
             if ctx::canceled() { Outcome::Canceled("No backup was created".into()) } else { finished(&format!("Backup saved to {out}")) }
         }
+        JobKind::Upload(o, up) => match crate::drive::backup_upload(o, &up)? {
+            crate::drive::Uploaded::Done { remote, identical: true, .. } => finished(&format!("Already on Proton Drive (identical): {remote}")),
+            crate::drive::Uploaded::Done { remote, trashed, .. } => {
+                let n = trashed.iter().filter(|t| !t.ends_with(crate::drive::SIDECAR_EXT)).count();
+                let extra = if n > 0 { format!("; {n} older moved to Drive's trash") } else { String::new() };
+                finished(&format!("Uploaded to Proton Drive: {remote}{extra}"))
+            }
+            crate::drive::Uploaded::Unchanged { since } => finished(&format!("Nothing changed since the last upload ({since}): not uploaded")),
+            crate::drive::Uploaded::Nothing => finished("Nothing was backed up"),
+            crate::drive::Uploaded::Canceled => Outcome::Canceled("No backup was uploaded".into()),
+        },
         JobKind::Undo(items) => {
             let dir = crate::journal::state_dir();
             let user = ctx::ctx().target_user.clone();

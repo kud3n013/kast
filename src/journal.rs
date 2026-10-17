@@ -557,6 +557,13 @@ pub fn export(file: &Path) {
     }
 }
 
+/// A backup uploaded to Proton Drive (undo moves it to Drive's trash).
+pub fn remote_upload(remote: &str, sidecar: &str, size: u64, sha256: &str, folder: &str) {
+    if let Some(j) = current() {
+        j.note("remote_upload", json!({ "remote": remote, "sidecar": sidecar, "size": size, "sha256": sha256, "folder": folder })).unwrap_or_else(warn);
+    }
+}
+
 /// The system upgrade: when, and the snapshots taken around it.
 pub fn upgrade(start: &str, end: &str, snapshot: Value) {
     if let Some(j) = current() {

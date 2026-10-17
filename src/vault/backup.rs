@@ -11,7 +11,7 @@ use crate::ui::{C_BOLD, C_RESET};
 use super::archive::{MANIFEST, create_zip_archive};
 use super::*;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct BackupOpts {
     pub target: String,
     pub output: Option<PathBuf>,
@@ -19,6 +19,29 @@ pub struct BackupOpts {
     pub kill: bool,
     pub force: bool,
     pub dry_run: bool,
+    /// Running apps: ask (or kill with `kill`), or leave them out without a word of prompt
+    pub running: RunningPolicy,
+    /// Leave the Howdy face model out of "all" (it needs sudo; scheduled backups skip it)
+    pub no_howdy: bool,
+    /// Built into a staging folder for an upload: not recorded as a local backup
+    pub staged: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RunningPolicy {
+    /// What kast always did: ask to close them (or kill with -k, go on with -f)
+    #[default]
+    Ask,
+    /// Back up everything else and report the running ones (scheduled backups: no prompts)
+    Skip,
+}
+
+/// Apps the last backup left out because they were running (`RunningPolicy::Skip`).
+static SKIPPED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+#[allow(dead_code)] // read by the scheduled backup
+pub fn take_skipped() -> Vec<String> {
+    std::mem::take(&mut *SKIPPED.lock().unwrap())
 }
 
 const COMMON_EXCLUDES: &[&str] = &[
@@ -172,7 +195,10 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
         log_warn("DRY-RUN MODE ENABLED: No files will be archived.");
     }
 
-    let apps: Vec<String> = if target == "all" { ALL_APPS.iter().map(|s| s.to_string()).collect() } else { vec![target.clone()] };
+    let mut apps: Vec<String> = if target == "all" { ALL_APPS.iter().map(|s| s.to_string()).collect() } else { vec![target.clone()] };
+    if o.no_howdy && target == "all" {
+        apps.retain(|a| a != "howdy");
+    }
 
     let mut running: Vec<String> = Vec::new();
     let mut running_info: Vec<String> = Vec::new();
@@ -184,7 +210,18 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
             running_info.push(format!("{app} (PID: {})", pid_list(&pids)));
         }
     }
-    if !running.is_empty() && (!o.force || o.kill) {
+    if !running.is_empty() && o.running == RunningPolicy::Skip {
+        // Never close an app the user is working in: back up the rest, say what was left out
+        for app in &running {
+            log_warn(&format!("Skipping '{app}': it's running, and this backup doesn't close apps."));
+        }
+        apps.retain(|a| !running.contains(a));
+        *SKIPPED.lock().unwrap() = running.clone();
+        if apps.is_empty() {
+            log_warn("Nothing left to back up: every app of this backup is running.");
+            return Ok(());
+        }
+    } else if !running.is_empty() && (!o.force || o.kill) {
         let list = running.join(" ");
         if o.dry_run {
             log_warn(&format!(
@@ -279,7 +316,9 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
 
     report::blank();
     log_success("Backup completed successfully!");
-    crate::journal::export(&output);
+    if !o.staged {
+        crate::journal::export(&output);
+    }
     log_info(&format!("Archive:    {}", output.display()));
     log_info(&format!("Total Size: {}", format_bytes(&output)));
     Ok(())

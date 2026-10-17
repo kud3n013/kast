@@ -31,7 +31,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::ctx::Reported;
 use crate::ui::{C_RED, C_RESET};
-use crate::vault::backup::{BackupOpts, cmd_backup};
+use crate::vault::backup::{self, BackupOpts, cmd_backup};
 use crate::vault::import::{ImportOpts, cmd_import};
 
 #[derive(Parser)]
@@ -126,6 +126,13 @@ enum DriveCmd {
     Login,
     /// Sign out and clear proton-drive's session and caches on this computer
     Logout,
+    /// Upload an archive made earlier (e.g. one a failed upload kept)
+    Upload {
+        file: PathBuf,
+        /// Backups to keep per target (default: proton.keep in settings, 5)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        keep: Option<u32>,
+    },
     /// Whether proton-drive is installed and signed in (exit 3 if not)
     Status {
         #[arg(long)]
@@ -278,9 +285,9 @@ struct LogArgs {
 
 #[derive(Args, Default)]
 struct BackupArgs {
-    /// What to back up
+    /// What to back up (several: an archive each)
     #[arg(value_parser = TARGETS)]
-    target: Option<String>,
+    target: Vec<String>,
     /// Destination archive (.zip) or face model (.dat)
     #[arg(short, long, value_name = "FILE")]
     output: Option<PathBuf>,
@@ -299,23 +306,87 @@ struct BackupArgs {
     /// Show actions without copying files or creating an archive
     #[arg(long)]
     dry_run: bool,
+    /// Upload the backup to Proton Drive (sign in first: kast drive login)
+    #[arg(long, value_name = "WHERE", value_parser = ["proton"])]
+    upload: Option<String>,
+    /// Backups to keep on Proton Drive per target (default: proton.keep in settings, 5)
+    #[arg(long, value_name = "N", requires = "upload", value_parser = clap::value_parser!(u32).range(1..))]
+    keep: Option<u32>,
+    /// Also keep the archive in this folder
+    #[arg(long, value_name = "DIR", requires = "upload")]
+    also_local: Option<PathBuf>,
+    /// Upload even when nothing changed since the last upload
+    #[arg(long, requires = "upload")]
+    force_upload: bool,
+    /// The scheduled backup: never prompts, skips running apps and the face model
+    #[arg(long, hide = true, requires = "upload")]
+    scheduled: bool,
 }
 
 impl BackupArgs {
     fn is_empty(&self) -> bool {
-        self.target.is_none() && self.output.is_none() && !self.no_media && !self.no_vaults && !self.kill && !self.force && !self.dry_run
+        self.target.is_empty()
+            && self.output.is_none()
+            && !self.no_media
+            && !self.no_vaults
+            && !self.kill
+            && !self.force
+            && !self.dry_run
+            && self.upload.is_none()
+            && self.keep.is_none()
+            && self.also_local.is_none()
+            && !self.force_upload
+            && !self.scheduled
     }
 
-    fn into_opts(self) -> BackupOpts {
+    fn opts_for(&self, target: &str) -> BackupOpts {
         BackupOpts {
-            target: self.target.unwrap_or_else(|| "all".into()),
-            output: self.output,
+            target: target.to_string(),
+            output: self.output.clone(),
             include_media: !self.no_media,
             kill: self.kill,
             force: self.force,
             dry_run: self.dry_run,
+            ..Default::default()
         }
     }
+
+    fn targets(&self) -> Vec<String> {
+        if self.target.is_empty() { vec!["all".into()] } else { self.target.clone() }
+    }
+}
+
+/// `kast backup`: each target in turn, uploaded with `--upload proton`.
+fn run_backup(a: BackupArgs) -> Result<()> {
+    if a.target.len() > 1 && a.output.is_some() {
+        anyhow::bail!("--output works with a single target");
+    }
+    if a.upload.is_some() {
+        if a.output.as_deref().is_some_and(|o| !vault::is_dat(o)) {
+            anyhow::bail!("--output with --upload only picks the face model's .dat format; use --also-local DIR to keep a copy");
+        }
+        let s = settings::load();
+        let up = drive::UploadOpts {
+            keep: a.keep.unwrap_or_else(|| s.keep()),
+            also_local: a.also_local.clone().or_else(|| if a.scheduled { s.also_local() } else { None }),
+            if_unchanged: if a.force_upload {
+                drive::IfUnchanged::Upload
+            } else if a.scheduled {
+                drive::IfUnchanged::Skip
+            } else {
+                drive::IfUnchanged::Ask
+            },
+            retention_ok: a.scheduled,
+            name_target: None,
+        };
+        let opts: Vec<BackupOpts> = a.targets().iter().map(|t| a.opts_for(t)).collect();
+        drive::cmd_backup_upload(opts, up)?;
+        return Ok(());
+    }
+    for t in a.targets() {
+        recorded_backup(a.opts_for(&t))?;
+    }
+    Ok(())
 }
 
 #[derive(Args, Default)]
@@ -456,10 +527,11 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         Some(Cmd::Import(a)) => recorded_import(a.into_opts()?),
         Some(Cmd::Export(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Export, top.known()?),
         Some(Cmd::Export(a)) if a.is_empty() => journal::recorded(&["export"], false, interactive::export_data),
-        Some(Cmd::Export(a)) => recorded_backup(a.into_opts()),
+        Some(Cmd::Export(a)) => run_backup(a),
         Some(Cmd::Drive { cmd }) => match cmd {
             DriveCmd::Login => drive::cmd_login(),
             DriveCmd::Logout => drive::cmd_logout(),
+            DriveCmd::Upload { file, keep } => drive::cmd_upload_file(&backup::absolutize(&file), keep),
             DriveCmd::Status { json } => drive::cmd_status(json),
             DriveCmd::Store { store } => drive::cmd_store(&store),
         },
@@ -471,7 +543,7 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             vault::require_vault_tools()?;
             vault::info::cmd_info(file.as_deref())
         }
-        Some(Cmd::Vault { cmd: VaultCmd::Backup(a) }) => recorded_backup(a.into_opts()),
+        Some(Cmd::Vault { cmd: VaultCmd::Backup(a) }) => run_backup(a),
         Some(Cmd::Vault { cmd: VaultCmd::Import(a) }) => recorded_import(a.into_opts()?),
         Some(Cmd::Log(a)) => logio::os::cmd_log(a.tail, a.open, a.copy),
         Some(Cmd::Undo(a)) => undo::cmd_undo(&undo::UndoArgs {

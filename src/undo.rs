@@ -50,6 +50,8 @@ pub enum Act {
         fingerprint: Option<String>,
     },
     DeleteFile(PathBuf),
+    /// Move these Proton Drive paths to Drive's trash (as the user)
+    TrashRemote(Vec<String>),
     /// Nothing to run: shown so the list is complete ("not undoable", "kept")
     None,
 }
@@ -245,6 +247,13 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
             "export" => {
                 let file = PathBuf::from(s(&c.data["file"]));
                 let mut it = Item::new(c, id, Act::DeleteFile(file.clone()), format!("Delete the backup {}", file.display()));
+                it.default_on = false;
+                rest.push(it);
+            }
+            "remote_upload" => {
+                let remote = s(&c.data["remote"]);
+                let paths: Vec<String> = [remote.clone(), s(&c.data["sidecar"])].into_iter().filter(|p| !p.is_empty()).collect();
+                let mut it = Item::new(c, id, Act::TrashRemote(paths), format!("Move the uploaded backup {remote} to Proton Drive's trash"));
                 it.default_on = false;
                 rest.push(it);
             }
@@ -518,6 +527,7 @@ pub fn execute(items: &[Item], dir: &Path, user: &str, report: &mut dyn FnMut(us
             }
             Act::RestoreImport { snapshot, apps, fingerprint } => crate::vault::import::undo_restore(snapshot, apps, fingerprint.as_deref()),
             Act::DeleteFile(p) => fs::remove_file(p).map_err(Into::into),
+            Act::TrashRemote(paths) => trash_remote(paths),
             Act::Reinstall { name, .. } => {
                 if ok_cmd("pacman", &["-S", "--needed", "--noconfirm", name]) {
                     Ok(())
@@ -655,6 +665,18 @@ pub fn keep_runs(dir: &Path) -> usize {
     fs::read_to_string(p).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v["keep_runs"].as_u64()).map_or(10, |n| n as usize)
 }
 
+/// Move uploaded files to Proton Drive's trash, as the user. Ones already gone are fine.
+fn trash_remote(paths: &[String]) -> Result<()> {
+    let cli = crate::drive::installed_cli().map_err(|p| anyhow::anyhow!("{p}"))?;
+    for p in paths {
+        match cli.trash(std::slice::from_ref(p)) {
+            Ok(()) | Err(crate::proton::Problem::NotFound(_)) => {}
+            Err(e) => anyhow::bail!("{e}"),
+        }
+    }
+    Ok(())
+}
+
 // --- The command line ---------------------------------------------------------------------
 
 /// One line for a change: "pkg_install zotero 1.0", "file_write /etc/pam.d/sudo".
@@ -668,6 +690,7 @@ pub fn describe(c: &Change) -> String {
         "pacman_key" => s(&d["fpr"]),
         "import" => format!("{} ({})", s(&d["archive"]), d["apps"].as_array().map(|a| a.iter().map(s).collect::<Vec<_>>().join(", ")).unwrap_or_default()),
         "export" => s(&d["file"]),
+        "remote_upload" => s(&d["remote"]),
         _ => String::new(),
     };
     format!("{} {what}", c.kind)
@@ -1064,6 +1087,25 @@ mod tests {
         assert_eq!((p[2].warning.as_deref(), p[2].default_on), (Some("changed since kast wrote it"), false));
         assert!(p[3].warning.as_deref().unwrap().contains("stop receiving updates: beeper"));
         assert!(matches!(p[3].act, Act::RemoveRepoBlock(_)));
+    }
+
+    #[test]
+    fn uploads_go_to_drives_trash_unchecked() {
+        let r = run(vec![change(
+            1,
+            "remote_upload",
+            "export",
+            json!({ "remote": "/my-files/kast-backups/h/all_backup_x.zip", "sidecar": "/my-files/kast-backups/h/all_backup_x.zip.manifest.json", "size": 5 }),
+        )]);
+        let p = plan(&r, &view(&[], &[]));
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].label, "Move the uploaded backup /my-files/kast-backups/h/all_backup_x.zip to Proton Drive's trash");
+        assert!(!p[0].default_on && p[0].undoable);
+        assert_eq!(
+            p[0].act,
+            Act::TrashRemote(vec!["/my-files/kast-backups/h/all_backup_x.zip".into(), "/my-files/kast-backups/h/all_backup_x.zip.manifest.json".into()])
+        );
+        assert_eq!(describe(&r.changes[0]), "remote_upload /my-files/kast-backups/h/all_backup_x.zip");
     }
 
     #[test]

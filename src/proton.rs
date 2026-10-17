@@ -703,8 +703,9 @@ impl Cli {
     }
 
     /// Run `args`, waiting at most `timeout`. Each stderr line is scrubbed, logged and handed
-    /// to `on_line`. On a TUI job thread the child is registered, so a cancel stops it.
-    pub fn run(&self, args: &[String], timeout: Duration, on_line: &mut dyn FnMut(&str)) -> io::Result<Output> {
+    /// to `on_line`, which also gets None about once a second (for an elapsed-time display).
+    /// On a TUI job thread the child is registered, so a cancel stops it.
+    pub fn run(&self, args: &[String], timeout: Duration, on_line: &mut dyn FnMut(Option<&str>)) -> io::Result<Output> {
         let mut child = self.command(args).spawn()?;
         let pgid = child.id() as i32;
         let tracked = crate::report::owns_terminal();
@@ -726,13 +727,14 @@ impl Cli {
         });
         let deadline = Instant::now() + timeout;
         let mut stderr = String::new();
-        let handle = |line: String, stderr: &mut String, on_line: &mut dyn FnMut(&str)| {
+        let handle = |line: String, stderr: &mut String, on_line: &mut dyn FnMut(Option<&str>)| {
             let clean = crate::ui::sanitize_log(&scrub(&line));
             crate::ctx::log_file_only("PROTON", &clean);
             stderr.push_str(&clean);
             stderr.push('\n');
-            on_line(&clean);
+            on_line(Some(&clean));
         };
+        let mut next_tick = Instant::now() + Duration::from_secs(1);
         let exit = loop {
             while let Ok(line) = rx.try_recv() {
                 handle(line, &mut stderr, on_line);
@@ -743,6 +745,10 @@ impl Cli {
                     (None, Some(s)) => Exit::Signal(s),
                     _ => Exit::Code(-1),
                 };
+            }
+            if Instant::now() >= next_tick {
+                on_line(None);
+                next_tick += Duration::from_secs(1);
             }
             let canceled = tracked && crate::report::cancel_requested();
             if canceled || Instant::now() >= deadline {
@@ -768,7 +774,7 @@ impl Cli {
     }
 
     /// Run and turn a failure (or a spawn error) into a `Problem`.
-    pub fn call(&self, args: &[String], timeout: Duration, on_line: &mut dyn FnMut(&str)) -> Result<Output, Problem> {
+    pub fn call(&self, args: &[String], timeout: Duration, on_line: &mut dyn FnMut(Option<&str>)) -> Result<Output, Problem> {
         let out = self.run(args, timeout, on_line).map_err(|e| spawn_problem(&e))?;
         match out.problem() {
             Some(p) => Err(p),
@@ -821,11 +827,11 @@ impl Cli {
     }
 
     /// Upload; the summary even when items failed (the CLI exits 1 then).
-    pub fn upload(&self, files: &[PathBuf], parent: &str, on_line: &mut dyn FnMut(&str)) -> Result<Summary, Problem> {
+    pub fn upload(&self, files: &[PathBuf], parent: &str, on_line: &mut dyn FnMut(Option<&str>)) -> Result<Summary, Problem> {
         transfer(self.run(&args_upload(files, parent), NO_TIMEOUT, on_line))
     }
 
-    pub fn download(&self, remote: &[String], dir: &Path, on_line: &mut dyn FnMut(&str)) -> Result<Summary, Problem> {
+    pub fn download(&self, remote: &[String], dir: &Path, on_line: &mut dyn FnMut(Option<&str>)) -> Result<Summary, Problem> {
         transfer(self.run(&args_download(remote, dir), NO_TIMEOUT, on_line))
     }
 
@@ -1143,7 +1149,7 @@ pub mod tests {
         let mut lines = Vec::new();
         let mut cmd = args_login();
         cmd.truncate(3);
-        let o = cli.run(&cmd, Duration::from_secs(20), &mut |l| lines.push(l.to_string())).unwrap();
+        let o = cli.run(&cmd, Duration::from_secs(20), &mut |l| lines.extend(l.map(String::from))).unwrap();
         assert!(o.ok());
         assert!(!o.stderr.contains("SECRETKEY") && o.stderr.contains(URL_HIDDEN));
         assert!(lines.iter().all(|l| !l.contains("SECRETKEY")));

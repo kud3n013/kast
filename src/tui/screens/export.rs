@@ -13,7 +13,7 @@ use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 
 use super::drive;
 use super::import::{Source, check_dir, expand, folder_box, proton_gate, source_rows};
-use crate::tui::app::{App, Command, Modal, ModalKind, Screen, ToastKind};
+use crate::tui::app::{App, Command, Modal, ModalKind, Screen};
 use crate::tui::job::JobKind;
 use crate::tui::widgets::{Input, block, popup};
 use crate::vault::backup::BackupOpts;
@@ -114,6 +114,15 @@ pub struct ExportState {
     pub dir: PathBuf,
     pub ts: String,
     pub user: String,
+    /// Backing up to Proton Drive (the folder is then only for an optional local copy)
+    pub proton: bool,
+    /// The Drive folder it goes to, and the retention, shown on screen
+    pub remote: String,
+    pub keep: u32,
+    /// Also keep the archive in `dir`
+    pub local_copy: bool,
+    /// Automatic run: when nothing changed since the last upload, don't upload
+    pub skip_unchanged: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,6 +132,10 @@ enum Row {
     Format,
     Kill,
     Dest,
+    /// Proton Drive: also keep a local copy
+    LocalCopy,
+    /// Proton Drive in the automatic run: skip an unchanged upload
+    Unchanged,
     Start,
 }
 
@@ -149,6 +162,11 @@ impl ExportState {
             dir: PathBuf::new(),
             ts: String::new(),
             user: user.to_string(),
+            proton: false,
+            remote: String::new(),
+            keep: crate::settings::DEFAULT_KEEP,
+            local_copy: false,
+            skip_unchanged: true,
         }
     }
 
@@ -168,7 +186,16 @@ impl ExportState {
         if self.key() == "howdy" {
             rows.push(Row::Format);
         }
-        rows.extend([Row::Kill, Row::Dest, Row::Start]);
+        rows.push(Row::Kill);
+        if self.proton {
+            rows.push(Row::LocalCopy);
+            if self.auto {
+                rows.push(Row::Unchanged);
+            }
+        } else {
+            rows.push(Row::Dest);
+        }
+        rows.push(Row::Start);
         rows
     }
 
@@ -196,7 +223,35 @@ impl ExportState {
             kill: self.kill,
             force: false,
             dry_run: false,
+            ..Default::default()
         }
+    }
+
+    /// How the upload goes (Proton Drive).
+    pub fn upload(&self) -> crate::drive::UploadOpts {
+        crate::drive::UploadOpts {
+            keep: self.keep,
+            also_local: self.local_copy.then(|| self.dir.clone()),
+            if_unchanged: match (self.auto, self.skip_unchanged) {
+                (false, _) => crate::drive::IfUnchanged::Ask,
+                (true, true) => crate::drive::IfUnchanged::Skip,
+                (true, false) => crate::drive::IfUnchanged::Upload,
+            },
+            // The automatic run is unattended: agreeing to the review covers retention
+            retention_ok: self.auto,
+            name_target: None,
+        }
+    }
+
+    /// Start backing up to Proton Drive: straight to "what" (the folder is the local copy's).
+    pub fn use_proton(&mut self, d: &drive::DriveInfo, home: &str) {
+        self.proton = true;
+        self.remote = d.host_folder();
+        self.keep = d.keep;
+        self.dir = expand(&self.folder.value, home);
+        self.stage = Stage::What;
+        self.focus = 0;
+        self.refresh_dest();
     }
 }
 
@@ -322,8 +377,9 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
                         st.stage = Stage::Folder;
                     } else if let Err(cmd) = proton_gate(app) {
                         return cmd;
-                    } else {
-                        app.toast(ToastKind::Info, "Signed in to Proton Drive");
+                    } else if let Some(d) = app.drive.clone() {
+                        let home = app.header.home.clone();
+                        state(app)?.use_proton(&d, &home);
                     }
                 }
                 KeyCode::Esc | KeyCode::Char('q') => leave(app, auto),
@@ -380,7 +436,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => st.focus = (st.focus + 1) % n,
         KeyCode::Home | KeyCode::Char('g') => st.focus = 0,
         KeyCode::End | KeyCode::Char('G') => st.focus = n - 1,
-        KeyCode::Esc | KeyCode::Char('q') => st.stage = Stage::Folder,
+        KeyCode::Esc | KeyCode::Char('q') => {
+            st.stage = if st.proton { Stage::Source } else { Stage::Folder };
+            st.proton = false;
+        }
         KeyCode::Char('s') => return confirm(app),
         KeyCode::Char(' ') | KeyCode::Enter => match rows[st.focus] {
             Row::Target(i) => {
@@ -394,10 +453,44 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
             }
             Row::Kill => st.kill = !st.kill,
             Row::Dest => st.editing = true,
+            Row::LocalCopy => st.local_copy = !st.local_copy,
+            Row::Unchanged => st.skip_unchanged = !st.skip_unchanged,
             Row::Start => return confirm(app),
         },
         _ => {}
     }
+    None
+}
+
+/// The upload's confirmation (or, in the automatic run, recording it).
+fn confirm_upload(app: &mut App) -> Option<Command> {
+    let st = state(app)?;
+    let mut opts = st.opts();
+    // Only the format matters: the engine names the file
+    opts.output = Some(PathBuf::from(st.default_name()));
+    let up = st.upload();
+    if st.auto {
+        return super::wizard::export_upload_done(app, opts, up);
+    }
+    let mut details = vec![format!("What:     {}", TARGETS[st.target].1), format!("Uploads:  {}/{}", st.remote, st.default_name())];
+    if st.media_applies() {
+        details.push(format!("Media:    {}", if st.include_media { "included" } else { "left out (smaller archive)" }));
+    }
+    details.push(match &up.also_local {
+        Some(d) => format!("A copy stays in {}", d.display()),
+        None => "Built in a private folder and removed after the upload.".into(),
+    });
+    details.push(format!("Keeps the newest {} on Drive; older ones go to its trash.", up.keep));
+    details.push(if st.kill { "Running apps among these are closed first.".into() } else { "If any of these apps run, you will be asked what to do.".into() });
+    app.modal = Some(Modal {
+        kind: ModalKind::Confirm(Box::new(JobKind::Upload(opts, up))),
+        title: "Back up to Proton Drive".into(),
+        text: "Start this backup and upload it?".into(),
+        details,
+        yes: "Back up",
+        no: "Back",
+        yes_selected: true,
+    });
     None
 }
 
@@ -415,6 +508,9 @@ pub fn on_completion(app: &mut App, value: String, matches: Vec<String>) {
 
 fn confirm(app: &mut App) -> Option<Command> {
     let st = state(app)?;
+    if st.proton {
+        return confirm_upload(app);
+    }
     let opts = st.opts();
     if st.dest.value.trim().is_empty() {
         st.focus = st.rows().iter().position(|r| *r == Row::Dest).unwrap_or(0);
@@ -521,6 +617,8 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
             Row::Media => ListItem::new(format!("{} Include large media (attachments, site data)", check(st.include_media))),
             Row::Format => ListItem::new(format!("{} Standalone .dat (otherwise a .zip with manifest)", check(st.dat))),
             Row::Kill => ListItem::new(format!("{} Close running apps first", check(st.kill))),
+            Row::LocalCopy => ListItem::new(format!("{} Also keep a copy in {}", check(st.local_copy), st.dir.display())),
+            Row::Unchanged => ListItem::new(format!("{} Skip the upload if nothing changed since the last one", check(st.skip_unchanged))),
             Row::Dest => {
                 let style = if st.dest_edited { theme.bold() } else { ratatui::style::Style::new() };
                 ListItem::new(Line::from(vec![Span::raw("File name: "), Span::styled(st.dest.value.clone(), style)]))
@@ -531,10 +629,8 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
             }
         })
         .collect();
-    let title = format!(
-        " Back up to {} ",
-        crate::tui::widgets::ellipsize(&st.dir.display().to_string(), list_area.width.saturating_sub(16) as usize, theme.sym.ellipsis)
-    );
+    let to = if st.proton { format!("Proton Drive {}", st.remote) } else { st.dir.display().to_string() };
+    let title = format!(" Back up to {} ", crate::tui::widgets::ellipsize(&to, list_area.width.saturating_sub(16) as usize, theme.sym.ellipsis));
     let list = List::new(items).block(block(theme, title)).highlight_style(theme.selected()).highlight_symbol(format!("{} ", theme.sym.pointer));
     let mut ls = ListState::default().with_selected(Some(st.focus));
     f.render_stateful_widget(list, list_area, &mut ls);
@@ -558,7 +654,17 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
             }
         }
         lines.push(Line::raw(""));
-        lines.push(Line::styled("The archive holds logins and cookies: it is created readable by you only (0600).", theme.dim()));
+        if st.proton {
+            lines.push(Line::from(vec![Span::styled("Uploads: ", theme.bold()), Span::raw(format!("{}/{}", st.remote, st.default_name()))]));
+            lines.push(Line::raw(format!(
+                "With a sidecar listing its contents. Keeps the newest {} of this kind; older ones go to Proton Drive's trash.",
+                st.keep
+            )));
+            lines.push(Line::raw(""));
+            lines.push(Line::styled("Built in a private folder (0700) and removed after the upload unless you keep a copy.", theme.dim()));
+        } else {
+            lines.push(Line::styled("The archive holds logins and cookies: it is created readable by you only (0600).", theme.dim()));
+        }
         f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(block(theme, " Details ")), p);
     }
 
@@ -578,6 +684,8 @@ pub fn hints(st: &ExportState) -> &'static [(&'static str, &'static str)] {
         Stage::Source => &[("↑/↓", "move"), ("Enter", "choose"), ("Esc", "back"), ("?", "help")],
         Stage::Folder => &[("Tab", "complete"), ("Enter", "use folder"), ("Esc", "back")],
         Stage::What if st.editing => &[("Tab", "complete"), ("Enter", "done")],
+        Stage::What if st.proton && st.auto => &[("↑/↓", "move"), ("Space", "select/toggle"), ("s", "use this"), ("Esc", "back"), ("?", "help")],
+        Stage::What if st.proton => &[("↑/↓", "move"), ("Space", "select/toggle"), ("s", "start"), ("Esc", "back"), ("?", "help")],
         Stage::What if st.auto => &[("↑/↓", "move"), ("Space", "select/toggle"), ("s", "use this"), ("Esc", "folder"), ("?", "help")],
         Stage::What => &[("↑/↓", "move"), ("Space", "select/toggle"), ("s", "start"), ("Esc", "folder"), ("?", "help")],
     }
@@ -586,7 +694,7 @@ pub fn hints(st: &ExportState) -> &'static [(&'static str, &'static str)] {
 pub const HELP: [(&str, &str); 8] = [
     ("↑/↓  j/k", "Move"),
     ("Enter", "Choose the destination, the folder"),
-    ("Proton Drive", "Not available yet"),
+    ("Proton Drive", "Enter installs / signs in when needed; r re-checks, L signs out"),
     ("Tab", "Folder / file name: complete (paste and ~ work)"),
     ("Space  Enter", "Select a target, toggle an option, edit the file name"),
     ("s", "Start the backup, asks first (automatic run: use this)"),
@@ -618,6 +726,59 @@ mod tests {
         }
         update(&mut a, Event::Loaded(Loaded::ExportTargets { targets, ts: "2026-10-17_101500".into() }));
         a
+    }
+
+    /// The "what" stage for Proton Drive, signed in.
+    fn proton(w: u16, h: u16) -> App {
+        let mut a = loaded(w, h);
+        a.drive = Some(Box::new(drive::tests::info(Some(crate::proton::Status::SignedIn))));
+        let s = state(&mut a).unwrap();
+        s.stage = Stage::Source;
+        s.source = 1;
+        update(&mut a, key(KeyCode::Enter));
+        a
+    }
+
+    #[test]
+    fn proton_drive_upload_flow() {
+        let mut a = proton(80, 24);
+        let s = st(&a);
+        assert!(s.proton && s.stage == Stage::What);
+        assert_eq!(s.remote, "/my-files/kast-backups/archbox");
+        assert!(!s.rows().contains(&Row::Dest) && s.rows().contains(&Row::LocalCopy) && !s.rows().contains(&Row::Unchanged));
+        insta::assert_snapshot!("export_proton_80x24", render(&a));
+        insta::assert_snapshot!("export_proton_140x40", render(&proton(140, 40)));
+        // s asks first, then starts the upload job
+        update(&mut a, key(KeyCode::Char('s')));
+        let Some(Modal { kind: ModalKind::Confirm(k), details, .. }) = &a.modal else { panic!("no confirmation") };
+        let JobKind::Upload(o, up) = k.as_ref() else { panic!("not an upload: {k:?}") };
+        assert_eq!((o.target.as_str(), o.output.as_deref()), ("all", Some(Path::new("all_backup_2026-10-17_101500.zip"))));
+        assert_eq!((up.keep, up.also_local.as_ref(), up.if_unchanged, up.retention_ok), (5, None, crate::drive::IfUnchanged::Ask, false));
+        assert!(details.iter().any(|d| d == "Uploads:  /my-files/kast-backups/archbox/all_backup_2026-10-17_101500.zip"));
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Start(JobKind::Upload(..)))));
+        // A local copy goes to the chosen folder; Esc goes back to the sources
+        let mut a = proton(80, 24);
+        let i = st(&a).rows().iter().position(|r| *r == Row::LocalCopy).unwrap();
+        state(&mut a).unwrap().focus = i;
+        update(&mut a, key(KeyCode::Char(' ')));
+        assert_eq!(st(&a).upload().also_local, Some(PathBuf::from("/media/data/backups")));
+        update(&mut a, key(KeyCode::Esc));
+        assert!(st(&a).stage == Stage::Source && !st(&a).proton);
+    }
+
+    #[test]
+    fn unchanged_content_question() {
+        for (w, h) in [(80, 24), (140, 40)] {
+            let mut a = proton(w, h);
+            update(&mut a, key(KeyCode::Char('s')));
+            update(&mut a, key(KeyCode::Enter));
+            let prompt = crate::report::Prompt::yes_no("Nothing changed since the last upload (2026-10-16 21:04). Upload anyway?", false);
+            update(&mut a, Event::Job(crate::tui::event::JobMsg::Ask { id: 1, prompt }));
+            let m = a.modal.as_ref().unwrap();
+            assert!(!m.yes_selected, "No is the default");
+            insta::assert_snapshot!(format!("export_proton_unchanged_{w}x{h}"), render(&a));
+            assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Answer { id: 1, yes: false })));
+        }
     }
 
     fn st(a: &App) -> &ExportState {

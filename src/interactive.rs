@@ -281,7 +281,7 @@ pub fn export_data() -> Result<()> {
     println!("\nDestination: {C_BOLD}{}{C_RESET}", out.display());
     read_choice("Press Enter to start backup (or Ctrl+C to abort)...");
     println!("\n{C_CYAN}==>{C_RESET} Executing backup as {C_BOLD}{}{C_RESET}...", c.target_user);
-    cmd_backup(BackupOpts { target: target.into(), output: Some(out.clone()), include_media, kill: true, force: false, dry_run: false })?;
+    cmd_backup(BackupOpts { target: target.into(), output: Some(out.clone()), include_media, kill: true, force: false, dry_run: false, ..Default::default() })?;
     if ctx::canceled() {
         println!("\n{C_YELLOW}[CANCELED]{C_RESET} No backup was created.");
     } else {

@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/export.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Back up to Proton Drive /my-files/kast-backups/archbox ──────────────────────╮
+│❯ (•) All detected apps & Howdy face model  ✓                                 │
+│  ( ) BeeperTexts (~/.config/BeeperTexts)  ✓ 2.1G                             │
+│  ( ) ZaloData (~/.config/ZaloData)  not found                                │
+│  ( ) Vesktop (~/.config/vesktop)  not found                                  │
+│  ( ) Zen Browser (~/.config/zen)  ✓ 512M                                     │
+│  ( ) Obsidian (~/.config/obsidian)  not found                                │
+│  ( ) Fcitx5 (~/.config/fcitx5)  not found                                    │
+│  ( ) Antigravity (~/.config/Antigravity)  not found                          │
+│  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                            │
+│  ( ) KDE Plasma settings (curated)  ✓ 96M                                    │
+│  ( ) Hyprland settings (~/.config/hypr)  not found                           │
+│  [x] Include large media (attachments, site data)                            │
+│  [x] Close running apps first                                                │
+│  [ ] Also keep a copy in /media/data/backups                                 │
+│  ▶ Start backup                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Space select/toggle  s start  Esc back  ? help

@@ -803,6 +803,8 @@ pub struct AutoPlan {
     pub packages: Option<Vec<String>>,
     pub import: Option<crate::vault::import::ImportOpts>,
     pub export: Option<crate::vault::backup::BackupOpts>,
+    /// The export goes to Proton Drive like this
+    pub upload: Option<crate::drive::UploadOpts>,
     /// Take a snapshot before the upgrade (when the machine has a tool for it)
     pub snapshot: bool,
 }
@@ -810,7 +812,7 @@ pub struct AutoPlan {
 impl AutoPlan {
     /// `kast auto`: upgrade, repo, packages, services.
     pub fn standard() -> Self {
-        AutoPlan { steps: Step::ALL.into_iter().filter(|s| s.standard()).collect(), packages: None, import: None, export: None, snapshot: false }
+        AutoPlan { steps: Step::ALL.into_iter().filter(|s| s.standard()).collect(), packages: None, import: None, export: None, upload: None, snapshot: false }
     }
 
     pub fn has(&self, s: Step) -> bool {
@@ -863,7 +865,7 @@ fn run_steps(plan: &AutoPlan, list: Option<&PkgList>, out: &mut PlanOutcome) -> 
                 None => add_issue("Packages step skipped: no package list"),
             },
             Step::Services => setup_services(true, o_start, o_step, o_total)?,
-            Step::Export => out.export = plan.export.clone().map(|o| run_export(o, o_start, o_step, o_total)),
+            Step::Export => out.export = plan.export.clone().map(|o| run_export(o, plan.upload.as_ref(), o_start, o_step, o_total)),
             Step::Import => out.import = plan.import.clone().map(|o| run_import(o, o_start, o_step, o_total)),
         }
     }
@@ -871,8 +873,26 @@ fn run_steps(plan: &AutoPlan, list: Option<&PkgList>, out: &mut PlanOutcome) -> 
 }
 
 /// The backup step of a run: what to show in the summary.
-fn run_export(o: crate::vault::backup::BackupOpts, o_start: i64, o_step: i64, o_total: i64) -> String {
+fn run_export(o: crate::vault::backup::BackupOpts, upload: Option<&crate::drive::UploadOpts>, o_start: i64, o_step: i64, o_total: i64) -> String {
     let d = Dash::new(true, o_start, o_step, o_total, "Export Data");
+    if let Some(up) = upload {
+        use crate::drive::Uploaded;
+        d.render(0, 1, &format!("Backing up {} for Proton Drive", o.target), "", None);
+        let result = match crate::drive::backup_upload(o, up) {
+            Ok(Uploaded::Done { remote, identical, .. }) => format!("{} {remote}", if identical { "already on Proton Drive:" } else { "uploaded to" }),
+            Ok(Uploaded::Unchanged { since }) => format!("unchanged since the last upload ({since}), not uploaded"),
+            Ok(Uploaded::Nothing) => "nothing was backed up".to_string(),
+            Ok(Uploaded::Canceled) => "canceled, nothing was uploaded".to_string(),
+            Err(e) => {
+                add_issue(format!("Upload to Proton Drive failed: {e}"));
+                format!("failed: {e}")
+            }
+        };
+        ctx::set_canceled(false);
+        let ok = !result.starts_with("failed") && !result.starts_with("canceled");
+        d.render(1, 1, &result, &result, Some(if ok { "✔" } else { "✘" }));
+        return result;
+    }
     let dest = o.output.clone().map(|p| p.display().to_string()).unwrap_or_default();
     d.render(0, 1, &format!("Backing up {}", o.target), &format!("Backing up {} to {dest}", o.target), None);
     let result = match crate::vault::backup::cmd_backup(o) {

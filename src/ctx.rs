@@ -97,6 +97,29 @@ pub fn init() {
     let _ = CTX.set(Ctx { is_root, target_user, target_uid, target_gid, target_home, sudo_user, log_file, config_home, data_home, state_home, cache_home });
 }
 
+/// A context for tests that need one: the current user, with a throwaway home (kept for the
+/// whole test run) for config, state, cache and the log.
+#[cfg(test)]
+pub fn init_for_tests() -> &'static Ctx {
+    CTX.get_or_init(|| {
+        let home = tempfile::tempdir().unwrap().keep();
+        let me = User::from_uid(Uid::effective()).ok().flatten();
+        Ctx {
+            is_root: false,
+            target_user: me.as_ref().map(|u| u.name.clone()).unwrap_or_else(|| "tester".into()),
+            target_uid: Uid::effective().as_raw(),
+            target_gid: Gid::effective().as_raw(),
+            target_home: home.clone(),
+            sudo_user: None,
+            log_file: home.join("kast.log"),
+            config_home: home.join(".config"),
+            data_home: home.join(".local/share"),
+            state_home: home.join(".local/state"),
+            cache_home: home.join(".cache"),
+        }
+    })
+}
+
 pub fn now_str(fmt: &str) -> String {
     chrono::Local::now().format(fmt).to_string()
 }
@@ -479,9 +502,30 @@ fn remove_existing(paths: &[&Path]) {
     }
 }
 
-/// On the way out of kast (exit, signal, panic): also stop a sign-in still waiting.
+/// Private folders of the user's that hold backup data for a moment (Proton Drive staging):
+/// removed by whoever made them, or here on the way out.
+static PRIVATE_DIRS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+pub fn track_private_dir(p: &Path) {
+    PRIVATE_DIRS.lock().unwrap().push(p.to_path_buf());
+}
+
+pub fn untrack_private_dir(p: &Path) {
+    PRIVATE_DIRS.lock().unwrap().retain(|d| d != p);
+}
+
+pub fn cleanup_private_dirs() {
+    let dirs = std::mem::take(&mut *PRIVATE_DIRS.lock().unwrap());
+    for d in dirs {
+        let _ = crate::settings::user_remove_dir(&d);
+    }
+}
+
+/// On the way out of kast (exit, signal, panic): also stop a sign-in still waiting and wipe
+/// the Proton Drive staging folders.
 pub fn cleanup_on_exit() {
     crate::proton::kill_login();
+    cleanup_private_dirs();
     cleanup_temp_state();
 }
 

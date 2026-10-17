@@ -44,6 +44,8 @@ pub struct Wizard {
     pub export: Option<ExportState>,
     pub import_opts: Option<ImportOpts>,
     pub export_opts: Option<BackupOpts>,
+    /// The backup goes to Proton Drive like this
+    pub export_upload: Option<crate::drive::UploadOpts>,
     /// Review: Start (true) or Back highlighted
     pub start_focused: bool,
     /// "Take a snapshot before upgrading", built once the machine was looked at
@@ -114,6 +116,7 @@ impl Wizard {
             export: None,
             import_opts: None,
             export_opts: None,
+            export_upload: None,
             start_focused: true,
             snap: None,
         }
@@ -192,6 +195,7 @@ impl Wizard {
             packages: if steps.contains(&Step::Packages) { self.apps.selection() } else { None },
             import: if steps.contains(&Step::Import) { self.import_opts.clone() } else { None },
             export: if steps.contains(&Step::Export) { self.export_opts.clone() } else { None },
+            upload: if steps.contains(&Step::Export) { self.export_upload.clone() } else { None },
             snapshot: steps.contains(&Step::Upgrade) && self.snapshot_on(),
             steps,
         }
@@ -249,11 +253,14 @@ fn enter(app: &mut App, stage: Stage) -> Option<Command> {
         Stage::Apps => packages::sync(app),
         Stage::Import => {
             w.import.get_or_insert_with(|| ImportState::new(import::Mode::Restore, true, import_dir));
-            None
+            super::drive::check_if_unknown(app)
         }
         Stage::Export if w.export.is_none() => {
             w.export = Some(ExportState::new(&user, true, export_dir));
-            Some(Command::LoadExportTargets)
+            Some(match super::drive::check_if_unknown(app) {
+                Some(check) => Command::Many(vec![Command::LoadExportTargets, check]),
+                None => Command::LoadExportTargets,
+            })
         }
         _ => None,
     }
@@ -339,7 +346,17 @@ pub fn import_done(app: &mut App, opts: ImportOpts) -> Option<Command> {
 
 /// The export stage's "Use this": remember the backup, go on.
 pub fn export_done(app: &mut App, opts: BackupOpts) -> Option<Command> {
-    wiz(app)?.export_opts = Some(opts);
+    let w = wiz(app)?;
+    w.export_opts = Some(opts);
+    w.export_upload = None;
+    next(app)
+}
+
+/// The backup goes to Proton Drive (signed in, checked while configuring).
+pub fn export_upload_done(app: &mut App, opts: BackupOpts, up: crate::drive::UploadOpts) -> Option<Command> {
+    let w = wiz(app)?;
+    w.export_opts = Some(opts);
+    w.export_upload = Some(up);
     next(app)
 }
 
@@ -570,9 +587,13 @@ pub fn review_lines(theme: &Theme, w: &Wizard) -> Vec<Line<'static>> {
                     "no snapshot (can't be undone by kast)".into()
                 }
             }
-            Step::Export => match &plan.export {
-                Some(o) => format!("{} → {}", o.target, o.output.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
-                None => String::new(),
+            Step::Export => match (&plan.export, &plan.upload) {
+                (Some(o), Some(up)) => {
+                    let unchanged = if up.if_unchanged == crate::drive::IfUnchanged::Skip { ", skipped if unchanged" } else { "" };
+                    format!("{} → Proton Drive (keeps {}{unchanged})", o.target, up.keep)
+                }
+                (Some(o), None) => format!("{} → {}", o.target, o.output.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
+                _ => String::new(),
             },
             _ => String::new(),
         };
