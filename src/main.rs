@@ -3,6 +3,7 @@
 
 mod ctx;
 mod interactive;
+mod journal;
 mod logio;
 mod pkglist;
 mod report;
