@@ -801,7 +801,7 @@ pub fn cmd_undo(a: &UndoArgs) -> Result<()> {
         return Ok(());
     }
     if std::io::IsTerminal::is_terminal(&std::io::stdin())
-        && !crate::report::ask(&crate::report::Prompt::yes_no(&format!("Undo these {} change(s)?", chosen.len()), false))
+        && !crate::report::ask(&crate::report::Prompt::yes_no(format!("Undo these {} change(s)?", chosen.len()), false))
     {
         println!("Nothing was changed.");
         return Ok(());

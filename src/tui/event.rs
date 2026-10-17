@@ -41,6 +41,10 @@ pub enum Loaded {
         targets: Vec<TargetInfo>,
         ts: String,
     },
+    Undo(Box<crate::tui::screens::undo::UndoData>),
+    Uninstall(Box<crate::tui::screens::undo::UninstallData>),
+    /// Bytes freed by a prune
+    Pruned(u64),
     /// The installed packages among those asked about
     Installed(std::collections::HashSet<String>),
     DirCreated {

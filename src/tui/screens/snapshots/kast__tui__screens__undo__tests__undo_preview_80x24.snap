@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/undo.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Undo: preview ───────────────────────────────────────────────────────────────╮
+│In this order:                                                                │
+│   1. Remove libdep                                                           │
+│   2. Disable and stop valkey                                                 │
+│   3. Restore /etc/pam.d/sudo  ⚠ incomplete: kast stopped in the middle of    │
+│this change                                                                   │
+│                                                                              │
+│PAM files are checked after they're restored; if sudo would break, they're put│
+│back.                                                                         │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Start       Back                                                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Enter choose  ←/→ Start/Back  s start  Esc back

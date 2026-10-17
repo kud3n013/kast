@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/undo.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Apps to remove · 0 of 3 selected ────────────────────────────────────────────────────╮╭ Details ─────────────────────────────────────────╮
+│❯ [ ] Official repositories  0/2                                                      ││Space on a header checks or unchecks all of it.   │
+│    [ ] zotero  installed before kast / outside kast                                  ││                                                  │
+│    [ ] steam  installed by kast (2026-10-17)                                         ││                                                  │
+│  [ ] kud3n's repository  0/1                                                         ││                                                  │
+│    [ ] beeper  installed by kast (2026-10-17)                                        ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────╯
+ Space toggle  Enter preview  Esc back  ? help  a all  n none  i invert

@@ -339,6 +339,23 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
                 let _ = tx.send(Event::Loaded(event::Loaded::Candidates(screens::import::load_candidates(&dir, &user, zips_only))));
             });
         }
+        Command::LoadUndo => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Undo(Box::new(screens::undo::load_undo()))));
+            });
+        }
+        Command::LoadUninstall => {
+            let tx = tx.clone();
+            let list = crate::pkglist::builtin();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Uninstall(Box::new(screens::undo::load_uninstall(&list)))));
+            });
+        }
+        Command::PruneUndo(ids) => {
+            let freed = crate::undo::prune(&crate::journal::state_dir(), &ids);
+            let _ = tx.send(Event::Loaded(event::Loaded::Pruned(freed)));
+        }
         Command::LoadInstalled(names) => {
             let tx = tx.clone();
             std::thread::spawn(move || {

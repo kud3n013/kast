@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1193
 expression: "render(&app(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -14,6 +13,8 @@ expression: "render(&app(80, 24))"
 │   7 Export data                                                              │
 │   8 App status                                                               │
 │   9 Inspect a backup                                                         │
+│   u Undo changes                                                             │
+│   x Uninstall apps                                                           │
 │   q Quit                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Details ─────────────────────────────────────────────────────────────────────╮
@@ -23,7 +24,5 @@ expression: "render(&app(80, 24))"
 │overall progress bar and a summary at the end.                                │
 │Changes:    /etc/pacman.conf, installed packages, /etc/pam.d files (backups   │
 │kept), Howdy config, systemd services                                         │
-│Needs root: yes (kast already runs as root)                                   │
-│Automatic:  This is the automatic run.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit  e view  y copy

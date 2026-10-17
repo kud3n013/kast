@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/undo.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Undo changes: runs, newest first ────────────────────────────────────────────────────╮╭ Details ─────────────────────────────────────────╮
+│❯ 2026-10-17 10:15  kast 0.4.0  upgrade, packages, services, import  6 changes, 3 undo││20261017-101500-a1b2c3                            │
+│  2026-10-10 09:00  kast 0.3.0  export  1 changes, 1 undoable                         ││On archbox for p3ter, kast 0.4.0                  │
+│                                                                                      ││Steps: upgrade, packages, services, import        │
+│                                                                                      ││⚠ 1 change(s) were interrupted; undo reverts them │
+│                                                                                      ││from their before-state.                          │
+│                                                                                      ││                                                  │
+│                                                                                      ││File copies kept: 47.0 KiB (last 10 runs; p       │
+│                                                                                      ││prunes)                                           │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+│                                                                                      ││                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────╯
+ ↑/↓ move  Enter open  p prune  Esc back  ? help

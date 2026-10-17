@@ -18,6 +18,7 @@ use super::screens::packages::{self, Installed, PackagesState, PkgState};
 use super::screens::run::{self, Finished, RunState};
 use super::screens::status::{self, StatusState};
 use super::screens::summary;
+use super::screens::undo::{self as undo_screen, UndoState};
 use super::screens::wizard::{self, Wizard};
 use super::theme::Theme;
 use super::widgets::{self, Dialog, MIN_H, MIN_W};
@@ -62,6 +63,8 @@ pub enum Screen {
     Packages(Box<PackagesState>),
     /// Option 1: the steps, a stage for each that needs choices, a review
     Auto(Box<Wizard>),
+    /// `u` undo changes, `x` uninstall apps
+    Undo(Box<UndoState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -75,6 +78,8 @@ pub enum ModalKind {
     Confirm(Box<JobKind>),
     /// Automatic run with no app checked: Yes drops the packages step
     SkipPackages,
+    /// Delete these runs' file copies
+    Prune(Vec<String>),
 }
 
 /// A yes/no dialog over the current screen. Esc always answers No.
@@ -104,6 +109,12 @@ pub enum Command {
     LoadCandidates { dir: std::path::PathBuf, user: String, zips_only: bool },
     /// Which of these packages are installed (answered with `Loaded::Installed`)
     LoadInstalled(Vec<String>),
+    /// Read the journal (answered with `Loaded::Undo`)
+    LoadUndo,
+    /// Find the installed apps (answered with `Loaded::Uninstall`)
+    LoadUninstall,
+    /// Delete these runs' file copies (answered with `Loaded::Pruned`)
+    PruneUndo(Vec<String>),
     /// Create a folder as the target user (answered with `Loaded::DirCreated`)
     MkdirUser(std::path::PathBuf),
     /// Look at a backup file (answered with `Loaded::Inspected`)
@@ -209,6 +220,7 @@ impl App {
             Screen::Import(s) => s.loading,
             Screen::Export(s) => s.loading,
             Screen::Packages(_) => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
+            Screen::Undo(s) => s.loading(),
             Screen::Auto(w) => match w.stage {
                 wizard::Stage::Apps => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
                 wizard::Stage::Import => w.import.as_ref().is_some_and(|s| s.loading),
@@ -241,6 +253,8 @@ impl App {
             Screen::Log(..) => ("Log", &log::HELP),
             Screen::Packages(_) => ("Install packages", &packages::HELP),
             Screen::Auto(w) => wizard::help(w),
+            Screen::Undo(s) if s.mode == undo_screen::Mode::Uninstall => ("Uninstall apps", &undo_screen::HELP),
+            Screen::Undo(_) => ("Undo changes", &undo_screen::HELP),
         }
     }
 
@@ -290,6 +304,18 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
             app.packages = PkgState::Ready(std::sync::Arc::new(*pl));
             app.installed = Installed::Unknown;
             packages::sync(app)
+        }
+        Event::Loaded(Loaded::Undo(d)) => {
+            undo_screen::on_undo(app, *d);
+            None
+        }
+        Event::Loaded(Loaded::Uninstall(d)) => {
+            undo_screen::on_uninstall(app, *d);
+            None
+        }
+        Event::Loaded(Loaded::Pruned(freed)) => {
+            app.toast(ToastKind::Ok, format!("Pruned: {} freed", crate::undo::human(freed)));
+            Some(Command::LoadUndo)
         }
         Event::Loaded(Loaded::Installed(set)) => {
             app.installed = Installed::Known(set);
@@ -413,7 +439,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 wizard::leave(app);
                 None
             }
-            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) => {
+            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -457,6 +483,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         Screen::Status(_) => status::key(app, k),
         Screen::Packages(_) => packages::key(app, k),
         Screen::Auto(_) => wizard::key(app, k),
+        Screen::Undo(_) => undo_screen::key(app, k),
     }
 }
 
@@ -504,6 +531,8 @@ fn answer(app: &mut App, yes: bool) -> Option<Command> {
         ModalKind::Confirm(_) => None,
         ModalKind::SkipPackages if yes => wizard::skip_packages(app),
         ModalKind::SkipPackages => None,
+        ModalKind::Prune(ids) if yes => Some(Command::PruneUndo(ids)),
+        ModalKind::Prune(_) => None,
     }
 }
 
@@ -553,6 +582,10 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::Enter => return activate(app, app.menu.action()),
         KeyCode::Char('q') | KeyCode::Esc => app.quit = true,
         KeyCode::Char('l') => return Some(Command::OpenLog),
+        KeyCode::Char(c @ ('u' | 'x')) => {
+            app.menu.selected = ITEMS.iter().position(|i| i.key == c).unwrap_or(0);
+            return activate(app, app.menu.action());
+        }
         KeyCode::Char(c @ '1'..='9') => {
             let idx = c as usize - '1' as usize;
             if !ITEMS[idx].enabled() {
@@ -644,6 +677,14 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             app.screen = Screen::Status(Box::new(StatusState { loading: true, ..Default::default() }));
             return Some(Command::LoadStatus);
         }
+        Action::Undo => {
+            app.screen = Screen::Undo(Box::new(UndoState::new(undo_screen::Mode::Undo)));
+            return Some(Command::LoadUndo);
+        }
+        Action::Uninstall => {
+            app.screen = Screen::Undo(Box::new(UndoState::new(undo_screen::Mode::Uninstall)));
+            return Some(Command::LoadUninstall);
+        }
         Action::Info => {
             let dir = import::default_dir(&app.header.home, app.dir_exists);
             app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Inspect, false, dir)));
@@ -711,6 +752,7 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
         },
         Screen::Packages(_) => return packages::mouse(app, m),
         Screen::Auto(_) => return wizard::mouse(app, m),
+        Screen::Undo(_) => return undo_screen::mouse(app, m),
         Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) => {}
     }
     None
@@ -756,6 +798,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Auto(w) => {
             wizard::view(f, body, app, w);
             wizard::hints(app, w)
+        }
+        Screen::Undo(st) => {
+            undo_screen::view(f, body, app, st);
+            undo_screen::hints(st)
         }
         Screen::Packages(st) => {
             packages::view(f, body, app, st);

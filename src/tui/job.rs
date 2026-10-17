@@ -29,6 +29,10 @@ pub enum JobKind {
     Services,
     Import(ImportOpts),
     Export(BackupOpts),
+    /// Undo these changes (in this order)
+    Undo(Vec<crate::undo::Item>),
+    /// Remove these packages
+    Uninstall(Vec<crate::undo::Item>),
     /// Remove /var/lib/pacman/db.lck after a canceled pacman left it behind
     RemovePacmanLock,
     /// Scripted messages, for tests of the run screen and prompts
@@ -57,6 +61,8 @@ impl JobKind {
             JobKind::Import(o) => format!("Restore {}", o.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             JobKind::Export(o) => format!("Back up {}", o.target),
             JobKind::RemovePacmanLock => "Remove the pacman lock".into(),
+            JobKind::Undo(_) => "Undo changes".into(),
+            JobKind::Uninstall(_) => "Uninstall apps".into(),
             #[cfg(test)]
             JobKind::Fake(_) => "Fake job".into(),
         }
@@ -243,6 +249,25 @@ fn run_job(kind: JobKind) -> Result<Outcome> {
             let out = o.output.clone().map(|p| p.display().to_string()).unwrap_or_default();
             cmd_backup(o)?;
             if ctx::canceled() { Outcome::Canceled("No backup was created".into()) } else { finished(&format!("Backup saved to {out}")) }
+        }
+        JobKind::Undo(items) => {
+            let dir = crate::journal::state_dir();
+            let user = ctx::ctx().target_user.clone();
+            let n = items.len() as i64;
+            let out = crate::journal::recorded(&["undo"], false, || {
+                crate::undo::execute(&items, &dir, &user, &mut |i, l| crate::ui::Dash::new(false, 0, 1, 1, "Undo changes").render(i as i64, n, l, l, None))
+            })?;
+            for f in &out.failed {
+                ctx::add_issue(format!("Not undone: {f}"));
+            }
+            finished(&format!("{} change(s) undone", out.done.len()))
+        }
+        JobKind::Uninstall(items) => {
+            let out = crate::journal::recorded(&["uninstall"], false, || crate::undo::run_uninstall(&items, &mut |l| report::log(Level::Step, l)));
+            for f in &out.failed {
+                ctx::add_issue(format!("Not removed: {f}"));
+            }
+            finished(&format!("{} app(s) removed", out.done.len()))
         }
         JobKind::RemovePacmanLock => {
             if ctx::remove_stale_pacman_lock() {

@@ -153,6 +153,7 @@ pub struct Run {
 }
 
 impl Run {
+    #[cfg(test)]
     pub fn change(&self, seq: u64) -> Option<&Change> {
         self.changes.iter().find(|c| c.seq == seq)
     }

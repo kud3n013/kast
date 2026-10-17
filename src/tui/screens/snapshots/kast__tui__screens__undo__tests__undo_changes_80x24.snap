@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/undo.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Changes to undo · 3 of 6 selected ───────────────────────────────────────────╮
+│  [x] Packages  1/2                                                           │
+│    [x] Remove libdep                                                         │
+│    [ ] Keep zotero  kept: needed by zotero-ocr                               │
+│  [ ] Import  0/1                                                             │
+│    [ ] Restore of all.zip  not undoable (no snapshot was taken)              │
+│  [x] Services  2/2                                                           │
+│    [x] Disable and stop valkey                                               │
+│❯   [x] Restore /etc/pam.d/sudo  incomplete: kast stopped in the middle of thi│
+│  [ ] Upgrade  0/1                                                            │
+│    [ ] System upgrade  not undoable by kast; roll back with: sudo snapper -c │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Restore /etc/pam.d/sudo                                                       │
+│⚠ incomplete: kast stopped in the middle of this change                       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Space toggle  Enter preview  Esc back  ? help  a all  n none  i invert

@@ -121,7 +121,7 @@ fn export_howdy_dat(output: &Path, dry_run: bool) -> Result<()> {
     }
     chown_to_invoker(output);
     log_success(&format!("Exported Howdy face model for '{}' to: {}", c.target_user, output.display()));
-    crate::journal::export(&output);
+    crate::journal::export(output);
     Ok(())
 }
 

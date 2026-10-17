@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1215
 expression: render(&a)
 ---
  kast | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
@@ -11,19 +10,19 @@ expression: render(&a)
 │   4 In│Up/Down  j/k   Move the selection (wraps around)              │       │
 │   5 Se│Home/End  g/G  First / last entry                             │       │
 │   6 Im│Enter          Run the highlighted action                     │       │
-│   7 Ex│1-9            Run that action directly                       │       │
+│   7 Ex│1-9  u  x      Run that action directly                       │       │
 │   8 Ap│Mouse          Click selects, double-click runs, wheel moves  │       │
 │   9 In│l              Open the log file                              │       │
-│   q Qu│e / E          View in a pager ($KAST_PAGER) / editor         │       │
-└───────│o / f          Open with the default app / file manager       │───────┘
-┌ Detail│y / Y          Copy this session's log / the log's path       │───────┐
-│Choose │tmux           For y: set -g set-clipboard on                 │ally   │
-│export │?              This help                                      │nd     │
-│where t│q  Esc         Quit kast                                      │an     │
-│overall│Ctrl+C         Quit kast                                      │       │
-│Changes│                                                              │kups   │
-│kept), │Press any key to close                                        │       │
-│Needs r└──────────────────────────────────────────────────────────────┘       │
-│Automatic:  This is the automatic run.                                        │
+│   u Un│e / E          View in a pager ($KAST_PAGER) / editor         │       │
+│   x Un│o / f          Open with the default app / file manager       │       │
+│   q Qu│y / Y          Copy this session's log / the log's path       │       │
+└───────│tmux           For y: set -g set-clipboard on                 │───────┘
+┌ Detail│?              This help                                      │───────┐
+│Choose │q  Esc         Quit kast                                      │ally   │
+│export │Ctrl+C         Quit kast                                      │nd     │
+│where t│                                                              │an     │
+│overall│Press any key to close                                        │       │
+│Changes└──────────────────────────────────────────────────────────────┘kups   │
+│kept), Howdy config, systemd services                                         │
 └──────────────────────────────────────────────────────────────────────────────┘
  Up/Down move  Enter run  1-9 pick  l log  ? help  q quit  e view  y copy

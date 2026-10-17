@@ -19,6 +19,8 @@ pub enum Action {
     Export,
     Status,
     Info,
+    Undo,
+    Uninstall,
     Quit,
 }
 
@@ -32,7 +34,7 @@ pub struct Item {
     pub auto: &'static str,
 }
 
-pub const ITEMS: [Item; 10] = [
+pub const ITEMS: [Item; 12] = [
     Item {
         action: Action::Auto,
         key: '1',
@@ -119,6 +121,26 @@ pub const ITEMS: [Item; 10] = [
         about: "Shows what a backup archive contains: when and where it was made and which apps are inside.",
         changes: "Nothing (read-only)",
         root: false,
+        auto: "Not part of the automatic run.",
+    },
+    Item {
+        action: Action::Undo,
+        key: 'u',
+        label: "Undo changes",
+        about: "Lists what kast changed, run by run, and undoes what you pick: packages it installed, files it edited (from \
+                the copies it kept), services, the repository, a restore (from its snapshot). Shows exactly what will run first.",
+        changes: "Only what you pick to undo",
+        root: true,
+        auto: "Not part of the automatic run.",
+    },
+    Item {
+        action: Action::Uninstall,
+        key: 'x',
+        label: "Uninstall apps",
+        about: "Lists the apps of the package list that are installed, marked as installed by kast or before / outside it, \
+                and removes the ones you check (pacman -Rns), keeping any that something else still needs.",
+        changes: "Removed packages",
+        root: true,
         auto: "Not part of the automatic run.",
     },
     Item { action: Action::Quit, key: 'q', label: "Quit", about: "Leave kast.", changes: "Nothing", root: false, auto: "" },
@@ -219,7 +241,7 @@ pub const HELP: [(&str, &str); 13] = [
     ("↑/↓  j/k", "Move the selection (wraps around)"),
     ("Home/End  g/G", "First / last entry"),
     ("Enter", "Run the highlighted action"),
-    ("1-9", "Run that action directly"),
+    ("1-9  u  x", "Run that action directly"),
     ("Mouse", "Click selects, double-click runs, wheel moves"),
     ("l", "Open the log file"),
     ("e / E", "View in a pager ($KAST_PAGER) / editor"),

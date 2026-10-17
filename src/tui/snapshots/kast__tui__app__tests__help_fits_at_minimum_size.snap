@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1222
 expression: "format!(\"{menu}{run}\")"
 ---
  kast │ p3ter (1000:1000) │ archbox │ root
@@ -8,7 +7,7 @@ expression: "format!(\"{menu}{run}\")"
 │↑/↓  j/k       Move the selection (wraps around)          │
 │Home/End  g/G  First / last entry                         │
 │Enter          Run the highlighted action                 │
-│1-9            Run that action directly                   │
+│1-9  u  x      Run that action directly                   │
 │Mouse          Click selects, double-click runs, wheel    │
 │moves                                                     │
 │l              Open the log file                          │
