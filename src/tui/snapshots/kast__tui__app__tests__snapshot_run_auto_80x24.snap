@@ -26,4 +26,4 @@ expression: "render(&running_auto(80, 24))"
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- PgUp/PgDn scroll  G follow  Esc cancel  y copy  ? help
+ PgUp/PgDn scroll  G follow  Esc cancel  ? help  y copy

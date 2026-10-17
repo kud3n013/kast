@@ -41,17 +41,14 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, st: &LogState, path: &str)
     log_view(f, body, theme, &st.log, st.scroll, &format!("Log {sep} {path}"));
 }
 
-pub const HINTS: [(&str, &str); 7] = [("PgUp/PgDn", "scroll"), ("g/G", "top/end"), ("e", "view"), ("y", "copy"), ("o", "open"), ("Esc", "back"), ("?", "help")];
-pub const HELP: [(&str, &str); 11] = [
+pub const HINTS: [(&str, &str); 7] = [("PgUp/PgDn", "scroll"), ("g/G", "top/end"), ("Esc", "back"), ("?", "help"), ("e", "view"), ("y", "copy"), ("o", "open")];
+pub const HELP: [(&str, &str); 8] = [
     ("PgUp/PgDn  ↑/↓", "Scroll"),
     ("g / G", "Oldest / newest line"),
     ("Mouse wheel", "Scroll"),
-    ("e / E", "View the log in a pager / an editor"),
-    ("o", "Open the log with the default app"),
-    ("f", "Show the log in the file manager"),
-    ("y", "Copy this session's log"),
-    ("Y", "Copy the log file's path"),
-    ("$KAST_PAGER", "Pager for e (else $PAGER, then less)"),
+    ("e / E", "View in a pager ($KAST_PAGER) / editor"),
+    ("o / f", "Open with the default app / file manager"),
+    ("y / Y", "Copy this session's log / the log's path"),
     ("tmux", "For y: set -g set-clipboard on"),
     ("Esc  q  Enter", "Back"),
 ];

@@ -1090,6 +1090,25 @@ pub mod tests {
     }
 
     #[test]
+    fn snapshot_footers_at_minimum_width() {
+        let mut a = app(60, 20);
+        let menu = render(&a);
+        update(&mut a, Event::Loaded(Loaded::Log(vec!["[2026-10-17 10:00:00] [INFO] Adding archrepo".into()])));
+        insta::assert_snapshot!(format!("{menu}{}", render(&a)));
+    }
+
+    #[test]
+    fn help_fits_at_minimum_size() {
+        let mut a = app(60, 20);
+        update(&mut a, key(KeyCode::Char('?')));
+        let menu = render(&a);
+        let mut a = running_auto(60, 20);
+        update(&mut a, key(KeyCode::Char('?')));
+        let run = render(&a);
+        insta::assert_snapshot!(format!("{menu}{run}"));
+    }
+
+    #[test]
     fn snapshot_log_viewer_ascii() {
         let mut a = App::new(header(), Theme::new(false, true), (80, 24));
         update(&mut a, Event::Loaded(Loaded::Log(vec!["[2026-10-17 10:00:00] [INFO] Adding archrepo".into()])));

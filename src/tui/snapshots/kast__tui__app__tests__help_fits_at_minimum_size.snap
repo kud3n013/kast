@@ -1,0 +1,45 @@
+---
+source: src/tui/app.rs
+assertion_line: 1108
+expression: "format!(\"{menu}{run}\")"
+---
+ kast │ p3ter (1000:1000) │ archbox │ root
+╭ Help: Main menu ─────────────────────────────────────────╮
+│↑/↓  j/k       Move the selection (wraps around)          │
+│Home/End  g/G  First / last entry                         │
+│Enter          Run the highlighted action                 │
+│1-9            Run that action directly                   │
+│Mouse          Click selects, double-click runs, wheel    │
+│moves                                                     │
+│l              Open the log file                          │
+│e / E          View in a pager ($KAST_PAGER) / editor     │
+│o / f          Open with the default app / file manager   │
+│y / Y          Copy this session's log / the log's path   │
+│tmux           For y: set -g set-clipboard on             │
+│?              This help                                  │
+│q  Esc         Quit kast                                  │
+│Ctrl+C         Quit kast                                  │
+│                                                          │
+│Press any key to close                                    │
+╰──────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit
+ kast │ p3ter (1000:1000) │ archbox │ root
+╭ Overall: step 3/4 · Install Packages ────────────────────╮
+│█████████████47% · 05:00 elapsed · ETA 05:38              │
+╰╭ Help: Progress ─────────────────────────────────────────╮
+╭│PgUp/PgDn  ↑/↓  Scroll the log (pauses following)        │
+││g / G           Oldest line / follow the newest          │
+╰│Mouse wheel     Scroll the log                           │
+╭│Esc  Ctrl+C  q  Cancel the running job (asks first)      │
+││Enter           Back to the menu once the job is done    │
+╰│l               Open the full log file (when done)       │
+╭│e / E           Pager ($KAST_PAGER) / editor, when done  │
+││o / f           Default app / file manager, when done    │
+││y / Y           Copy this job's log / the log's path     │
+││tmux            For y: set -g set-clipboard on           │
+││?               This help                                │
+││                                                         │
+││Press any key to close                                   │
+│╰─────────────────────────────────────────────────────────╯
+╰──────────────────────────────────────────────────────────╯
+ PgUp/PgDn scroll  G follow  Esc cancel  ? help  y copy

@@ -19,8 +19,11 @@ pub fn view(f: &mut Frame, area: Rect, theme: &Theme, title: &str, keys: &[(&str
         .collect();
     lines.push(Line::raw(""));
     lines.push(Line::styled("Press any key to close", theme.dim()));
-    let w = lines.iter().map(|l| l.width()).max().unwrap_or(30) as u16 + 4;
-    let r = popup(f, area, w, lines.len() as u16 + 2);
+    let w = (lines.iter().map(|l| l.width()).max().unwrap_or(30) as u16 + 4).min(area.width);
+    // Rows that wrap on a narrow screen take more than one line
+    let inner = w.saturating_sub(2).max(1) as usize;
+    let rows: usize = lines.iter().map(|l| l.width().max(1).div_ceil(inner)).sum();
+    let r = popup(f, area, w, rows as u16 + 2);
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(block(theme, format!(" Help: {title} "))), r);
 }
 

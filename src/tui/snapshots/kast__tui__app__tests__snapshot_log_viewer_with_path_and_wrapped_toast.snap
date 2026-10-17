@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 1089
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -25,4 +26,4 @@ expression: render(&a)
 │may not support it                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╰──────────────────────────────────────────────────────────────────────────────╯
- PgUp/PgDn scroll  g/G top/end  e view  y copy  o open  Esc back  ? help
+ PgUp/PgDn scroll  g/G top/end  Esc back  ? help  e view  y copy  o open

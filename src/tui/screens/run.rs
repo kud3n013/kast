@@ -276,22 +276,19 @@ pub fn log_view(f: &mut Frame, area: Rect, theme: &Theme, log: &LogBuffer, scrol
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(blk), area);
 }
 
-pub const HINTS_RUNNING: [(&str, &str); 5] = [("PgUp/PgDn", "scroll"), ("G", "follow"), ("Esc", "cancel"), ("y", "copy"), ("?", "help")];
-pub const HINTS_DONE: [(&str, &str); 6] = [("Enter", "back to menu"), ("PgUp/PgDn", "scroll"), ("l", "full log"), ("e", "view"), ("y", "copy"), ("?", "help")];
+pub const HINTS_RUNNING: [(&str, &str); 5] = [("PgUp/PgDn", "scroll"), ("G", "follow"), ("Esc", "cancel"), ("?", "help"), ("y", "copy")];
+pub const HINTS_DONE: [(&str, &str); 6] = [("Enter", "back to menu"), ("PgUp/PgDn", "scroll"), ("l", "full log"), ("?", "help"), ("e", "view"), ("y", "copy")];
 
-pub const HELP: [(&str, &str); 14] = [
+pub const HELP: [(&str, &str); 11] = [
     ("PgUp/PgDn  ↑/↓", "Scroll the log (pauses following)"),
     ("g / G", "Oldest line / follow the newest"),
     ("Mouse wheel", "Scroll the log"),
     ("Esc  Ctrl+C  q", "Cancel the running job (asks first)"),
     ("Enter", "Back to the menu once the job is done"),
     ("l", "Open the full log file (when done)"),
-    ("e / E", "View the log in a pager / an editor (when done)"),
-    ("o", "Open the log with the default app (when done)"),
-    ("f", "Show the log in the file manager (when done)"),
-    ("y", "Copy this job's log"),
-    ("Y", "Copy the log file's path"),
-    ("$KAST_PAGER", "Pager for e (else $PAGER, then less)"),
+    ("e / E", "Pager ($KAST_PAGER) / editor, when done"),
+    ("o / f", "Default app / file manager, when done"),
+    ("y / Y", "Copy this job's log / the log's path"),
     ("tmux", "For y: set -g set-clipboard on"),
     ("?", "This help"),
 ];

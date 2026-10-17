@@ -42,4 +42,4 @@ expression: "render(&running_auto(140, 40))"
 │                                                                                                                                          │
 │                                                                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- PgUp/PgDn scroll  G follow  Esc cancel  y copy  ? help
+ PgUp/PgDn scroll  G follow  Esc cancel  ? help  y copy

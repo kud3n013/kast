@@ -127,7 +127,7 @@ started on the menu and in the log viewer (ANSI colours removed; over 256 KiB on
 is kept). It uses `wl-copy` (Wayland) or `xclip`/`xsel` (X11) as your user, and otherwise
 the terminal's clipboard escape (OSC 52). That one works over SSH in kitty, foot, WezTerm,
 Alacritty, Ghostty, recent Konsole and Windows Terminal, but not in GNOME Terminal; inside
-tmux add `set -g set-clipboard on` to `~/.tmux.conf`.
+tmux add `set -g set-clipboard on` to `~/.tmux.conf`. The Linux console has no clipboard: use `e` there.
 
 `e` opens the log in `$KAST_PAGER`, `$PAGER` or `less` (`E`: `$VISUAL`, `$EDITOR`, `nano`)
 on the terminal and returns to the app when you quit it. `o` and `f` need a desktop

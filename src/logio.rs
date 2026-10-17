@@ -98,6 +98,21 @@ pub fn viewer(editor: bool, path: &Path, env: &dyn Fn(&str) -> Option<String>, h
     Err(format!("No {} found (tried {})", if editor { "editor" } else { "pager" }, tried.join(", ")))
 }
 
+/// Variables that would let a program reach the user's desktop.
+const DESKTOP_VARS: [&str; 4] = ["DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "DBUS_SESSION_BUS_ADDRESS"];
+
+/// The pager/editor process for `argv` (from `viewer`). It runs as root on the terminal, so it
+/// gets no way onto the desktop (a GUI `$VISUAL` fails instead of opening as root), and less
+/// gets no shell escapes.
+pub fn viewer_command(argv: &[String]) -> Command {
+    let mut c = Command::new(&argv[0]);
+    c.args(&argv[1..]).env("LESSSECURE", "1");
+    for k in DESKTOP_VARS {
+        c.env_remove(k);
+    }
+    c
+}
+
 /// The desktop's "open this" program for `target`: xdg-open, gio open, kde-open, kde-open5.
 pub fn opener(target: &str, have: &dyn Fn(&str) -> bool) -> Option<Vec<String>> {
     let cmd = if have("xdg-open") {
@@ -254,10 +269,19 @@ pub fn tail(text: &str, max: usize) -> (&str, bool) {
     (rest, true)
 }
 
+/// Most text bytes that fit in an OSC 52 payload.
+pub const OSC52_TEXT_CAP: usize = OSC52_CAP / 4 * 3;
+
 /// The OSC 52 "set clipboard" sequence for `text`, wrapped for tmux or GNU screen, and
-/// whether `text` was cut to fit `OSC52_CAP` (its tail is kept).
-pub fn osc52(text: &str, mux: Mux) -> (Vec<u8>, bool) {
-    let (text, cut) = tail(text, OSC52_CAP / 4 * 3);
+/// whether `text` was cut to fit `OSC52_CAP`: then its tail is kept, under a `note` line.
+pub fn osc52(text: &str, mux: Mux, note: &str) -> (Vec<u8>, bool) {
+    let (kept, cut) = tail(text, OSC52_TEXT_CAP);
+    let text = if cut {
+        let (kept, _) = tail(text, OSC52_TEXT_CAP - note.len() - 1);
+        format!("{note}\n{kept}")
+    } else {
+        kept.to_string()
+    };
     let b64 = base64(text.as_bytes());
     let seq = match mux {
         Mux::None => format!("\x1b]52;c;{b64}\x07"),
@@ -369,6 +393,18 @@ mod tests {
     }
 
     #[test]
+    fn viewer_command_has_no_desktop_access() {
+        let c = viewer_command(&s(&["code", "--wait", "/var/log/kast.log"]));
+        assert_eq!(c.get_program(), "code");
+        let envs: Vec<(String, Option<String>)> =
+            c.get_envs().map(|(k, v)| (k.to_string_lossy().into_owned(), v.map(|v| v.to_string_lossy().into_owned()))).collect();
+        assert!(envs.contains(&("LESSSECURE".into(), Some("1".into()))));
+        for k in DESKTOP_VARS {
+            assert!(envs.contains(&(k.to_string(), None)), "{k} not removed");
+        }
+    }
+
+    #[test]
     fn openers_in_order() {
         assert_eq!(opener("/x", &|_| true).unwrap(), s(&["xdg-open", "/x"]));
         assert_eq!(opener("/x", &|p| p == "gio").unwrap(), s(&["gio", "open", "/x"]));
@@ -440,12 +476,12 @@ mod tests {
 
     #[test]
     fn osc52_framing() {
-        assert_eq!(osc52("hi", Mux::None), (b"\x1b]52;c;aGk=\x07".to_vec(), false));
-        assert_eq!(osc52("hi", Mux::Tmux).0, b"\x1bPtmux;\x1b\x1b]52;c;aGk=\x07\x1b\\".to_vec());
-        assert_eq!(osc52("hi", Mux::Screen).0, b"\x1bP\x1b]52;c;aGk=\x07\x1b\\".to_vec());
+        assert_eq!(osc52("hi", Mux::None, ""), (b"\x1b]52;c;aGk=\x07".to_vec(), false));
+        assert_eq!(osc52("hi", Mux::Tmux, "").0, b"\x1bPtmux;\x1b\x1b]52;c;aGk=\x07\x1b\\".to_vec());
+        assert_eq!(osc52("hi", Mux::Screen, "").0, b"\x1bP\x1b]52;c;aGk=\x07\x1b\\".to_vec());
         // Long payloads are split into DCS pieces for screen
         let long = "x".repeat(100);
-        let seq = String::from_utf8(osc52(&long, Mux::Screen).0).unwrap();
+        let seq = String::from_utf8(osc52(&long, Mux::Screen, "").0).unwrap();
         assert_eq!(seq.matches("\x1bP").count(), 2);
         assert!(seq.starts_with("\x1bP\x1b]52;c;eHh4") && seq.ends_with("\x07\x1b\\"));
     }
@@ -453,12 +489,13 @@ mod tests {
     #[test]
     fn osc52_keeps_the_tail_of_big_payloads() {
         let text: String = (0..20_000).map(|i| format!("line {i}\n")).collect();
-        let (seq, cut) = osc52(&text, Mux::None);
+        let note = "[kast: log truncated, full file at /var/log/kast.log]";
+        let (seq, cut) = osc52(&text, Mux::None, note);
         assert!(cut);
         assert!(seq.len() <= OSC52_CAP + 16);
-        let kept = tail(&text, OSC52_CAP / 4 * 3).0;
+        let kept = tail(&text, OSC52_TEXT_CAP - note.len() - 1).0;
         assert!(kept.starts_with("line ") && kept.ends_with("line 19999\n"));
-        assert_eq!(seq, format!("\x1b]52;c;{}\x07", base64(kept.as_bytes())).into_bytes());
+        assert_eq!(seq, format!("\x1b]52;c;{}\x07", base64(format!("{note}\n{kept}").as_bytes())).into_bytes());
     }
 
     #[test]

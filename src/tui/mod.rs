@@ -161,8 +161,7 @@ fn view_log(term: &mut Term, editor: bool) -> Option<Report> {
         Ok(a) => a,
         Err(e) => return Some(Report::err(e)),
     };
-    // kast runs as root: no shell escapes or editor launching from less
-    let status = suspend(term, || std::process::Command::new(&argv[0]).args(&argv[1..]).env("LESSSECURE", "1").status());
+    let status = suspend(term, || logio::viewer_command(&argv).status());
     match status {
         Ok(s) if s.success() || s.code().is_none() => None,
         Ok(s) => Some(Report::err(format!("{} exited with status {}", argv[0], s.code().unwrap_or_default()))),
@@ -367,11 +366,11 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
                 app::LogScope::Job => marks.job,
             };
             let tx = tx.clone();
-            std::thread::spawn(move || copied(&tx, logio::os::copy_log(&ctx().log_file, from)));
+            std::thread::spawn(move || copied(&tx, logio::os::copy_log(&ctx().log_file, from, logio::TUI_HINT)));
         }
         Command::CopyLogPath => {
             let tx = tx.clone();
-            std::thread::spawn(move || copied(&tx, logio::os::copy(&ctx().log_file.display().to_string(), "the log path")));
+            std::thread::spawn(move || copied(&tx, logio::os::copy(&ctx().log_file.display().to_string(), "the log path", logio::TUI_HINT)));
         }
         // Written by the event loop, between frames
         Command::Osc52(_) => {}

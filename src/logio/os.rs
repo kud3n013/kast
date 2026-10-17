@@ -8,7 +8,8 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use super::{
-    COPY_CAP, Launch, Mux, OSC52_CAP, OSC52_NOTE, Report, SYSTEM_LOG, Session, cli_log_path, is_remote_shell, mux, opener, osc52, read_since, show_item, tail,
+    COPY_CAP, Launch, Mux, OSC52_NOTE, OSC52_TEXT_CAP, Report, SYSTEM_LOG, Session, cli_log_path, is_remote_shell, mux, opener, osc52, read_since, show_item,
+    tail,
 };
 use crate::ctx::{self, ctx};
 use crate::ui::sanitize_log;
@@ -136,17 +137,28 @@ pub enum Copied {
 }
 
 /// Put `text` on the clipboard with wl-copy, xclip or xsel as the user; failing those, hand
-/// back an OSC 52 sequence. `what` names the text in the message ("412 lines").
-pub fn copy(text: &str, what: &str) -> Copied {
-    for argv in session().clipboard_tools(&have) {
+/// back an OSC 52 sequence. `what` names the text in the message ("412 lines"), `hint` how
+/// else to see the log.
+pub fn copy(text: &str, what: &str, hint: &str) -> Copied {
+    let s = session();
+    let tools = s.clipboard_tools(&have);
+    for argv in &tools {
         // These fork to keep serving the selection: only the parent's exit is waited for
-        if let Ok(Waited::Exited(Some(0))) = launch(&argv, Some(text.as_bytes().to_vec())) {
+        if let Ok(Waited::Exited(Some(0))) = launch(argv, Some(text.as_bytes().to_vec())) {
             return Copied::Done(Report::ok(format!("Copied {what} ({})", argv[0])));
         }
     }
-    let (bytes, cut) = osc52(text, current_mux());
-    let what = if cut { format!("the last {} lines", tail(text, OSC52_CAP / 4 * 3).0.lines().count()) } else { what.to_string() };
-    Copied::Osc52 { bytes, report: Report { ok: true, text: format!("Copied {what} via terminal (OSC 52); {OSC52_NOTE}") } }
+    if s.term == "linux" {
+        return Copied::Done(Report::err(format!("The Linux console has no clipboard; {hint}")));
+    }
+    let note = format!("[kast: log truncated, full file at {}]", ctx().log_file.display());
+    let (bytes, cut) = osc52(text, current_mux(), &note);
+    let what = if cut { format!("the last {} lines", tail(text, OSC52_TEXT_CAP - note.len() - 1).0.lines().count()) } else { what.to_string() };
+    let mut msg = format!("Copied {what} via terminal (OSC 52); {OSC52_NOTE}");
+    if s.gui() && tools.is_empty() {
+        msg.push_str("; install wl-clipboard (Wayland) or xclip (X11) for a reliable copy");
+    }
+    Copied::Osc52 { bytes, report: Report::ok(msg) }
 }
 
 /// When even writing to the terminal failed.
@@ -155,12 +167,12 @@ pub fn copy_failed(e: &io::Error, hint: &str) -> Report {
 }
 
 /// `y`: the log from byte `from` on.
-pub fn copy_log(path: &Path, from: u64) -> Copied {
+pub fn copy_log(path: &Path, from: u64, hint: &str) -> Copied {
     match read_since(path, from, COPY_CAP) {
         Ok(c) if c.lines == 0 => Copied::Done(Report::ok("Nothing logged yet")),
         Ok(c) => {
             let what = if c.truncated { format!("the last {} lines (over 256 KiB)", c.lines) } else { format!("{} lines", c.lines) };
-            copy(&c.text, &what)
+            copy(&c.text, &what, hint)
         }
         Err(e) => Copied::Done(Report::err(format!("Could not read {}: {e}", path.display()))),
     }
@@ -188,7 +200,7 @@ pub fn cmd_log(tail_lines: Option<usize>, open: bool, copy_it: bool) -> anyhow::
     }
     if copy_it {
         // Outside the app there is no session start to go by: the whole file, capped
-        return match copy_log(&path, 0) {
+        return match copy_log(&path, 0, CLI_HINT) {
             Copied::Done(r) => print_report(r),
             Copied::Osc52 { bytes, report } => {
                 let mut out = io::stdout();

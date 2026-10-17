@@ -1,0 +1,45 @@
+---
+source: src/tui/app.rs
+assertion_line: 1097
+expression: "format!(\"{menu}{}\", render(&a))"
+---
+ kast │ p3ter (1000:1000) │ archbox │ root
+╭ Arch Linux / CachyOS setup ──────────────────────────────╮
+│❯  1 Run automatic setup                                  │
+│   2 Set up data partition                                │
+│   3 Add kud3n's repository                               │
+│   4 Install packages                                     │
+│   5 Set up services                                      │
+│   6 Import data                                          │
+│   7 Export data                                          │
+│   8 App status                                           │
+│   9 Inspect a backup                                     │
+│   q Quit                                                 │
+╰──────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────╮
+│Upgrades the system (pacman -Syuu), adds kud3n's          │
+│repository, installs every package, then sets up services.│
+│Steps 3 to 5 in one go, with an overall progress bar and a│
+│summary at the end.                                       │
+╰──────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit
+ kast │ p3ter (1000:1000) │ archbox │ root
+╭ Log · /var/log/kast.log (following) ─────────────────────╮
+│INFO  [2026-10-17 10:00:00] [INFO] Adding archrepo        │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+╰──────────────────────────────────────────────────────────╯
+ PgUp/PgDn scroll  g/G top/end  Esc back  ? help  e view

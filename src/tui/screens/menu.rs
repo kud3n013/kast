@@ -194,21 +194,18 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
 }
 
 pub const HINTS: [(&str, &str); 8] =
-    [("↑/↓", "move"), ("Enter", "run"), ("1-9", "pick"), ("l", "log"), ("e", "view"), ("y", "copy"), ("?", "help"), ("q", "quit")];
+    [("↑/↓", "move"), ("Enter", "run"), ("1-9", "pick"), ("l", "log"), ("?", "help"), ("q", "quit"), ("e", "view"), ("y", "copy")];
 
-pub const HELP: [(&str, &str); 16] = [
+pub const HELP: [(&str, &str); 13] = [
     ("↑/↓  j/k", "Move the selection (wraps around)"),
     ("Home/End  g/G", "First / last entry"),
     ("Enter", "Run the highlighted action"),
     ("1-9", "Run that action directly"),
     ("Mouse", "Click selects, double-click runs, wheel moves"),
     ("l", "Open the log file"),
-    ("e / E", "View the log in a pager / an editor"),
-    ("o", "Open the log with the default app"),
-    ("f", "Show the log in the file manager"),
-    ("y", "Copy this session's log"),
-    ("Y", "Copy the log file's path"),
-    ("$KAST_PAGER", "Pager for e (else $PAGER, then less)"),
+    ("e / E", "View in a pager ($KAST_PAGER) / editor"),
+    ("o / f", "Open with the default app / file manager"),
+    ("y / Y", "Copy this session's log / the log's path"),
     ("tmux", "For y: set -g set-clipboard on"),
     ("?", "This help"),
     ("q  Esc", "Quit kast"),
