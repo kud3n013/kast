@@ -72,13 +72,15 @@ pub fn find_candidates() -> (Vec<PathBuf>, Vec<PathBuf>) {
 /// Type label of a backup file, from its file name (the folder it sits in doesn't count).
 pub fn candidate_tag(p: &Path) -> &'static str {
     let s = file_name(p).to_lowercase();
+    // Whole words only (letters between separators or digits), so `install.zip` isn't "all"
+    let word = |pred: &dyn Fn(&str) -> bool| s.split(|c: char| !c.is_ascii_alphabetic()).any(pred);
     if s.ends_with(".dat") {
         "[Howdy Face Model]"
-    } else if s.contains("kde") || s.contains("plasma") {
+    } else if word(&|w| w.starts_with("kde") || w.starts_with("plasma")) {
         "[KDE Plasma Backup]"
-    } else if s.contains("hypr") {
+    } else if word(&|w| w.starts_with("hypr")) {
         "[Hyprland Backup]"
-    } else if s.contains("all") {
+    } else if word(&|w| w == "all") {
         "[Full System Backup]"
     } else {
         "[Archive]"
@@ -311,5 +313,17 @@ mod tests {
         assert_eq!(candidate_tag(Path::new("/home/p3ter/hypr/all_2026.zip")), "[Full System Backup]");
         assert_eq!(candidate_tag(Path::new("/home/p3ter/Hyprland.zip")), "[Hyprland Backup]");
         assert_eq!(candidate_tag(Path::new("/media/data/all/p3ter.dat")), "[Howdy Face Model]");
+    }
+
+    #[test]
+    fn tag_matches_whole_words() {
+        assert_eq!(candidate_tag(Path::new("/x/install.zip")), "[Archive]");
+        assert_eq!(candidate_tag(Path::new("/x/small.zip")), "[Archive]");
+        assert_eq!(candidate_tag(Path::new("/x/all_backup_20261017_120000.zip")), "[Full System Backup]");
+        assert_eq!(candidate_tag(Path::new("/x/ALL-2026.zip")), "[Full System Backup]");
+        assert_eq!(candidate_tag(Path::new("/x/kde_backup_20261017.zip")), "[KDE Plasma Backup]");
+        assert_eq!(candidate_tag(Path::new("/x/my-plasma6.zip")), "[KDE Plasma Backup]");
+        assert_eq!(candidate_tag(Path::new("/x/hyprland_backup.zip")), "[Hyprland Backup]");
+        assert_eq!(candidate_tag(Path::new("/x/backup.zip")), "[Archive]");
     }
 }
