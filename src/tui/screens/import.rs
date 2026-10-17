@@ -1313,6 +1313,7 @@ mod tests {
         let Some(Command::Inspect { path, .. }) = update(&mut a, key(KeyCode::Enter)) else { panic!() };
         update(&mut a, Event::Loaded(Loaded::Inspected { path: path.clone(), pick: true, result: Ok(Some(inspected())) }));
         update(&mut a, Event::Loaded(Loaded::SnapshotSize { file: path, bytes: 52_428_800 }));
+        insta::assert_snapshot!("import_snapshot_question_140x40", render(&a));
         for _ in 0..5 {
             update(&mut a, key(KeyCode::Down));
         }

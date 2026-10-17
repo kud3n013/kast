@@ -28,6 +28,8 @@ pub struct UndoData {
     pub problems: Vec<String>,
     /// Bytes of file copies kept
     pub stored: u64,
+    /// Bytes of the import safety snapshots the journal points to
+    pub snapshots: u64,
     /// Short diffs of files changed since kast, by (run, label)
     pub diffs: HashMap<(String, String), Vec<String>>,
     /// The journal couldn't be read at all
@@ -59,7 +61,9 @@ pub fn load_undo() -> UndoData {
             }
         }
     }
-    UndoData { stored: undo::stored_size(&dir), keep: undo::keep_runs(&dir), runs, view, problems, diffs, error: None }
+    let snaps: Vec<std::path::PathBuf> = view.snapshots.keys().filter(|p| p.is_dir()).cloned().collect();
+    let snapshots = crate::vault::import::bytes_of(&snaps);
+    UndoData { stored: undo::stored_size(&dir), snapshots, keep: undo::keep_runs(&dir), runs, view, problems, diffs, error: None }
 }
 
 /// The list's installed apps and what needs them (off the UI thread).
@@ -414,7 +418,15 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &UndoState) {
                 }
                 d.push(Line::raw(""));
             }
-            d.push(Line::styled(format!("File copies kept: {} (last {} runs; p prunes)", undo::human(st.data.stored), st.data.keep), theme.dim()));
+            d.push(Line::styled(
+                format!(
+                    "Kept: {} of file copies (last {} runs; p prunes), {} of import snapshots",
+                    undo::human(st.data.stored),
+                    st.data.keep,
+                    undo::human(st.data.snapshots)
+                ),
+                theme.dim(),
+            ));
             for p in &st.data.problems {
                 d.push(Line::styled(format!("{} {p}", theme.sym.warn), theme.warn()));
             }
@@ -555,7 +567,7 @@ mod tests {
         view.installed.insert("zotero".into(), PkgNow { explicit: true, required_by: vec!["zotero-ocr".into()], repo: String::new() });
         view.installed.insert("libdep".into(), PkgNow::default());
         view.files.insert("/etc/pam.d/sudo".into(), Some("p1".into()));
-        UndoData { runs: vec![older, run], view, problems: vec![], stored: 48_128, diffs: HashMap::new(), error: None, keep: 10 }
+        UndoData { runs: vec![older, run], view, problems: vec![], stored: 48_128, snapshots: 1_288_490_189, diffs: HashMap::new(), error: None, keep: 10 }
     }
 
     fn opened(w: u16, h: u16) -> App {

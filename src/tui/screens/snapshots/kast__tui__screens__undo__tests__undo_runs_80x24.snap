@@ -23,6 +23,6 @@ expression: render(&a)
 │Steps: upgrade, packages, services, import                                    │
 │⚠ 1 change(s) were interrupted; undo reverts them from their before-state.    │
 │                                                                              │
-│File copies kept: 47.0 KiB (last 10 runs; p prunes)                           │
+│Kept: 47.0 KiB of file copies (last 10 runs; p prunes), 1.2 GiB of import     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Enter open  p prune  Esc back  ? help

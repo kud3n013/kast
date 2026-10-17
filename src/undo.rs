@@ -99,6 +99,8 @@ pub struct View {
     pub archrepo: Vec<String>,
     /// Current fingerprint of each import snapshot
     pub snapshots: HashMap<PathBuf, Option<String>>,
+    /// Runs whose file copies are gone (pruned): their files can't be put back
+    pub pruned: HashSet<String>,
 }
 
 fn s(v: &Value) -> String {
@@ -174,6 +176,10 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
                     uid: before["uid"].as_u64().unwrap_or(0) as u32,
                     gid: before["gid"].as_u64().unwrap_or(0) as u32,
                 };
+                if before_hash.is_some() && view.pruned.contains(id) && !(is_conf && edited) {
+                    rest.push(Item::not_undoable(c, id, format!("Restore {shown}"), "not undoable (file copies pruned)"));
+                    continue;
+                }
                 let mut it = match (&before_hash, is_conf && edited) {
                     (_, true) => Item::new(c, id, Act::RemoveRepoBlock(path.clone()), format!("Remove [archrepo] from {shown}")),
                     (None, false) => Item::new(c, id, restore, format!("Delete {shown} (kast created it)")),
@@ -307,6 +313,8 @@ pub fn parse_qi(text: &str) -> PkgNow {
 /// Look at the system for what the runs' changes touch.
 pub fn gather(runs: &[&Run]) -> View {
     let mut v = View::default();
+    let files = journal::state_dir().join("files");
+    v.pruned = runs.iter().filter(|r| !files.join(&r.id).is_dir()).map(|r| r.id.clone()).collect();
     for c in runs.iter().flat_map(|r| &r.changes) {
         match c.kind.as_str() {
             "pkg_install" | "pkg_replace" | "pkg_remove" => {
@@ -471,7 +479,10 @@ pub fn execute(items: &[Item], dir: &Path, user: &str, report: &mut dyn FnMut(us
             }
         }
     }
-    // 2. Everything else, PAM files collected for the check (and marked only once it passes)
+    // 2. Everything else. PAM files are checked right after the last one is restored (and
+    // marked undone only once the check passes); a failed check stops the undo there
+    let pam = |it: &Item| matches!(&it.act, Act::RestoreFile { path, .. } if path.starts_with(sys_path("/etc/pam.d")));
+    let last_pam = items.iter().rposition(pam);
     let mut pam_before: Vec<(PathBuf, Option<Vec<u8>>)> = Vec::new();
     let mut pam_items: Vec<&Item> = Vec::new();
     for (i, it) in items.iter().enumerate().filter(|(_, i)| !matches!(i.act, Act::Remove(_))) {
@@ -517,29 +528,33 @@ pub fn execute(items: &[Item], dir: &Path, user: &str, report: &mut dyn FnMut(us
             Act::Remove(_) | Act::None => continue,
         };
         match r {
-            Ok(()) if matches!(&it.act, Act::RestoreFile { path, .. } if path.starts_with(sys_path("/etc/pam.d"))) => pam_items.push(it),
+            Ok(()) if pam(it) => pam_items.push(it),
             Ok(()) => {
                 mark(it);
                 out.done.push(it.label.clone());
             }
             Err(e) => out.failed.push(format!("{}: {e}", it.label)),
         }
-    }
-    // 3. Never leave sudo broken
-    if !pam_before.is_empty() {
-        let names: Vec<String> = pam_before.iter().filter_map(|(p, _)| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
-        if let Err(e) = pam_check(&sys_path("/etc/pam.d"), &module_dirs(), &names) {
-            for (p, data) in &pam_before {
-                let _ = match data {
-                    Some(d) => crate::ctx::write_atomic(p, d),
-                    None => fs::remove_file(p),
-                };
+        // Never leave sudo broken
+        if Some(i) == last_pam && !pam_before.is_empty() {
+            let names: Vec<String> = pam_before.iter().filter_map(|(p, _)| p.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+            if let Err(e) = pam_check(&sys_path("/etc/pam.d"), &module_dirs(), &names) {
+                for (p, data) in &pam_before {
+                    let _ = match data {
+                        Some(d) => crate::ctx::write_atomic(p, d),
+                        None => fs::remove_file(p),
+                    };
+                }
+                let done = if out.done.is_empty() { "nothing".to_string() } else { out.done.join("; ") };
+                bail!(
+                    "The restored PAM files failed the sanity check ({e}); they were put back as they were before this undo, so sudo works as it did. \
+                     The undo stopped there. Already undone: {done}."
+                );
             }
-            bail!("The restored PAM files failed the sanity check ({e}); they were put back as they were before this undo, so sudo works as it did.");
-        }
-        for it in pam_items {
-            mark(it);
-            out.done.push(it.label.clone());
+            for it in pam_items.drain(..) {
+                mark(it);
+                out.done.push(it.label.clone());
+            }
         }
     }
     Ok(out)
@@ -1209,5 +1224,44 @@ mod tests {
         assert_eq!(diff_lines(t.path(), &it, 1), ["- b", "… 1 more"]);
         assert!(cli_choice(std::slice::from_ref(&it), false).is_empty(), "the CLI skips it");
         assert_eq!(cli_choice(std::slice::from_ref(&it), true).len(), 1, "unless --force");
+    }
+
+    #[test]
+    fn pruned_runs_cant_restore_files() {
+        let r = run(vec![
+            change(1, "file_write", "services", file("/etc/pam.d/sudo", Some("p0"), "p1")),
+            change(2, "file_create", "services", file("/usr/lib/hook.sh", None, "h1")),
+            change(3, "service_enable", "services", json!({ "unit": "valkey", "was_enabled": false, "was_active": false })),
+        ]);
+        let mut v = view(&[], &[("/etc/pam.d/sudo", Some("p1")), ("/usr/lib/hook.sh", Some("h1"))]);
+        v.pruned.insert("r1".into());
+        let p = plan(&r, &v);
+        let st: Vec<(&str, bool)> = p.iter().map(|i| (i.label.as_str(), i.undoable)).collect();
+        assert_eq!(st, [("Disable and stop valkey", true), ("Delete /usr/lib/hook.sh (kast created it)", true), ("Restore /etc/pam.d/sudo", false)]);
+        assert_eq!(p[2].warning.as_deref(), Some("not undoable (file copies pruned)"));
+    }
+
+    #[test]
+    fn a_failed_pam_check_stops_the_undo_there() {
+        let t = tempfile::tempdir().unwrap();
+        journal::with_root(t.path(), || {
+            fs::create_dir_all(sys_path("/etc/pam.d")).unwrap();
+            fs::create_dir_all(sys_path("/usr/lib/security")).unwrap();
+            fs::write(sys_path("/usr/lib/security/pam_unix.so"), "").unwrap();
+            journal::begin_run(&["services"], "p3ter").unwrap();
+            let dir = journal::state_dir();
+            fs::write(sys_path("/etc/pam.d/sudo"), "auth required pam_gone.so\n").unwrap();
+            journal::write_file(&sys_path("/etc/pam.d/sudo"), b"auth required pam_unix.so\n", None).unwrap();
+            journal::write_file(&sys_path("/usr/lib/hook.sh"), b"#!/bin/sh\n", Some(0o755)).unwrap();
+            journal::end_run();
+            let runs = journal::runs(&journal::load(&dir).unwrap().entries);
+            let items = plan(&runs[0], &gather(&[&runs[0]]));
+            // Newest first: the hook, then sudo
+            assert_eq!(items.len(), 2);
+            let err = execute(&items, &dir, "p3ter", &mut |_, _| {}).unwrap_err().to_string();
+            assert!(err.contains("Already undone: Delete") && err.contains("hook.sh"), "{err}");
+            assert!(!sys_path("/usr/lib/hook.sh").exists());
+            assert_eq!(fs::read_to_string(sys_path("/etc/pam.d/sudo")).unwrap(), "auth required pam_unix.so\n");
+        });
     }
 }

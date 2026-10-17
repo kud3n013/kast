@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/import.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore all_backup_2026-10-16_210400.zip ──────────────────────────╮╭ Manifest ──────────────────────────────────────────────────────────╮
+│❯ (•) All applications & desktop settings (recommended)             ││Created   2026-10-16T21:04:00+02:00                                 │
+│  ( ) KDE Plasma settings only                                      ││Source    archbox (p3ter)                                           │
+│  ( ) Only beeper                                                   ││Target    all                                                       │
+│  ( ) Only zen                                                      ││Media     true                                                      │
+│  [x] Close running apps first                                      ││Size      1.2G                                                      │
+│  [x] Snapshot your current app data before importing? (≈ 50.0 MiB, ││                                                                    │
+│  [ ] Dry run (change nothing)                                      ││Contains 3 item(s):                                                 │
+│  ▶ Start restore                                                   ││• BEEPER                                                            │
+│                                                                    ││    Folder:      ~/.config/BeeperTexts                              │
+│                                                                    ││• ZEN                                                               │
+│                                                                    ││    Folder:      ~/.config/zen                                      │
+│                                                                    ││• KDE                                                               │
+│                                                                    ││    Config:      ~/.config (kdeglobals, kwinrc, Plasma applets,     │
+│                                                                    ││shortcuts)                                                          │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+╰────────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Space toggle  Enter choose  s start  Esc back  ? help
