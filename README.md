@@ -61,6 +61,7 @@ kast auto             # upgrade, repo, packages, services (no partition, no impo
 kast partition        # optional: /media/data + home folder symlinks
 kast repo | packages | services
 kast status           # detected apps, Howdy, KDE, Hyprland
+kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
 kast info ~/all.zip
 kast restore ~/all.zip --app kde --dry-run
@@ -117,6 +118,22 @@ and `l` opens the log (`/var/log/kast.log`). Below 60×20 it asks for a bigger w
 | Export | `↑/↓` move · `Space`/`Enter` select, toggle or edit the path · `s` start · `Esc` back |
 | Status | `r` refresh · `↑/↓` scroll · `Esc` back |
 | Log | `PgUp/PgDn` `↑/↓` scroll · `g`/`G` top / end · `Esc` back |
+| Log file (menu, log, summary, progress when done) | `e` pager · `E` editor · `o` open with the default app · `f` show in the file manager · `y` copy the log · `Y` copy its path (`y`/`Y` also while a job runs) |
+
+### Getting the log out
+
+`y` copies this job's log on the progress and summary screens, and everything since kast
+started on the menu and in the log viewer (ANSI colours removed; over 256 KiB only the end
+is kept). It uses `wl-copy` (Wayland) or `xclip`/`xsel` (X11) as your user, and otherwise
+the terminal's clipboard escape (OSC 52). That one works over SSH in kitty, foot, WezTerm,
+Alacritty, Ghostty, recent Konsole and Windows Terminal, but not in GNOME Terminal; inside
+tmux add `set -g set-clipboard on` to `~/.tmux.conf`.
+
+`e` opens the log in `$KAST_PAGER`, `$PAGER` or `less` (`E`: `$VISUAL`, `$EDITOR`, `nano`)
+on the terminal and returns to the app when you quit it. `o` and `f` need a desktop
+session; over SSH or on the Linux console they say so. `kast log --open` / `--copy` do the
+same from a script; without root `kast log` reads `~/.local/state/kast.log`, or
+`/var/log/kast.log` when yours is empty.
 
 Canceling a running job stops the command it is running (SIGTERM to its process group,
 then SIGKILL) and ends the job at its next step; steps that already finished are not

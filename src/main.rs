@@ -3,7 +3,6 @@
 
 mod ctx;
 mod interactive;
-#[allow(dead_code)] // wired up in the following commits
 mod logio;
 mod report;
 mod setup;
@@ -63,6 +62,16 @@ enum Cmd {
     /// Inspect a backup archive's manifest
     #[command(visible_alias = "inspect")]
     Info { file: Option<PathBuf> },
+    /// Print the log file's path, its last lines, or open or copy it
+    #[command(
+        visible_alias = "logs",
+        after_help = "Which log: root runs (the app, sudo kast ...) write /var/log/kast.log; runs as your own user write\n\
+                      ~/.local/state/kast.log. Without root, kast log reads the latter, or /var/log/kast.log when\n\
+                      yours is empty or missing.\n\n\
+                      --copy tries wl-copy (Wayland), xclip and xsel (X11), then the terminal (OSC 52). It copies the\n\
+                      whole file, or its last 256 KiB when it is longer."
+    )]
+    Log(LogArgs),
     /// Direct access to the app vault engine
     Vault {
         #[command(subcommand)]
@@ -104,6 +113,19 @@ const TARGETS: [&str; 16] = [
     "hypr",
     "hyprland",
 ];
+
+#[derive(Args)]
+struct LogArgs {
+    /// Print the last N lines
+    #[arg(long, value_name = "N", conflicts_with_all = ["open", "copy"])]
+    tail: Option<usize>,
+    /// Open the log with the desktop's default app
+    #[arg(long, conflicts_with = "copy")]
+    open: bool,
+    /// Copy the log to the clipboard
+    #[arg(long)]
+    copy: bool,
+}
 
 #[derive(Args, Default)]
 struct BackupArgs {
@@ -231,6 +253,7 @@ fn dispatch(cmd: Option<Cmd>) -> Result<()> {
         }
         Some(Cmd::Vault { cmd: VaultCmd::Backup(a) }) => cmd_backup(a.into_opts()),
         Some(Cmd::Vault { cmd: VaultCmd::Import(a) }) => cmd_import(a.into_opts()?),
+        Some(Cmd::Log(a)) => logio::os::cmd_log(a.tail, a.open, a.copy),
         Some(Cmd::Test) => Ok(()),
     }
 }
