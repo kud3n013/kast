@@ -8,10 +8,10 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use super::{
-    COPY_CAP, Launch, Mux, OSC52_NOTE, OSC52_TEXT_CAP, Report, SYSTEM_LOG, Session, cli_log_path, is_remote_shell, mux, opener, osc52, read_since, show_item,
-    tail,
+    COPY_CAP, Launch, Mux, OSC52_NOTE, OSC52_TEXT_CAP, Report, SYSTEM_LOG, Session, cli_log_path, desktop_env, env_value, is_remote_shell, mux, opener, osc52,
+    read_since, show_item, tail,
 };
-use crate::ctx::{self, ctx};
+use crate::ctx::{self, UserEnv, ctx};
 use crate::ui::sanitize_log;
 
 /// How long a launcher (xdg-open, gdbus, wl-copy...) may take before we stop waiting for it.
@@ -40,9 +40,38 @@ pub fn ancestors() -> Vec<String> {
     out
 }
 
+/// No controlling terminal for `cmd`: neither it nor sudo (with `use_pty`) can touch ours.
+fn detach(cmd: &mut std::process::Command) {
+    // SAFETY: setsid is async-signal-safe and touches no memory of ours
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+}
+
+/// The user's session for desktop programs: `ctx::user_env`, gaps in the display variables
+/// filled from their systemd user manager, plus the desktop variables (see `DESKTOP_KEYS`).
+fn desktop_session() -> (UserEnv, Vec<(String, String)>) {
+    let mut u = ctx::user_env();
+    let argv: Vec<String> = ["systemctl", "--user", "show-environment"].map(String::from).to_vec();
+    let mut cmd = Launch::as_user(ctx().is_root, &u, &[], &argv).command();
+    cmd.stdin(Stdio::null()).stderr(Stdio::null());
+    detach(&mut cmd);
+    let systemd = cmd.output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
+    for (field, key) in [(&mut u.wayland, "WAYLAND_DISPLAY"), (&mut u.display, "DISPLAY"), (&mut u.xauthority, "XAUTHORITY")] {
+        if field.is_empty() {
+            *field = env_value(&systemd, key).unwrap_or_default().to_string();
+        }
+    }
+    let extra = desktop_env(&env, &systemd);
+    (u, extra)
+}
+
 pub fn session() -> Session {
     let remote = env("SSH_CONNECTION").is_some() || env("SSH_TTY").is_some() || ancestors().iter().any(|a| is_remote_shell(a));
-    let u = ctx::user_env();
+    let (u, _) = desktop_session();
     Session { wayland: u.wayland, display: u.display, term: env("TERM").unwrap_or_default(), remote }
 }
 
@@ -58,15 +87,10 @@ enum Waited {
 /// Start `argv` as the target user in its own session (no controlling terminal, so neither it
 /// nor sudo can draw on ours), with `input` on stdin, and wait up to `LAUNCH_WAIT` for it.
 fn launch(argv: &[String], input: Option<Vec<u8>>) -> io::Result<Waited> {
-    let mut cmd = Launch::as_user(ctx().is_root, &ctx::user_env(), argv).command();
+    let (user, desktop) = desktop_session();
+    let mut cmd = Launch::as_user(ctx().is_root, &user, &desktop, argv).command();
     cmd.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::null()).stderr(Stdio::null());
-    // SAFETY: setsid is async-signal-safe and touches no memory of ours
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
-    }
+    detach(&mut cmd);
     let mut child = cmd.spawn()?;
     if let (Some(data), Some(mut stdin)) = (input, child.stdin.take()) {
         // On its own thread: a program that stops reading must not hang us
@@ -109,7 +133,12 @@ pub fn open_file(path: &Path, hint: &str) -> Report {
         return Report::err(format!("No xdg-open, gio or kde-open found; {hint}"));
     };
     let r = launch(&argv, None);
-    if launched(&r) { Report::ok(format!("Opened the log ({})", argv[0])) } else { failure(&argv[0], r, hint) }
+    match r {
+        Ok(Waited::Exited(Some(0))) => Report::ok(format!("Opened the log ({})", argv[0])),
+        // Some openers run the app in the foreground; one without a window never returns
+        Ok(Waited::StillRunning) => Report::ok(format!("Opening the log ({} still running); if nothing appears, {hint}", argv[0])),
+        r => failure(&argv[0], r, hint),
+    }
 }
 
 /// `f`: show the log in the file manager (the file highlighted when it supports FileManager1).

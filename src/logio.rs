@@ -56,14 +56,16 @@ const SESSION_VARS: [&str; 5] = ["XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DISPLAY"
 impl Launch {
     /// `argv` as the target user: through `sudo -u <user> env ...` (like `ctx::run_as_user`)
     /// when kast is root, directly with the session variables otherwise, so it needs no sudo.
-    pub fn as_user(root: bool, user: &UserEnv, argv: &[String]) -> Launch {
+    /// `extra` (the desktop variables) comes last and wins.
+    pub fn as_user(root: bool, user: &UserEnv, extra: &[(String, String)], argv: &[String]) -> Launch {
         if root {
             let mut args = vec!["-u".to_string(), user.user.clone(), "env".into()];
-            args.extend(user.vars().into_iter().map(|(k, v)| format!("{k}={v}")));
+            args.extend(user.vars().into_iter().chain(extra.iter().cloned()).map(|(k, v)| format!("{k}={v}")));
             args.extend_from_slice(argv);
             return Launch { program: "sudo".into(), args, env: vec![] };
         }
-        let env = user.vars().into_iter().filter(|(k, v)| SESSION_VARS.contains(&k.as_str()) && !v.is_empty()).collect();
+        let mut env: Vec<(String, String)> = user.vars().into_iter().filter(|(k, v)| SESSION_VARS.contains(&k.as_str()) && !v.is_empty()).collect();
+        env.extend(extra.iter().cloned());
         Launch { program: argv[0].clone(), args: argv[1..].to_vec(), env }
     }
 
@@ -72,6 +74,39 @@ impl Launch {
         c.args(&self.args).envs(self.env.iter().map(|(k, v)| (k, v)));
         c
     }
+}
+
+/// Variables that say which desktop a program runs in. sudo drops them; without them xdg-open
+/// can't hand off to the desktop's own opener (kde-open, gio) and guesses an app from a
+/// generic lookup that ignores the desktop's default apps.
+pub const DESKTOP_KEYS: [&str; 9] = [
+    "XDG_CURRENT_DESKTOP",
+    "XDG_SESSION_DESKTOP",
+    "DESKTOP_SESSION",
+    "XDG_SESSION_TYPE",
+    "KDE_FULL_SESSION",
+    "KDE_SESSION_VERSION",
+    "XDG_DATA_DIRS",
+    "XDG_CONFIG_DIRS",
+    "QT_QPA_PLATFORMTHEME",
+];
+
+/// `key`'s value in `systemctl --user show-environment` output (`KEY=value` lines; values
+/// with special characters come `$'...'`-quoted and are skipped).
+pub fn env_value<'a>(show_environment: &'a str, key: &str) -> Option<&'a str> {
+    show_environment.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix('=')).filter(|v| !v.is_empty() && !v.starts_with("$'"))
+}
+
+/// The desktop variables to pass on: ours when set, else those of the user's systemd user
+/// manager, which the desktop fills at login.
+pub fn desktop_env(own: &dyn Fn(&str) -> Option<String>, show_environment: &str) -> Vec<(String, String)> {
+    DESKTOP_KEYS
+        .iter()
+        .filter_map(|k| {
+            let v = own(k).filter(|v| !v.is_empty()).or_else(|| env_value(show_environment, k).map(String::from))?;
+            Some((k.to_string(), v))
+        })
+        .collect()
 }
 
 fn argv(parts: &[&str]) -> Vec<String> {
@@ -356,17 +391,40 @@ mod tests {
 
     #[test]
     fn as_user_goes_through_sudo_only_as_root() {
-        let l = Launch::as_user(true, &user(), &s(&["xdg-open", "/var/log/kast.log"]));
+        let l = Launch::as_user(true, &user(), &[], &s(&["xdg-open", "/var/log/kast.log"]));
         assert_eq!(l.program, "sudo");
         assert_eq!(&l.args[..4], &s(&["-u", "p3ter", "env", "HOME=/home/p3ter"]));
         assert!(l.args.contains(&"WAYLAND_DISPLAY=wayland-0".into()));
         assert_eq!(&l.args[l.args.len() - 2..], &s(&["xdg-open", "/var/log/kast.log"]));
         assert!(l.env.is_empty());
 
-        let l = Launch::as_user(false, &user(), &s(&["xdg-open", "/x"]));
+        let kde = [("XDG_CURRENT_DESKTOP".to_string(), "KDE".to_string())];
+        let l = Launch::as_user(true, &user(), &kde, &s(&["xdg-open", "/x"]));
+        assert_eq!(&l.args[l.args.len() - 3..], &s(&["XDG_CURRENT_DESKTOP=KDE", "xdg-open", "/x"]));
+
+        let l = Launch::as_user(false, &user(), &kde, &s(&["xdg-open", "/x"]));
         assert_eq!((l.program.as_str(), l.args.clone()), ("xdg-open", s(&["/x"])));
         let keys: Vec<&str> = l.env.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, ["XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"]);
+        assert_eq!(keys, ["XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "XDG_CURRENT_DESKTOP"]);
+    }
+
+    #[test]
+    fn desktop_env_from_ours_or_systemd() {
+        let systemd = "HOME=/home/p3ter\nXDG_CURRENT_DESKTOP=KDE\nKDE_FULL_SESSION=true\nXDG_SESSION_TYPE=wayland\n\
+                       DESKTOP_SESSION=$'odd value'\nXDG_CURRENT_DESKTOP_X=no\n";
+        assert_eq!(env_value(systemd, "XDG_CURRENT_DESKTOP"), Some("KDE"));
+        assert_eq!(env_value(systemd, "DESKTOP_SESSION"), None);
+        assert_eq!(env_value(systemd, "HOM"), None);
+        let none = |_: &str| None;
+        let got = desktop_env(&none, systemd);
+        assert_eq!(
+            got,
+            vec![("XDG_CURRENT_DESKTOP".into(), "KDE".into()), ("XDG_SESSION_TYPE".into(), "wayland".into()), ("KDE_FULL_SESSION".into(), "true".into())]
+        );
+        // Our own value (a non-root run inside the session) wins
+        let own = |k: &str| (k == "XDG_CURRENT_DESKTOP").then(|| "GNOME".to_string());
+        assert_eq!(desktop_env(&own, systemd)[0], ("XDG_CURRENT_DESKTOP".into(), "GNOME".into()));
+        assert!(desktop_env(&none, "").is_empty());
     }
 
     #[test]
