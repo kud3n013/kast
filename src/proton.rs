@@ -25,6 +25,8 @@ use crate::logio::Launch;
 /// The oldest CLI kast works with, and the release line it was tested with.
 pub const PROTON_MIN: &str = "0.9.0";
 /// The archrepo package that ships the CLI (once it exists).
+// TODO(proton-pkg): once archrepo has it, add it to packages.toml in a new "backup" group,
+// unchecked by default (the schema needs a per-package default for that).
 pub const PROTON_PKG: &str = "proton-drive-cli-bin";
 pub const BIN: &str = "proton-drive";
 pub const DOWNLOAD_PAGE: &str = "https://proton.me/download/drive/cli/index.html";

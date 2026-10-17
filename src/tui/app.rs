@@ -469,6 +469,9 @@ fn on_job(app: &mut App, m: JobMsg) -> Option<Command> {
     if let JobMsg::Done(result) = m {
         // A job that ends while one of its dialogs is open no longer needs the answer
         app.modal = None;
+        // An upload may have found the session expired, an install added proton-drive:
+        // check Proton Drive again next time it's needed
+        app.drive = None;
         match result {
             Err(e) => {
                 app.screen = Screen::Menu;

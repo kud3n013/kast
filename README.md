@@ -66,6 +66,9 @@ kast uninstall steam  # remove apps of the list (keeps what something else needs
 kast status           # detected apps, Howdy, KDE, Hyprland
 kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
+kast backup all --upload proton   # back up to Proton Drive (see "Proton Drive" below)
+kast drive login      # sign in to Proton Drive (link + QR code); drive status / logout
+kast schedule enable --targets all --every daily   # back up to Proton Drive on a timer
 kast info ~/all.zip
 kast restore ~/all.zip --app kde --dry-run
 kast --help           # every command and flag
@@ -78,6 +81,11 @@ Vault commands with arguments (`kast backup ...`, `kast restore FILE ...`) work 
 own user. The Howdy face model lives in root-only `/etc/howdy/models`: when it is part of
 the job, sudo asks for the password once at the start; without a terminal to ask on, the
 face model is skipped with a warning.
+
+When a backup closes running apps (`-k`, or yes to its question), kast opens them again in the
+background once the archive is made: Vesktop goes to its tray, other apps start minimized on
+Plasma (`kstart --iconify`) or on a hidden special workspace on Hyprland, and as before
+anywhere else. `--no-relaunch` leaves them closed.
 
 Scripted use is unchanged: subcommands with arguments never open the full-screen app,
 and their output stays plain text when piped (`kast status | cat`, `kast info x.zip > out.txt`).
@@ -149,16 +157,18 @@ and `l` opens the log (`/var/log/kast.log`). Below 60×20 it asks for a bigger w
 | Screen | Keys |
 | --- | --- |
 | Everywhere | `?` help · `Ctrl+C` cancel / back / quit · mouse wheel scrolls |
-| Menu | `↑/↓` `j/k` move (wraps, skips the disabled entry) · `Home/End` · `Enter` run · `1`–`9` `u` `x` run directly · `l` log · `q`/`Esc` quit · click selects, double-click runs |
+| Menu | `↑/↓` `j/k` move (wraps, skips the disabled entry) · `Home/End` · `Enter` run · `1`–`9` `s` `u` `x` run directly · `l` log · `q`/`Esc` quit · click selects, double-click runs |
 | Progress | `PgUp/PgDn` `↑/↓` scroll (pauses following) · `g`/`G` oldest / follow · `Esc`/`q` cancel the job (asks first) · when done: `Enter` back, `l` full log |
 | Questions | `y`/`n` · `←/→` `Tab` choose · `Enter` the highlighted button · `Esc` always answers No |
 | Summary | `Enter` back to menu · `l` full log |
 | Checklists (steps, apps) | `↑/↓` `j/k` move (skips greyed items) · `Home/End` `g/G` `PgUp/PgDn` · `Space` toggle (on a group header: the group) · `a` all · `n` none · `i` invert · click toggles · `Enter` continue · `Esc` back (choices are kept) |
 | Install packages (4) | the checklist · `r` download the list again after a fallback · `Enter` asks, then installs what's checked |
 | Review (automatic run) | `←/→` `Tab` Start / Back · `Enter` the highlighted button · `s` start · `Esc` back |
-| Import / Inspect | source: `Enter` Local folder (Proton Drive: not available yet) · folder: type it, `Tab` completes, `Enter` lists it · files: `↑/↓` move, `Enter` choose, `/` filter · `Esc` back one stage |
+| Import / Inspect | source: `Enter` Local folder or Proton Drive (`r` re-check, `L` sign out) · folder: type it, `Tab` completes, `Enter` lists it · Proton Drive: machines, then their backups · files: `↑/↓` move, `Enter` choose (Proton Drive: download, `Esc` stops it), `/` filter · `Esc` back one stage |
 | Restore options | `↑/↓` move · `Space` select / toggle · `Enter` choose · `s` start (automatic run: use this) · `Esc` back |
-| Export | source and folder as for import (a missing folder is created as you, after asking) · then `↑/↓` move · `Space`/`Enter` select, toggle or edit the file name · `s` start (automatic run: use this) · `Esc` back |
+| Export | source and folder as for import (a missing folder is created as you, after asking; `s` on the sources opens the scheduled backup) · then `↑/↓` move · `Space`/`Enter` select, toggle or edit the file name · `s` start (automatic run: use this) · `Esc` back |
+| Sign in to Proton Drive | `y` copy the link · `o` open it in the browser · `Esc` cancel (asks first) · failed: `Enter` try again |
+| Scheduled backup (`s`) | `↑/↓` move · `Space` toggle a target, the frequency or the local copy · `←/→` how many to keep · `Enter` on Turn on / Turn off / Run now · `r` refresh · `Esc` back |
 
 ### Automatic run, step by step
 
@@ -186,6 +196,91 @@ them install everything, as before.
 
 Checking the system upgrade adds a stage that says plainly that upgrades can't be undone by
 kast, and offers a snapshot first when the machine can take one (see below).
+
+## Proton Drive
+
+kast backs up to and restores from Proton Drive with Proton's own command-line tool,
+`proton-drive`, run as you (never as root). kast never sees your password: you sign in in
+a browser, on this computer or any other device.
+
+**Requirements.** `proton-drive` 0.9.0 or newer, on your `PATH` or in `~/.local/bin`. When
+it's missing, the Proton Drive row says so and Enter installs it from kud3n's repository if
+it's there, or shows how to install it by hand: download it from
+<https://proton.me/download/drive/cli/index.html>, pick `linux/x64` (or `linux/x64-baseline`
+on a CPU without AVX2; kast says which), `chmod +x` it and put it in `~/.local/bin`. kast
+works without it; only Proton Drive needs it. Proton offers the CLI for some plans (Proton
+for Business); an account that can't use it gets Proton's own error.
+
+**Signing in.** In the app, Enter on "Proton Drive · not signed in" shows the sign-in link,
+a QR code to scan with your phone (when the window is big enough), and a 10-minute countdown;
+`y` copies the link, `o` opens it. On a terminal: `kast drive login`. `kast drive status`
+(`--json`) says whether it's installed and signed in; `kast drive logout` (or `L` on the
+row) removes the session and proton-drive's local caches. The sign-in link carries key
+material: kast never writes it to the log.
+
+**The keyring.** proton-drive keeps its session in your desktop keyring (KWallet or GNOME
+Keyring). On a TTY or over SSH without an unlocked keyring the row says "keyring locked".
+If `pass` is set up (`~/.password-store/.gpg-id`), kast offers to keep the session there
+instead (`kast drive store pass`); switching means signing in again.
+
+**Where backups go.** `/my-files/kast-backups/<hostname>/` on Drive, as
+`<target>_backup_<date>_<time>.zip` (a face model: `<user>_face_model_<date>_<time>.dat`),
+each with a `….manifest.json` sidecar listing what's inside, its size and sha256. Uploads
+never replace anything on Drive. The backup is built in a private folder
+(`~/.cache/kast/proton-upload`, 0700) and removed after the upload, unless you keep a local
+copy (`--also-local DIR`, or the option on the export screen).
+
+**Unchanged data isn't uploaded again.** Each backup has a content fingerprint (the files
+inside and their checksums, not the time it was made). When it matches the last upload, kast
+asks first (`--force-upload` uploads anyway; scheduled runs skip it).
+
+**Retention.** kast keeps the newest 5 backups per target and machine (`--keep N`,
+`proton.keep`). Older ones and their sidecars go to Proton Drive's trash, where they can
+still be restored; kast never deletes them for good or empties the trash. The first time,
+it asks.
+
+**Restoring.** The import screen's Proton Drive source lists the machines (this one first),
+then a machine's backups with what's inside, read from the sidecars without downloading the
+archives. Enter downloads the chosen one into a private folder
+(`~/.cache/kast/proton-restore`, 0700), checks it against its sidecar's sha256, then
+continues as for a local backup. The downloaded copy (decrypted app data) is wiped after the
+restore, when you leave the screen, if the check fails, and when kast exits. Inspect (9)
+shows a backup's contents from its sidecar.
+
+**Scheduled backups.** Menu `s` (or `kast schedule enable --targets all --every daily
+[--keep N]`) sets up a systemd user timer (`~/.config/systemd/user/kast-backup.{service,timer}`)
+that runs `kast backup <targets> --upload proton --scheduled`, daily or weekly. It runs as
+you **while you're logged in** (that's when your keyring is unlocked); a run missed while the
+computer was off happens at your next login (`Persistent=true`). A scheduled run never asks
+anything: apps that are running are left out, never closed (their databases may be
+mid-write, so an app you always keep open is rarely backed up this way: check "Left out" in
+the status); the face model isn't included (it needs sudo); nothing is uploaded when nothing
+changed; "all" uploads as `apps_backup_…` so its retention never touches your manual "all"
+backups. The result goes to `~/.local/state/kast/schedule.json` and the log, and a failure
+shows a desktop notification saying what to do (e.g. "Run: kast drive login").
+`kast schedule status` (`--json`), `run` and `disable` do what they say; status also notices
+when the timer points at a kast that moved.
+
+**Exit status 3** from `kast backup … --upload proton`, `kast drive status` and scheduled
+runs means Proton Drive isn't ready: not installed, not signed in, keyring locked or offline.
+
+**Undo.** Uploads made from the app (or with sudo) are recorded: `kast undo` offers to move
+them to Proton Drive's trash (unchecked to start with). Turning the schedule on is recorded
+too; undoing it removes the timer.
+
+**Settings** live in `~/.config/kast/settings.toml` (yours, created the first time something
+is changed; unknown keys are kept):
+
+```toml
+[proton]
+credentials_store = "pass"            # or "keychain" (the default)
+folder = "/my-files/kast-backups"     # where backups go on Drive
+keep = 5                              # backups kept per target and machine
+also_local = "/media/data/backups"    # scheduled runs keep a local copy here too
+
+[schedule]
+notify_success = false                # also notify when a scheduled run worked
+```
 
 ## Undo and uninstall
 
