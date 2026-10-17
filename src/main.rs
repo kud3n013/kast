@@ -7,6 +7,7 @@ mod interactive;
 mod journal;
 mod logio;
 mod pkglist;
+mod plasma;
 mod proton;
 mod qr;
 mod report;
@@ -100,6 +101,13 @@ enum Cmd {
     Schedule {
         #[command(subcommand)]
         cmd: ScheduleCmd,
+    },
+    /// KDE Plasma settings: save, apply, export and import profiles (a Rust port of konsave's logic)
+    #[command(after_help = "Works as your own user. Applying snapshots what it overwrites first (pre-apply-<time>), and --dry-run shows the plan.\n\
+                      Examples:\n  kast plasma save work\n  kast plasma apply work --only panels,shortcuts --dry-run\n  kast plasma export work -o ~/Downloads/\n  kast plasma config-check")]
+    Plasma {
+        #[command(subcommand)]
+        cmd: plasma::cli::PlasmaCmd,
     },
     /// Show detected applications & Howdy status, paths & sizes
     Status,
@@ -603,6 +611,7 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             keep: a.keep,
         }),
         Some(Cmd::Uninstall { pkgs, dry_run }) => undo::cmd_uninstall(&pkgs, dry_run),
+        Some(Cmd::Plasma { cmd }) => plasma::cli::run(cmd),
         Some(Cmd::Test) => Ok(()),
     }
 }

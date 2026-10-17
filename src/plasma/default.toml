@@ -1,0 +1,134 @@
+# Based on konsave (https://github.com/Prayag2/konsave) by Prayag2 and
+# contributors, and on the urban-1 fork (https://github.com/urban-1/konsave).
+# Licensed under GPL-3.0. Translated to Rust and modified for kast, 2026.
+# Studied versions: Prayag2/konsave abdb6d3, urban-1/konsave f07715e.
+#
+# What `kast plasma save` / `apply` / `export` handle. Override the whole list by putting
+# a file of this shape at ~/.config/kast/plasma.toml (`kast plasma default-config` prints
+# this one).
+#
+# Every [[section]] has:
+#   id        unique, lowercase letters, digits and dashes (the folder name inside a profile)
+#   category  appearance | shortcuts | panels | windows | input | apps | gtk | autostart
+#   kind      "save" (small settings, always stored) or "export" (large assets: themes,
+#             plasmoids, icons; stored by `save --assets`, added live by `export`)
+#   location  a folder under your home. Placeholders: $HOME, $CONFIG_DIR, $SHARE_DIR,
+#             $BIN_DIR, ${ENDS_WITH="text"}, ${BEGINS_WITH="text"} (a whole path component)
+#   entries   paths below location. `*` and `?` work in the last component. Names that
+#             don't exist on a machine are skipped, so Plasma files that only appear after
+#             a setting changes are fine to list.
+#
+# Applying a profile only ever writes to the locations and entries listed HERE, never to
+# ones named by a profile or archive.
+
+version = 1
+
+[[section]]
+id = "appearance"
+category = "appearance"
+location = "$CONFIG_DIR"
+entries = [
+  "kdeglobals",
+  "kdedefaults",
+  "plasmarc",
+  "ksplashrc",
+  "breezerc",
+  "oxygenrc",
+  "lightlyrc",
+  "Kvantum",
+  "kscreenlockerrc",
+]
+
+[[section]]
+id = "shortcuts"
+category = "shortcuts"
+location = "$CONFIG_DIR"
+entries = ["kglobalshortcutsrc", "khotkeysrc"]
+
+[[section]]
+id = "panels"
+category = "panels"
+location = "$CONFIG_DIR"
+entries = [
+  "plasma-org.kde.plasma.desktop-appletsrc",
+  "plasmashellrc",
+  "plasma_calendar_holiday_regions",
+  "plasma_calendar_alternatecalendar",
+  "plasmanotifyrc",
+  "plasma-localerc",
+  "latte",
+  "lattedockrc",
+]
+
+[[section]]
+id = "windows"
+category = "windows"
+location = "$CONFIG_DIR"
+entries = ["kwinrc", "kwinrulesrc", "kwinoutputconfig.json", "ksmserverrc", "kactivitymanagerdrc"]
+
+[[section]]
+id = "input"
+category = "input"
+location = "$CONFIG_DIR"
+entries = ["kcminputrc", "kxkbrc", "touchpadrc"]
+
+[[section]]
+id = "apps"
+category = "apps"
+location = "$CONFIG_DIR"
+entries = [
+  "dolphinrc",
+  "konsolerc",
+  "klipperrc",
+  "krunnerrc",
+  "katerc",
+  "kate",
+  "systemsettingsrc",
+  "spectaclerc",
+  "plasma-systemmonitorrc",
+  "xdg-desktop-portal-kderc",
+  "mimeapps.list",
+]
+
+[[section]]
+id = "gtk"
+category = "gtk"
+location = "$CONFIG_DIR"
+entries = ["gtk-3.0", "gtk-4.0", "gtk-2.0", "gtkrc", "gtkrc-2.0", "xsettingsd"]
+
+[[section]]
+id = "autostart"
+category = "autostart"
+location = "$CONFIG_DIR"
+entries = ["autostart"]
+
+# --- Large assets (kind = "export") -----------------------------------------------------
+
+[[section]]
+id = "themes"
+category = "appearance"
+kind = "export"
+location = "$SHARE_DIR"
+entries = [
+  "plasma/desktoptheme",
+  "plasma/look-and-feel",
+  "color-schemes",
+  "aurorae",
+  "icons",
+  "wallpapers",
+  "fonts",
+]
+
+[[section]]
+id = "plasmoids"
+category = "panels"
+kind = "export"
+location = "$SHARE_DIR"
+entries = ["plasma/plasmoids"]
+
+[[section]]
+id = "app-assets"
+category = "apps"
+kind = "export"
+location = "$SHARE_DIR"
+entries = ["konsole", "kxmlgui6", "yakuake"]

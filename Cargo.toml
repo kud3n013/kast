@@ -23,6 +23,8 @@ tempfile = "3.27.0"
 toml = "1.1.8"
 walkdir = "2.5.0"
 zip = { version = "9.0.4", default-features = false, features = ["deflate-flate2-zlib-rs", "chrono"] }
+tar = { version = "0.4.46", default-features = false }
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
 
 [profile.release]
 lto = true

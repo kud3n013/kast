@@ -814,6 +814,7 @@ dependencies = [
  "chrono",
  "clap",
  "filetime",
+ "flate2",
  "insta",
  "libc",
  "nix 0.31.3",
@@ -824,6 +825,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "signal-hook 0.4.5",
+ "tar",
  "tempfile",
  "toml",
  "walkdir",
@@ -1687,6 +1689,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
 ]
 
 [[package]]
