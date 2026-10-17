@@ -564,6 +564,15 @@ pub fn remote_upload(remote: &str, sidecar: &str, size: u64, sha256: &str, folde
     }
 }
 
+/// The scheduled backup's user units written (enable) or removed (disable), with what was
+/// there before.
+pub fn user_timer(action: &str, service: &Path, timer: &Path, before_service: Option<&str>, before_timer: Option<&str>) {
+    if let Some(j) = current() {
+        j.note("user_timer", json!({ "action": action, "service": service, "timer": timer, "before_service": before_service, "before_timer": before_timer }))
+            .unwrap_or_else(warn);
+    }
+}
+
 /// The system upgrade: when, and the snapshots taken around it.
 pub fn upgrade(start: &str, end: &str, snapshot: Value) {
     if let Some(j) = current() {

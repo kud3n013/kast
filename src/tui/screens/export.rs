@@ -371,6 +371,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
             }
             let st = state(app)?;
             match k.code {
+                KeyCode::Char('s') if !auto => return super::schedule::open(app),
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => st.source = 1 - st.source.min(1),
                 KeyCode::Enter | KeyCode::Char(' ') => {
                     if Source::ALL[st.source.min(1)] == Source::Local {

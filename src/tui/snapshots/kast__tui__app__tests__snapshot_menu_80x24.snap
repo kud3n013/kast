@@ -13,6 +13,7 @@ expression: "render(&app(80, 24))"
 │   7 Export data                                                              │
 │   8 App status                                                               │
 │   9 Inspect a backup                                                         │
+│   s Scheduled backup                                                         │
 │   u Undo changes                                                             │
 │   x Uninstall apps                                                           │
 │   q Quit                                                                     │
@@ -23,6 +24,5 @@ expression: "render(&app(80, 24))"
 │where to back up. A review shows it all; then it runs unattended, with an     │
 │overall progress bar and a summary at the end.                                │
 │Changes:    /etc/pacman.conf, installed packages, /etc/pam.d files (backups   │
-│kept), Howdy config, systemd services                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit  e view  y copy

@@ -477,6 +477,38 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
             });
         }
         Command::DriveCancelTransfer => crate::proton::cancel_transfer(),
+        Command::LoadSchedule => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Schedule(Box::new(screens::schedule::load()))));
+            });
+        }
+        Command::ScheduleApply(spec, local) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let r = crate::journal::recorded(&["schedule"], false, || -> anyhow::Result<()> {
+                    crate::settings::update(&["proton", "also_local"], local.map(|d| d.display().to_string().into()))?;
+                    crate::schedule::enable(&spec)
+                });
+                let msg = r.map(|()| format!("Scheduled backup on: {} of {}", spec.every, spec.targets.join(", "))).map_err(|e| format!("{e:#}"));
+                let _ = tx.send(Event::Loaded(event::Loaded::ScheduleDone(msg)));
+            });
+        }
+        Command::ScheduleDisable => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let r = crate::journal::recorded(&["schedule"], false, crate::schedule::disable);
+                let _ = tx.send(Event::Loaded(event::Loaded::ScheduleDone(r.map(|()| "Scheduled backup off".to_string()).map_err(|e| format!("{e:#}")))));
+            });
+        }
+        Command::ScheduleRun => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let r =
+                    crate::schedule::run_now().map(|()| "Started a backup; press r in a while to see how it went".to_string()).map_err(|e| format!("{e:#}"));
+                let _ = tx.send(Event::Loaded(event::Loaded::ScheduleDone(r)));
+            });
+        }
         Command::DriveWipeRestore => {
             std::thread::spawn(crate::drive::wipe_restore);
         }

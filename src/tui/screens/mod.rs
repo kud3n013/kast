@@ -7,6 +7,7 @@ pub mod log;
 pub mod menu;
 pub mod packages;
 pub mod run;
+pub mod schedule;
 pub mod status;
 pub mod summary;
 pub mod undo;

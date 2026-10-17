@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/schedule.rs
+expression: "render(&opened(140, 40, info(true)))"
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Scheduled backup to Proton Drive ──────────────────────────────────╮╭ Status ────────────────────────────────────────────────────────────╮
+│❯ [x] All apps & desktop settings (no face model)                   ││Status     on                                                       │
+│  [ ] BeeperTexts (~/.config/BeeperTexts)                           ││Backs up   all · daily · keeps 5                                    │
+│  [ ] ZaloData (~/.config/ZaloData)                                 ││Next run   Sun 2026-10-18 00:21:07 CEST                             │
+│  [ ] Vesktop (~/.config/vesktop)                                   ││Last run   2026-10-17 00:12 · uploaded                              │
+│  [ ] Zen Browser (~/.config/zen)                                   ││           apps_backup_2026-10-17_001203.zip                        │
+│  [ ] Obsidian (~/.config/obsidian)                                 ││Left out   zen, beeper (were running)                               │
+│  [ ] Fcitx5 (~/.config/fcitx5)                                     ││                                                                    │
+│  [ ] Antigravity (~/.config/Antigravity)                           ││Uploads to /my-files/kast-backups/archbox on Proton Drive (signed   │
+│  [ ] KDE Plasma settings (curated)                                 ││in).                                                                │
+│  [ ] Hyprland settings (~/.config/hypr)                            ││Runs as you, while you're logged in (your keyring is unlocked then).│
+│  How often:  daily  (Space switches)                               ││A run missed while the computer was off happens at your next login. │
+│  Keep on Drive:  ‹ 5 ›  per kind (←/→)                             ││Apps that are running are left out, never closed: their data may be │
+│  [ ] Also keep a copy in /media/data/backups                       ││mid-write. Each skip shows here.                                    │
+│  ▶ Save and keep it on                                             ││The Howdy face model isn't included: it needs sudo.                 │
+│  ■ Turn it off                                                     ││Nothing is uploaded when nothing changed. A failure shows a         │
+│  ▷ Run a backup now                                                ││notification.                                                       │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+│                                                                    ││                                                                    │
+╰────────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Space toggle  ←/→ keep  r refresh  Esc back

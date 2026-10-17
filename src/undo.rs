@@ -52,6 +52,11 @@ pub enum Act {
     DeleteFile(PathBuf),
     /// Move these Proton Drive paths to Drive's trash (as the user)
     TrashRemote(Vec<String>),
+    /// Turn the scheduled backup off, putting back the units that were there before
+    UndoTimer {
+        before_service: Option<String>,
+        before_timer: Option<String>,
+    },
     /// Nothing to run: shown so the list is complete ("not undoable", "kept")
     None,
 }
@@ -257,6 +262,16 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
                 it.default_on = false;
                 rest.push(it);
             }
+            "user_timer" if c.data["action"] == "enable" => {
+                let opt = |k: &str| c.data[k].as_str().map(String::from);
+                rest.push(Item::new(
+                    c,
+                    id,
+                    Act::UndoTimer { before_service: opt("before_service"), before_timer: opt("before_timer") },
+                    "Turn the scheduled backup off and remove its timer".into(),
+                ));
+            }
+            "user_timer" => rest.push(Item::not_undoable(c, id, "Scheduled backup turned off".into(), "turn it on again from Scheduled backup (s)")),
             "upgrade" => rest.push(Item::not_undoable(c, id, "System upgrade".into(), &upgrade_hint(&c.data["snapshot"]))),
             _ => rest.push(Item::not_undoable(c, id, c.kind.clone(), "unknown change")),
         }
@@ -528,6 +543,7 @@ pub fn execute(items: &[Item], dir: &Path, user: &str, report: &mut dyn FnMut(us
             Act::RestoreImport { snapshot, apps, fingerprint } => crate::vault::import::undo_restore(snapshot, apps, fingerprint.as_deref()),
             Act::DeleteFile(p) => fs::remove_file(p).map_err(Into::into),
             Act::TrashRemote(paths) => trash_remote(paths),
+            Act::UndoTimer { before_service, before_timer } => crate::schedule::undo_enable(before_service.as_deref(), before_timer.as_deref()),
             Act::Reinstall { name, .. } => {
                 if ok_cmd("pacman", &["-S", "--needed", "--noconfirm", name]) {
                     Ok(())
@@ -691,6 +707,7 @@ pub fn describe(c: &Change) -> String {
         "import" => format!("{} ({})", s(&d["archive"]), d["apps"].as_array().map(|a| a.iter().map(s).collect::<Vec<_>>().join(", ")).unwrap_or_default()),
         "export" => s(&d["file"]),
         "remote_upload" => s(&d["remote"]),
+        "user_timer" => format!("{} {}", s(&d["action"]), s(&d["timer"])),
         _ => String::new(),
     };
     format!("{} {what}", c.kind)
@@ -1087,6 +1104,25 @@ mod tests {
         assert_eq!((p[2].warning.as_deref(), p[2].default_on), (Some("changed since kast wrote it"), false));
         assert!(p[3].warning.as_deref().unwrap().contains("stop receiving updates: beeper"));
         assert!(matches!(p[3].act, Act::RemoveRepoBlock(_)));
+    }
+
+    #[test]
+    fn the_schedules_timer_can_be_removed() {
+        let r = run(vec![
+            change(
+                1,
+                "user_timer",
+                "schedule",
+                json!({ "action": "enable", "timer": "/home/p3ter/.config/systemd/user/kast-backup.timer", "before_service": null, "before_timer": null }),
+            ),
+            change(2, "user_timer", "schedule", json!({ "action": "disable", "timer": "/home/p3ter/.config/systemd/user/kast-backup.timer" })),
+        ]);
+        let p = plan(&r, &view(&[], &[]));
+        assert_eq!(p.len(), 2);
+        assert!(!p[0].undoable && p[0].label == "Scheduled backup turned off");
+        assert_eq!(p[1].act, Act::UndoTimer { before_service: None, before_timer: None });
+        assert!(p[1].default_on);
+        assert_eq!(describe(&r.changes[0]), "user_timer enable /home/p3ter/.config/systemd/user/kast-backup.timer");
     }
 
     #[test]

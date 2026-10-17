@@ -19,6 +19,7 @@ pub enum Action {
     Export,
     Status,
     Info,
+    Schedule,
     Undo,
     Uninstall,
     Quit,
@@ -34,7 +35,7 @@ pub struct Item {
     pub auto: &'static str,
 }
 
-pub const ITEMS: [Item; 12] = [
+pub const ITEMS: [Item; 13] = [
     Item {
         action: Action::Auto,
         key: '1',
@@ -120,6 +121,16 @@ pub const ITEMS: [Item; 12] = [
         label: "Inspect a backup",
         about: "Shows what a backup archive contains: when and where it was made and which apps are inside.",
         changes: "Nothing (read-only)",
+        root: false,
+        auto: "Not part of the automatic run.",
+    },
+    Item {
+        action: Action::Schedule,
+        key: 's',
+        label: "Scheduled backup",
+        about: "Backs up to Proton Drive on its own, daily or weekly, with a systemd user timer: as you, while you're logged \
+                in. Running apps are left out (never closed), unchanged data isn't uploaded again, old backups go to Drive's trash.",
+        changes: "~/.config/systemd/user/kast-backup.{service,timer}, ~/.config/kast/settings.toml",
         root: false,
         auto: "Not part of the automatic run.",
     },

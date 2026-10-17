@@ -13,6 +13,7 @@ mod proton;
 mod qr;
 mod report;
 #[allow(dead_code)]
+mod schedule;
 mod settings;
 mod setup;
 mod snapshot;
@@ -95,6 +96,14 @@ enum Cmd {
         #[command(subcommand)]
         cmd: DriveCmd,
     },
+    /// Back up to Proton Drive on a schedule (a systemd user timer; no root needed)
+    #[command(after_help = "The timer runs while you're logged in (your keyring is unlocked then); a run missed while the\n\
+                      computer was off happens at your next login. Running apps are left out, never closed; the face\n\
+                      model isn't included. Examples:\n  kast schedule enable --targets all --every daily\n  kast schedule status")]
+    Schedule {
+        #[command(subcommand)]
+        cmd: ScheduleCmd,
+    },
     /// Show detected applications & Howdy status, paths & sizes
     Status,
     /// Inspect a backup archive's manifest
@@ -143,6 +152,30 @@ enum DriveCmd {
         #[arg(value_parser = ["keychain", "pass"])]
         store: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ScheduleCmd {
+    /// Turn it on (again with no options: the last targets and frequency)
+    Enable {
+        /// What to back up (several allowed; default: all, without the face model)
+        #[arg(long, num_args = 1.., value_parser = schedule::TARGETS)]
+        targets: Vec<String>,
+        #[arg(long, value_parser = ["daily", "weekly"])]
+        every: Option<String>,
+        /// Backups kept on Proton Drive per target (default: proton.keep, 5)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        keep: Option<u32>,
+    },
+    /// Turn it off and remove the timer
+    Disable,
+    /// On or off, next and last run, what was left out
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Start a scheduled backup now
+    Run,
 }
 
 #[derive(Subcommand)]
@@ -366,6 +399,10 @@ fn run_backup(a: BackupArgs) -> Result<()> {
     if a.target.len() > 1 && a.output.is_some() {
         anyhow::bail!("--output works with a single target");
     }
+    if a.scheduled {
+        let keep = a.keep.unwrap_or_else(|| settings::load().keep());
+        return schedule::run_scheduled(&a.targets(), keep);
+    }
     if a.upload.is_some() {
         if a.output.as_deref().is_some_and(|o| !vault::is_dat(o)) {
             anyhow::bail!("--output with --upload only picks the face model's .dat format; use --also-local DIR to keep a copy");
@@ -539,6 +576,12 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             DriveCmd::Upload { file, keep } => drive::cmd_upload_file(&backup::absolutize(&file), keep),
             DriveCmd::Status { json } => drive::cmd_status(json),
             DriveCmd::Store { store } => drive::cmd_store(&store),
+        },
+        Some(Cmd::Schedule { cmd }) => match cmd {
+            ScheduleCmd::Enable { targets, every, keep } => schedule::cmd_enable(targets, every, keep),
+            ScheduleCmd::Disable => schedule::cmd_disable(),
+            ScheduleCmd::Status { json } => schedule::cmd_status(json),
+            ScheduleCmd::Run => schedule::cmd_run(),
         },
         Some(Cmd::Status) | Some(Cmd::Vault { cmd: VaultCmd::Status }) => {
             vault::status::cmd_status();

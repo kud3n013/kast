@@ -66,6 +66,8 @@ pub enum Screen {
     Auto(Box<Wizard>),
     /// `u` undo changes, `x` uninstall apps
     Undo(Box<UndoState>),
+    /// `s` the scheduled backup
+    Schedule(Box<super::screens::schedule::ScheduleState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -189,6 +191,12 @@ pub enum Command {
     DriveCancelTransfer,
     /// Wipe the restore staging folder
     DriveWipeRestore,
+    /// Read the scheduled backup's state (answered with `Loaded::Schedule`)
+    LoadSchedule,
+    /// Turn the schedule on (or update it), with this local copy folder (answered with `Loaded::ScheduleDone`)
+    ScheduleApply(crate::schedule::Spec, Option<std::path::PathBuf>),
+    ScheduleDisable,
+    ScheduleRun,
     CopySignIn(crate::proton::SignInUrl),
     OpenSignIn(crate::proton::SignInUrl),
 }
@@ -284,6 +292,7 @@ impl App {
             Screen::Export(s) => s.loading,
             Screen::Packages(_) => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
             Screen::Undo(s) => s.loading(),
+            Screen::Schedule(s) => s.loading || s.busy,
             Screen::Auto(w) => match w.stage {
                 wizard::Stage::Upgrade => self.snapshots.is_none(),
                 wizard::Stage::Apps => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
@@ -319,6 +328,7 @@ impl App {
             Screen::Auto(w) => wizard::help(w),
             Screen::Undo(s) if s.mode == undo_screen::Mode::Uninstall => ("Uninstall apps", &undo_screen::HELP),
             Screen::Undo(_) => ("Undo changes", &undo_screen::HELP),
+            Screen::Schedule(_) => ("Scheduled backup", &super::screens::schedule::HELP),
         }
     }
 
@@ -397,6 +407,11 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::SignInDone(r)) => drive::on_done(app, r),
         Event::Loaded(Loaded::DriveLoggedOut(r)) => drive::on_logged_out(app, r),
         Event::Loaded(Loaded::DriveStore(r)) => drive::on_store_set(app, r),
+        Event::Loaded(Loaded::Schedule(i)) => {
+            super::screens::schedule::on_info(app, *i);
+            None
+        }
+        Event::Loaded(Loaded::ScheduleDone(r)) => super::screens::schedule::on_done(app, r),
         Event::Loaded(Loaded::DriveHosts(r)) => {
             import::on_hosts(app, r);
             None
@@ -532,7 +547,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.screen = Screen::Menu;
                 Some(Command::DriveWipeRestore)
             }
-            Screen::Summary(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) => {
+            Screen::Summary(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) | Screen::Schedule(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -577,6 +592,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         Screen::Packages(_) => packages::key(app, k),
         Screen::Auto(_) => wizard::key(app, k),
         Screen::Undo(_) => undo_screen::key(app, k),
+        Screen::Schedule(_) => super::screens::schedule::key(app, k),
     }
 }
 
@@ -681,7 +697,7 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::Enter => return activate(app, app.menu.action()),
         KeyCode::Char('q') | KeyCode::Esc => app.quit = true,
         KeyCode::Char('l') => return Some(Command::OpenLog),
-        KeyCode::Char(c @ ('u' | 'x')) => {
+        KeyCode::Char(c @ ('u' | 'x' | 's')) => {
             app.menu.selected = ITEMS.iter().position(|i| i.key == c).unwrap_or(0);
             return activate(app, app.menu.action());
         }
@@ -787,6 +803,7 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             app.screen = Screen::Undo(Box::new(UndoState::new(undo_screen::Mode::Uninstall)));
             return Some(Command::LoadUninstall);
         }
+        Action::Schedule => return super::screens::schedule::open(app),
         Action::Info => {
             let dir = import::default_dir(&app.header.home, app.dir_exists);
             app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Inspect, false, dir)));
@@ -855,7 +872,7 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
         Screen::Packages(_) => return packages::mouse(app, m),
         Screen::Auto(_) => return wizard::mouse(app, m),
         Screen::Undo(_) => return undo_screen::mouse(app, m),
-        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) => {}
+        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Schedule(_) => {}
     }
     None
 }
@@ -908,6 +925,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Packages(st) => {
             packages::view(f, body, app, st);
             packages::hints(app)
+        }
+        Screen::Schedule(st) => {
+            super::screens::schedule::view(f, body, app, st);
+            &super::screens::schedule::HINTS
         }
     };
     let hints: &[(&str, &str)] = if let Some(s) = &app.signin {

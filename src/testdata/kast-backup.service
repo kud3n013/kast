@@ -1,0 +1,10 @@
+# Written by kast (kast schedule enable); kast schedule disable removes it.
+[Unit]
+Description=kast: back up to Proton Drive
+Documentation=https://github.com/kud3n013/kast
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/kast backup all --upload proton --keep 5 --scheduled
+Nice=10
+IOSchedulingClass=idle

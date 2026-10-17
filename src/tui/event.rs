@@ -67,6 +67,9 @@ pub enum Loaded {
     DriveLoggedOut(Result<(), String>),
     DriveStore(Result<(), String>),
     DriveHosts(Result<Vec<String>, String>),
+    Schedule(Box<crate::tui::screens::schedule::ScheduleInfo>),
+    /// A schedule change or run finished (the message for a toast)
+    ScheduleDone(Result<String, String>),
     DriveBackups {
         host: String,
         result: Result<Vec<crate::drive::RemoteBackup>, String>,

@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/schedule.rs
+expression: "render(&opened(80, 24, info(false)))"
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Scheduled backup to Proton Drive ────────────────────────────────────────────╮
+│❯ [x] All apps & desktop settings (no face model)                             │
+│  [ ] BeeperTexts (~/.config/BeeperTexts)                                     │
+│  [ ] ZaloData (~/.config/ZaloData)                                           │
+│  [ ] Vesktop (~/.config/vesktop)                                             │
+│  [ ] Zen Browser (~/.config/zen)                                             │
+│  [ ] Obsidian (~/.config/obsidian)                                           │
+│  [ ] Fcitx5 (~/.config/fcitx5)                                               │
+│  [ ] Antigravity (~/.config/Antigravity)                                     │
+│  [ ] KDE Plasma settings (curated)                                           │
+│  [ ] Hyprland settings (~/.config/hypr)                                      │
+│  How often:  daily  (Space switches)                                         │
+│  Keep on Drive:  ‹ 5 ›  per kind (←/→)                                       │
+│  [ ] Also keep a copy in /media/data/backups                                 │
+│  ▶ Turn it on                                                                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Status ──────────────────────────────────────────────────────────────────────╮
+│Status     off (not set up)                                                   │
+│                                                                              │
+│Uploads to /my-files/kast-backups/archbox on Proton Drive (signed in).        │
+│Runs as you, while you're logged in (your keyring is unlocked then). A run    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Space toggle  ←/→ keep  r refresh  Esc back
