@@ -5,7 +5,41 @@ arguments it opens a full-screen app (Ratatui) for the setup steps and the App V
 backup/restore engine for app data, KDE Plasma, Hyprland and Howdy face models.
 Every subcommand still works from scripts, with plain text output.
 
-## Build & install
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kud3n013/kast/main/install.sh | sh
+```
+
+This downloads the latest static binary for x86_64 or aarch64 from the GitHub releases,
+checks its SHA-256 checksum and installs it to `/usr/local/bin/kast`. It uses `sudo`
+only for that last copy, and only when the directory isn't writable.
+
+To read the script before running it:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/kud3n013/kast/main/install.sh
+less install.sh
+sh install.sh
+```
+
+Pin a version or install somewhere else:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kud3n013/kast/main/install.sh | KAST_VERSION=v0.1.0 sh
+curl -fsSL https://raw.githubusercontent.com/kud3n013/kast/main/install.sh | KAST_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+Uninstall (removes only the binary; it prints where the logs and backups are):
+
+```sh
+sh install.sh --uninstall
+curl -fsSL https://raw.githubusercontent.com/kud3n013/kast/main/install.sh | sh -s -- --uninstall
+```
+
+Set `KAST_INSTALL_DIR` again when uninstalling from a custom directory.
+
+## Build from source
 
 ```sh
 cargo build --release
@@ -88,3 +122,17 @@ Canceling a running job stops the command it is running (SIGTERM to its process 
 then SIGKILL) and ends the job at its next step; steps that already finished are not
 undone. If a stopped pacman leaves `/var/lib/pacman/db.lck` behind (and no pacman is
 running), kast offers to remove it.
+
+## Releasing
+
+1. Bump `version` in `Cargo.toml` (and run `cargo build` so `Cargo.lock` follows), then commit.
+2. Tag and push the tag:
+
+   ```sh
+   git tag vX.Y.Z && git push origin vX.Y.Z
+   ```
+
+The Release workflow checks that the tag matches `Cargo.toml`, runs the tests, builds
+static musl binaries for x86_64 and aarch64 and publishes them with their checksums.
+Tags with a `-` (`v0.2.0-rc1`) become prereleases. Running the workflow by hand
+(Actions → Release → Run workflow) builds everything without publishing.

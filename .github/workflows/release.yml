@@ -1,0 +1,141 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare tag with Cargo.toml
+        id: version
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          [ -n "$version" ] || { echo "::error::no version found in Cargo.toml"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$REF" in
+            refs/tags/v*)
+              if [ "${REF_NAME#v}" != "$version" ]; then
+                echo "::error::tag $REF_NAME does not match version $version in Cargo.toml"
+                exit 1
+              fi
+              ;;
+            *) echo "Not a tag push ($REF); building $version as a dry run" ;;
+          esac
+
+  test:
+    name: Test
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            cross: false
+          - target: aarch64-unknown-linux-musl
+            cross: true
+    env:
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install musl-tools
+        if: ${{ !matrix.cross }}
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Install cross
+        if: ${{ matrix.cross }}
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: Build
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --locked --release --target "$TARGET"
+          else
+            cargo build --locked --release --target "$TARGET"
+          fi
+      - name: Check binary
+        run: |
+          bin="target/$TARGET/release/kast"
+          file "$bin"
+          file "$bin" | grep -Eq 'statically linked|static-pie linked' || { echo "::error::$bin is not statically linked"; exit 1; }
+          if [ "$TARGET" = "x86_64-unknown-linux-musl" ]; then
+            out=$("$bin" --version)
+            echo "$out"
+            [ "$out" = "kast $VERSION" ] || { echo "::error::expected 'kast $VERSION', got '$out'"; exit 1; }
+          fi
+      - name: Package
+        run: |
+          mkdir dist
+          cp "target/$TARGET/release/kast" "dist/kast-$TARGET"
+          chmod 755 "dist/kast-$TARGET"
+          cd dist
+          sha256sum "kast-$TARGET" > "kast-$TARGET.sha256"
+          cat "kast-$TARGET.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kast-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: kast-*
+          merge-multiple: true
+      - name: Combine checksums
+        run: |
+          cd dist
+          cat kast-*.sha256 > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          ls -l
+      - name: Upload dry-run bundle
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: kast-release-dry-run
+          path: dist/*
+      - name: Create GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
