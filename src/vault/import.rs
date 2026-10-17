@@ -166,7 +166,7 @@ fn import_dat(o: &ImportOpts) -> Result<()> {
         }
     }
     log_success(&format!("Imported Howdy face model for '{user}' from: {}", o.file.display()));
-    // Without a snapshot (none taken, or there was no model before) undo removes the model
+    // Without a snapshot (none taken, or there was no model before) this can't be undone
     let fp = snapshot.as_deref().and_then(crate::journal::fingerprint);
     crate::journal::import(&o.file, &["howdy".to_string()], snapshot.as_deref(), fp);
     howdy_list();
@@ -475,6 +475,59 @@ fn restore_kde(staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
     }
     log_success("KDE Plasma settings restored successfully!");
     log_info("Note: For a complete refresh of all panel widgets and icons, logging out and back in is recommended.");
+    Ok(())
+}
+
+/// Undo a restore from its safety snapshot. App data is copied back as the user, so a
+/// snapshot someone tampered with can only write where the user could anyway; the face
+/// models go back to /etc/howdy as root only while the snapshot still has the fingerprint
+/// the journal recorded.
+pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>) -> Result<()> {
+    let c = ctx();
+    if !snapshot.is_dir() {
+        bail!("the snapshot {} is gone", snapshot.display());
+    }
+    let intact = fingerprint.is_some() && crate::journal::fingerprint(snapshot).as_deref() == fingerprint;
+    let copy = |src: &Path, dest: &Path, delete: bool| -> Result<()> {
+        let (s, d) = (format!("{}/", src.display()), format!("{}/", dest.display()));
+        let mut args = vec!["rsync", "-a"];
+        if delete {
+            args.push("--delete");
+        }
+        args.extend([s.as_str(), d.as_str()]);
+        if user_cmd(&args).stdin(Stdio::null()).status().is_ok_and(|st| st.success()) { Ok(()) } else { bail!("copying {} back failed", src.display()) }
+    };
+    for app in apps {
+        match app.as_str() {
+            "howdy" => {
+                let src = snapshot.join("howdy/models");
+                if !src.is_dir() {
+                    continue;
+                }
+                if !intact {
+                    log_warn("The snapshot changed since the restore: the face models in it are not put back.");
+                    continue;
+                }
+                sh_priv(r#"cp -p "$1"/*.dat "$2"/ && chown root:root "$2"/*.dat && chmod 600 "$2"/*.dat"#, &[&src.to_string_lossy(), HOWDY_MODELS_DIR]);
+            }
+            "kde" => {
+                for (sub, dest) in [("kde/config", &c.config_home), ("kde/share", &c.data_home), ("kde/home", &c.target_home)] {
+                    if snapshot.join(sub).is_dir() {
+                        copy(&snapshot.join(sub), dest, false)?;
+                    }
+                }
+            }
+            other => {
+                if let Some(spec) = restore_spec(other) {
+                    let src = snapshot.join(spec.folder);
+                    if src.is_dir() {
+                        copy(&src, &c.config_home.join(spec.folder), true)?;
+                    }
+                }
+            }
+        }
+        log_success(&format!("Put back {app} from {}", snapshot.display()));
+    }
     Ok(())
 }
 

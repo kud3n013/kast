@@ -110,6 +110,9 @@ pub struct Entry {
     pub ts: String,
     pub kind: String,
     pub status: String,
+    /// The step that made the change ("repo", "packages", ...)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub step: String,
     #[serde(default)]
     pub data: Value,
 }
@@ -130,6 +133,7 @@ pub enum Status {
 pub struct Change {
     pub seq: u64,
     pub kind: String,
+    pub step: String,
     pub status: Status,
     /// The `started` data merged with the outcome's
     pub data: Value,
@@ -212,6 +216,7 @@ pub fn runs(entries: &[Entry]) -> Vec<Run> {
             None => run.changes.push(Change {
                 seq: e.seq,
                 kind: e.kind.clone(),
+                step: e.step.clone(),
                 status: match e.status.as_str() {
                     "done" => Status::Done,
                     "failed" => Status::Failed,
@@ -271,6 +276,7 @@ pub struct Journal {
     pub run: String,
     seq: AtomicU64,
     file: Mutex<File>,
+    step: Mutex<String>,
 }
 
 impl std::fmt::Debug for Journal {
@@ -303,13 +309,15 @@ impl Journal {
             return Err(io::Error::new(io::ErrorKind::PermissionDenied, e));
         }
         let host = fs::read_to_string("/etc/hostname").map(|h| h.trim().to_string()).unwrap_or_default();
-        let j = Journal { dir: dir.to_path_buf(), run: run_id(), seq: AtomicU64::new(0), file: Mutex::new(file) };
+        let first = if steps.len() == 1 { steps[0].to_string() } else { String::new() };
+        let j = Journal { dir: dir.to_path_buf(), run: run_id(), seq: AtomicU64::new(0), file: Mutex::new(file), step: Mutex::new(first) };
         j.append("run", "done", 0, json!({ "version": env!("CARGO_PKG_VERSION"), "host": host, "user": user, "steps": steps }))?;
         Ok(j)
     }
 
     fn append(&self, kind: &str, status: &str, seq: u64, data: Value) -> io::Result<()> {
-        let e = Entry { v: VERSION, run: self.run.clone(), seq, ts: now(), kind: kind.into(), status: status.into(), data };
+        let step = self.step.lock().map(|s| s.clone()).unwrap_or_default();
+        let e = Entry { v: VERSION, run: self.run.clone(), seq, ts: now(), kind: kind.into(), status: status.into(), step, data };
         let mut line = serde_json::to_string(&e).map_err(io::Error::other)?;
         line.push('\n');
         let mut f = self.file.lock().map_err(|_| io::Error::other("journal lock poisoned"))?;
@@ -381,6 +389,15 @@ pub fn begin_run(steps: &[&str], user: &str) -> Option<Arc<Journal>> {
     CURRENT.with(|c| *c.borrow_mut() = Some(j.clone()));
     crate::ctx::log_file_only("INFO", &format!("Recording changes for undo as run {}", j.run));
     Some(j)
+}
+
+/// The step the next changes belong to.
+pub fn set_step(step: &str) {
+    if let Some(j) = current()
+        && let Ok(mut s) = j.step.lock()
+    {
+        *s = step.to_string();
+    }
 }
 
 pub fn end_run() {

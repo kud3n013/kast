@@ -10,6 +10,7 @@ mod report;
 mod setup;
 mod tui;
 mod ui;
+mod undo;
 mod vault;
 
 use std::os::unix::process::CommandExt;
@@ -66,6 +67,19 @@ enum Cmd {
     /// Back up app data, KDE Plasma settings & face model (interactive without arguments)
     #[command(visible_alias = "backup")]
     Export(BackupArgs),
+    /// List what kast changed (per run) and undo it
+    #[command(after_help = "kast records its changes in /var/lib/kast (root only), so this runs through sudo, --list too.\n\
+                      Examples:\n  kast undo --list\n  kast undo --last --dry-run\n  kast undo 20261017-101500 --step services\n  kast undo --prune --keep 5")]
+    Undo(UndoCli),
+    /// Remove apps of kast's package list (checks what still needs them first)
+    Uninstall {
+        /// Packages, as `kast packages --list` names them
+        #[arg(required = true)]
+        pkgs: Vec<String>,
+        /// Only show what would be removed
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Show detected applications & Howdy status, paths & sizes
     Status,
     /// Inspect a backup archive's manifest
@@ -173,6 +187,36 @@ struct PackagesArgs {
     skip: Vec<String>,
     #[command(flatten)]
     source: ListSource,
+}
+
+#[derive(Args)]
+struct UndoCli {
+    /// The run to undo (an id from --list; its start is enough)
+    run: Option<String>,
+    /// List the runs and their changes
+    #[arg(long, conflicts_with_all = ["run", "last", "prune"])]
+    list: bool,
+    /// With --list: print JSON
+    #[arg(long, requires = "list")]
+    json: bool,
+    /// Undo the newest run that still has something to undo
+    #[arg(long, conflicts_with_all = ["run", "prune"])]
+    last: bool,
+    /// Only this step's changes
+    #[arg(long, value_parser = ["packages", "repo", "services", "import", "export", "upgrade", "uninstall"])]
+    step: Option<String>,
+    /// Show what would be undone, change nothing
+    #[arg(long)]
+    dry_run: bool,
+    /// Also restore files changed since kast wrote them
+    #[arg(long)]
+    force: bool,
+    /// Delete the file copies of old or fully undone runs
+    #[arg(long, conflicts_with_all = ["run", "last"])]
+    prune: bool,
+    /// With --prune: how many runs to keep (default 10, or keep_runs in /var/lib/kast/settings.json)
+    #[arg(long, value_name = "N", requires = "prune")]
+    keep: Option<usize>,
 }
 
 #[derive(Args)]
@@ -287,7 +331,8 @@ fn needs_root(cmd: &Option<Cmd>) -> bool {
     match cmd {
         Some(Cmd::Packages(a)) => !a.list,
         Some(Cmd::Partition) => setup::PARTITION_ENABLED,
-        _ => matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Repo | Cmd::Services)) || interactive_vault(cmd),
+        // The journal is root's: undo and uninstall run through sudo, listing included
+        _ => matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Repo | Cmd::Services | Cmd::Undo(_) | Cmd::Uninstall { .. })) || interactive_vault(cmd),
     }
 }
 
@@ -366,6 +411,18 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         Some(Cmd::Vault { cmd: VaultCmd::Backup(a) }) => recorded_backup(a.into_opts()),
         Some(Cmd::Vault { cmd: VaultCmd::Import(a) }) => recorded_import(a.into_opts()?),
         Some(Cmd::Log(a)) => logio::os::cmd_log(a.tail, a.open, a.copy),
+        Some(Cmd::Undo(a)) => undo::cmd_undo(&undo::UndoArgs {
+            list: a.list,
+            json: a.json,
+            run: a.run.as_deref(),
+            last: a.last,
+            step: a.step.as_deref(),
+            dry_run: a.dry_run,
+            force: a.force,
+            prune: a.prune,
+            keep: a.keep,
+        }),
+        Some(Cmd::Uninstall { pkgs, dry_run }) => undo::cmd_uninstall(&pkgs, dry_run),
         Some(Cmd::Test) => Ok(()),
     }
 }

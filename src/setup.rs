@@ -801,6 +801,7 @@ fn run_steps(plan: &AutoPlan, list: Option<&PkgList>, out: &mut PlanOutcome) -> 
 
     for (i, step) in plan.steps.iter().enumerate() {
         let o_step = i as i64 + 1;
+        journal::set_step(step.key());
         match step {
             Step::Partition => setup_data_partition(true, o_start, o_step, o_total)?,
             Step::Upgrade => system_upgrade(true, o_start, o_step, o_total),
