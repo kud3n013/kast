@@ -25,21 +25,19 @@ id = "official"
 name = "Official repositories"
 packages = [
   { name = "zen-browser-bin" },
-  { name = "zotero" },                                    # from archrepo
   { name = "proton-vpn-cli" },
   { name = "inkscape" },
-  { name = "chromium" },
+  { name = "helium-browser-bin" },
   { name = "obsidian" },
   { name = "fcitx5" },
   { name = "fcitx5-configtool" },
   { name = "fcitx5-gtk" },
   { name = "fcitx5-qt" },
   { name = "fcitx5-unikey" },
-  { name = "vesktop-bin", fallback = "vesktop" },        # used when vesktop-bin isn't in the sync DBs
+  { name = "vesktop-bin", fallback = "vesktop" },
   { name = "valkey" },
   { name = "kdenlive" },
   { name = "steam" },
-  { name = "zed-globalmenu", replaces = "zed" },         # from archrepo; swaps only when it declares the conflict
   { name = "wine" },
   { name = "wine-gecko" },
   { name = "wine-mono" },
@@ -47,6 +45,8 @@ packages = [
   { name = "haruna" },
   { name = "libreoffice-fresh" },
   { name = "libreoffice-fresh-vi" },
+  { name = "github-cli" },
+  { name = "git" },
 ]
 
 # Packages only the CachyOS repositories carry. Empty for now: which of the entries above
@@ -61,18 +61,20 @@ id = "kud3n"
 name = "kud3n's repository"
 packages = [
   { name = "beeper" },
+  { name = "zed" },
+  { name = "zotero" },
   { name = "howdy-next" },
   { name = "gdlauncher-carbon" },
   { name = "searxng" },
-  { name = "archrepo/freedownloadmanager", replaces = "freedownloadmanager-bin" },
-  { name = "archrepo/sine", replaces = "sine-bin" },
+  { name = "freedownloadmanager", replaces = "freedownloadmanager-bin" },
+  { name = "sine"},
 ]
 
 [[group]]
 id = "addons"
 name = "Add-ons"
 packages = [
-  { name = "freedownloadmanager-elephant", requires = "archrepo/freedownloadmanager" },
+  { name = "freedownloadmanager-elephant", requires = "freedownloadmanager" },
   { name = "zotero-better-bibtex", requires = "zotero" },
   { name = "zotmoov", requires = "zotero" },
   { name = "zotero-better-notes", requires = "zotero" },
