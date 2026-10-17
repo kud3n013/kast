@@ -134,5 +134,8 @@ running), kast offers to remove it.
 
 The Release workflow checks that the tag matches `Cargo.toml`, runs the tests, builds
 static musl binaries for x86_64 and aarch64 and publishes them with their checksums.
-Tags with a `-` (`v0.2.0-rc1`) become prereleases. Running the workflow by hand
+Tags with a `-` (`v0.2.0-rc1`) become prereleases.
+kast carries a copy of archrepo's signing key (`assets/archrepo.asc`, imported by the Repo
+step). If archrepo's key ever changes, replace that file and `REPO_KEY_FPR` in
+`src/setup.rs`, then cut a new release. Running the workflow by hand
 (Actions → Release → Run workflow) builds everything without publishing.
