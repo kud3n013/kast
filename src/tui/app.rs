@@ -830,7 +830,7 @@ pub mod tests {
     }
 
     fn online_list() -> PkgList {
-        let edited = crate::pkglist::BUILTIN
+        let edited = crate::pkglist::BUILTIN_TEXT
             .replace("  { name = \"steam\" },\n", "")
             .replace("  { name = \"haruna\" },", "  { name = \"haruna\" },\n  { name = \"gimp\" },");
         PkgList { source: Source::Online { fetched: "04:39".into() }, list: crate::pkglist::parse(&edited).unwrap() }

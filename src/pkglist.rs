@@ -16,6 +16,12 @@ use serde::{Deserialize, Serialize};
 
 /// The repo's `packages.toml` as of the commit this binary was built from.
 pub const BUILTIN: &str = include_str!("../packages.toml");
+/// What `builtin()` parses. Tests use a frozen copy (the list as of 0.1.3), so editing
+/// packages.toml never breaks them; `shipped_packages_toml_is_valid` checks the real file.
+#[cfg(not(test))]
+const BUILTIN_TEXT: &str = BUILTIN;
+#[cfg(test)]
+pub const BUILTIN_TEXT: &str = include_str!("testdata/packages-frozen.toml");
 /// The newest `schema` this build understands.
 pub const SUPPORTED_SCHEMA: u32 = 1;
 /// Known groups, in install order.
@@ -213,7 +219,7 @@ pub fn parse(text: &str) -> Result<Parsed, Invalid> {
 
 /// The list built into this binary (checked by the tests, so it always parses).
 pub fn builtin() -> Parsed {
-    parse(BUILTIN).expect("the built-in packages.toml is valid")
+    parse(BUILTIN_TEXT).expect("the built-in packages.toml is valid")
 }
 
 impl Parsed {
@@ -550,6 +556,15 @@ mod tests {
         }
     }
 
+    /// The one test that reads the real packages.toml (CI runs it on every change to the file).
+    #[test]
+    fn shipped_packages_toml_is_valid() {
+        let p = parse(BUILTIN).unwrap_or_else(|e| panic!("packages.toml {e}"));
+        assert!(p.warnings.is_empty(), "packages.toml: {:?}", p.warnings);
+        assert!(p.count() > 0);
+        assert!(p.schema <= SUPPORTED_SCHEMA);
+    }
+
     #[test]
     fn builtin_reproduces_the_old_hard_coded_list() {
         // What PKGS_OFFICIAL, PKGS_KUD3N and PKGS_ADDONS installed, in order, before the file
@@ -685,7 +700,7 @@ mod tests {
         assert_eq!(d.added, ["gimp"]);
         assert_eq!(d.removed.len(), 35);
         assert_eq!(d.summary(), "+1 added / −35 removed vs built-in");
-        assert!(loaded(BUILTIN).diff().is_empty());
+        assert!(loaded(BUILTIN_TEXT).diff().is_empty());
     }
 
     #[test]
@@ -766,7 +781,7 @@ mod tests {
     fn local_files_are_named_and_errors_are_errors() {
         let t = tempfile::tempdir().unwrap();
         let good = t.path().join("packages.toml");
-        std::fs::write(&good, BUILTIN).unwrap();
+        std::fs::write(&good, BUILTIN_TEXT).unwrap();
         let pl = load_local(&good).unwrap();
         assert_eq!(pl.source, Source::Local(good.clone()));
         assert_eq!(pl.source_line(), format!("Local file · {} · 36 packages", good.display()));
@@ -795,7 +810,7 @@ mod tests {
         insta::assert_snapshot!("list_builtin", list_text(&pl, Some(&installed)));
         insta::assert_snapshot!("list_builtin_json", serde_json::to_string_pretty(&list_json(&pl, Some(&installed))).unwrap());
 
-        let edited = BUILTIN
+        let edited = BUILTIN_TEXT
             .replace("  { name = \"steam\" },\n", "")
             .replace("  { name = \"wine\" },", "  { name = \"wine\" },\n  { name = \"gimp\", description = \"Image editor\" },");
         let pl = online(&format!("{edited}\n[[group]]\nid = \"games\"\npackages = [{{ name = \"x\" }}]\n"));
