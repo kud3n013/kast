@@ -17,9 +17,16 @@ pub fn parse_plasma_version(out: &str) -> Option<String> {
     v.chars().next().filter(char::is_ascii_digit).map(|_| v.to_string())
 }
 
+/// `plasmashell --version`, run as the target user (under sudo root has no session for Qt) and
+/// asked only once per run.
 pub fn plasma_version() -> Option<String> {
-    let out = Command::new("plasmashell").arg("--version").stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
-    out.status.success().then(|| parse_plasma_version(&String::from_utf8_lossy(&out.stdout))).flatten()
+    static VERSION: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| {
+            let out = user_command("plasmashell", &["--version"]).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+            out.status.success().then(|| parse_plasma_version(&String::from_utf8_lossy(&out.stdout))).flatten()
+        })
+        .clone()
 }
 
 pub fn major(version: &str) -> Option<u32> {

@@ -15,7 +15,7 @@ use crate::plasma::apply;
 use crate::plasma::archive::{self, ExportOpts, ImportOpts};
 use crate::plasma::check::{self, Row, Status};
 use crate::plasma::config::{Category, Config};
-use crate::plasma::deps::{self, Pacman};
+use crate::plasma::deps;
 use crate::plasma::fsops::human_size;
 use crate::plasma::paths::{Roots, valid_profile_name};
 use crate::plasma::profile::{self, Ambient, ProfileKind, SaveOpts, Summary};
@@ -198,8 +198,8 @@ pub fn run(roots: &Roots, amb: &Ambient, req: PlasmaReq) -> PlasmaResp {
                 let mut lines = vec![format!("Imported profile {:?} ({} files). Apply it with a: nothing was changed yet.", r.name, r.stats.files)];
                 let mut install = Vec::new();
                 if let Ok(p) = profile::load(roots, &r.name) {
-                    let missing = deps::missing(&p.meta.requires, &Pacman);
-                    let (ok, no) = deps::split_installable(&missing, &Pacman);
+                    let missing = deps::missing(&p.meta.requires, &*amb.pkgs);
+                    let (ok, no) = deps::split_installable(&missing, &*amb.pkgs);
                     if !ok.is_empty() {
                         lines.push(format!("Needs packages that are not installed: {}", ok.join(" ")));
                     }
@@ -215,8 +215,8 @@ pub fn run(roots: &Roots, amb: &Ambient, req: PlasmaReq) -> PlasmaResp {
         PlasmaReq::Check => PlasmaResp::Check(cfg().and_then(|c| check::check(roots, &c).map_err(err))),
         PlasmaReq::Deps(name) => {
             let r = profile::load(roots, &name).map_err(err).map(|p| {
-                let missing = deps::missing(&p.meta.requires, &Pacman);
-                let (ok, no) = deps::split_installable(&missing, &Pacman);
+                let missing = deps::missing(&p.meta.requires, &*amb.pkgs);
+                let (ok, no) = deps::split_installable(&missing, &*amb.pkgs);
                 let rows = p
                     .meta
                     .requires

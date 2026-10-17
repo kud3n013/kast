@@ -111,11 +111,17 @@ pub(super) fn link_stays_inside(root: &Path, link: &Path, target: &Path) -> bool
         return false;
     }
     let mut cur: Vec<Component> = link.parent().unwrap_or(root).strip_prefix(root).map(|p| p.components().collect()).unwrap_or_default();
+    // `..` only leads the target: after a normal component the OS may resolve that component
+    // through a link (`dot -> .`, then `dot/dot/../..`), and a lexical walk would be fooled.
+    let mut leading = true;
     for c in target.components() {
         match c {
-            Component::Normal(_) => cur.push(c),
+            Component::Normal(_) => {
+                leading = false;
+                cur.push(c)
+            }
             Component::ParentDir => {
-                if cur.pop().is_none() {
+                if !leading || cur.pop().is_none() {
                     return false;
                 }
             }
@@ -452,6 +458,20 @@ mod tests {
     }
 
     #[test]
+    fn plan_skips_a_link_that_escapes_through_a_link_to_dot() {
+        let (_d, r, cfg) = saved();
+        let p = load(&r, "p").unwrap();
+        let gtk = p.files_dir().join("gtk/gtk-3.0");
+        symlink(".", gtk.join("dot")).unwrap();
+        symlink("dot/dot/../../../.ssh/authorized_keys", gtk.join("evil")).unwrap();
+        let pl = plan(&r, &cfg, &p, None).unwrap();
+        let it = pl.items.iter().find(|i| i.dest.ends_with("gtk-3.0/evil")).unwrap();
+        assert!(matches!(&it.action, Action::Skip(m) if m.contains("outside")), "{:?}", it.action);
+        execute(&r, &pl, true, &ambient()).unwrap();
+        assert!(r.config.join("gtk-3.0/evil").symlink_metadata().is_err());
+    }
+
+    #[test]
     fn link_check() {
         let root = Path::new("/h/.config");
         assert!(link_stays_inside(root, &root.join("a/l"), Path::new("../b")));
@@ -459,6 +479,10 @@ mod tests {
         assert!(!link_stays_inside(root, &root.join("l"), Path::new("../x")));
         assert!(!link_stays_inside(root, &root.join("a/l"), Path::new("../../x")));
         assert!(!link_stays_inside(root, &root.join("l"), Path::new("/etc")));
+        // a `..` after a normal component can climb out through a link to `.`
+        assert!(!link_stays_inside(root, &root.join("a/l"), Path::new("dot/dot/../../../x")));
+        assert!(!link_stays_inside(root, &root.join("a/l"), Path::new("b/../c")));
+        assert!(link_stays_inside(root, &root.join("a/l"), Path::new(".")));
     }
 
     #[test]

@@ -533,7 +533,9 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
             let tx = tx.clone();
             std::thread::spawn(move || {
                 let (roots, amb) = (crate::plasma::paths::Roots::from_ctx(), crate::plasma::profile::Ambient::detect());
-                let resp = screens::plasma::run(&roots, &amb, req);
+                let resp = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| screens::plasma::run(&roots, &amb, req))).unwrap_or_else(|_| {
+                    screens::plasma::PlasmaResp::Done { ok: false, lines: vec!["Internal error (details in the log)".into()], install: vec![] }
+                });
                 let _ = tx.send(Event::Loaded(event::Loaded::Plasma(Box::new(resp))));
             });
         }

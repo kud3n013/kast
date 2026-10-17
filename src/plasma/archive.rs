@@ -498,6 +498,15 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_link_that_climbs_out_through_a_link_to_dot() {
+        let m = rejected(&[
+            ("files/s/d/dot", Some((EntryType::Symlink, ".")), b""),
+            ("files/s/d/evil", Some((EntryType::Symlink, "dot/dot/../../../.ssh/authorized_keys")), b""),
+        ]);
+        assert!(m.contains("outside"), "{m}");
+    }
+
+    #[test]
     fn rejects_duplicate_members_and_bad_manifests() {
         assert!(rejected(&[("files/s/a", None, b"1"), ("files/s/a", None, b"2")]).contains("twice"));
         let (_d, r) = other_machine();
