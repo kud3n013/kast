@@ -1033,7 +1033,7 @@ pub mod tests {
 
     #[test]
     fn partition_entry_is_greyed_out() {
-        assert!(!crate::setup::PARTITION_ENABLED);
+        const { assert!(!crate::setup::PARTITION_ENABLED) };
         let mut a = app(80, 24);
         update(&mut a, key(KeyCode::Down));
         assert_eq!(a.menu.selected, 2, "skipped going down");
