@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/import.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Backups of archbox on Proton Drive (newest first) ───────────────────────────╮
+│  Name                                                 Type             Size  │
+│❯ all_backup_2026-10-16_210411.zip                     Full System      2.1G  │
+│  zen_backup_2026-10-10_080000.zip                     Archive          512M  │
+│  p3ter_face_model_2026-09-01_100000.dat               Howdy Face Model 8.0K  │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│On Drive: /my-files/kast-backups/archbox/all_backup_2026-10-16_210411.zip     │
+│Size: 2.1G   made 2026-10-16 21:04                                            │
+│                                                                              │
+│Created   2026-10-16T21:04:11+02:00                                           │
+│Source    archbox (p3ter)                                                     │
+│Target    all                                                                 │
+│Media     true                                                                │
+│Size      2.1 GiB                                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter download & choose  / filter  Esc machines  ? help

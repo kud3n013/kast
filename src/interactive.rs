@@ -82,6 +82,8 @@ pub fn candidate_tag(p: &Path) -> &'static str {
         "[Hyprland Backup]"
     } else if word(&|w| w == "all") {
         "[Full System Backup]"
+    } else if word(&|w| w == "apps") {
+        "[All Apps Backup]"
     } else {
         "[Archive]"
     }

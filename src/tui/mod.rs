@@ -455,6 +455,31 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
             crate::proton::forget_status();
             let _ = tx.send(Event::Loaded(event::Loaded::DriveStore(r)));
         }
+        Command::DriveHosts => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let r = crate::drive::list_hosts().map_err(|p| p.to_string());
+                let _ = tx.send(Event::Loaded(event::Loaded::DriveHosts(r)));
+            });
+        }
+        Command::DriveBackups(host) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let result = crate::drive::list_backups(&host).map_err(|p| p.to_string());
+                let _ = tx.send(Event::Loaded(event::Loaded::DriveBackups { host, result }));
+            });
+        }
+        Command::DriveDownload(b) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let result = crate::drive::download_backup(&b);
+                let _ = tx.send(Event::Loaded(event::Loaded::DriveDownloaded { remote: b.remote.clone(), result }));
+            });
+        }
+        Command::DriveCancelTransfer => crate::proton::cancel_transfer(),
+        Command::DriveWipeRestore => {
+            std::thread::spawn(crate::drive::wipe_restore);
+        }
         Command::CopySignIn(url) => {
             let tx = tx.clone();
             std::thread::spawn(move || copied(&tx, logio::os::copy(url.reveal(), "the sign-in link", "open it with o, or scan the code")));

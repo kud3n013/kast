@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/import.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Backups of archbox on Proton Drive (newest first) ────────────────────────────╮╭ Details ────────────────────────────────────────────────╮
+│  Name                                 Type             Size   Modified        ││On Drive:                                                │
+│❯ all_backup_2026-10-16_210411.zip     Full System      2.1G   2026-10-16 21:04││/my-files/kast-backups/archbox/all_backup_2026-10-16_2104│
+│  zen_backup_2026-10-10_080000.zip     Archive          512M   2026-10-10 08:00││11.zip                                                   │
+│  p3ter_face_model_2026-09-01_100000.d Howdy Face Model 8.0K   2026-10-10 08:00││Size: 2.1G   made 2026-10-16 21:04                       │
+│                                                                               ││                                                         │
+│                                                                               ││Created   2026-10-16T21:04:11+02:00                      │
+│                                                                               ││Source    archbox (p3ter)                                │
+│                                                                               ││Target    all                                            │
+│                                                                               ││Media     true                                           │
+│                                                                               ││Size      2.1 GiB                                        │
+│                                                                               ││                                                         │
+│                                                                               ││Contains 3 item(s):                                      │
+│                                                                               ││• BEEPER                                                 │
+│                                                                               ││    Folder:      ~/.config/BeeperTexts                   │
+│                                                                               ││• ZEN                                                    │
+│                                                                               ││    Folder:      ~/.config/zen                           │
+│                                                                               ││• KDE                                                    │
+│                                                                               ││    Config:      ~/.config (kdeglobals, kwinrc, Plasma   │
+│                                                                               ││applets, shortcuts)                                      │
+│                                                                               ││    Share:       ~/.local/share (plasma, kwin, icons,    │
+│                                                                               ││wallpapers)                                              │
+│                                                                               ││                                                         │
+│                                                                               ││Enter downloads it to a private folder, checks it against│
+│                                                                               ││its sidecar, then goes on as usual. The copy is wiped    │
+│                                                                               ││afterwards.                                              │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+│                                                                               ││                                                         │
+╰───────────────────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter download & choose  / filter  Esc machines  ? help

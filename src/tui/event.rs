@@ -66,6 +66,15 @@ pub enum Loaded {
     SignInDone(Result<(), String>),
     DriveLoggedOut(Result<(), String>),
     DriveStore(Result<(), String>),
+    DriveHosts(Result<Vec<String>, String>),
+    DriveBackups {
+        host: String,
+        result: Result<Vec<crate::drive::RemoteBackup>, String>,
+    },
+    DriveDownloaded {
+        remote: String,
+        result: Result<PathBuf, String>,
+    },
     /// How a log action went (shown as a toast)
     LogIo(crate::logio::Report),
     /// No clipboard program worked: copy through the terminal with these bytes

@@ -180,6 +180,15 @@ pub enum Command {
     DriveLogout,
     /// Save the credential store setting (answered with `Loaded::DriveStore`)
     DriveSetStore(String),
+    /// The machines with backups on Drive (answered with `Loaded::DriveHosts`)
+    DriveHosts,
+    /// A machine's backups and sidecars (answered with `Loaded::DriveBackups`)
+    DriveBackups(String),
+    /// Download a backup to the restore staging folder (answered with `Loaded::DriveDownloaded`)
+    DriveDownload(Box<crate::drive::RemoteBackup>),
+    DriveCancelTransfer,
+    /// Wipe the restore staging folder
+    DriveWipeRestore,
     CopySignIn(crate::proton::SignInUrl),
     OpenSignIn(crate::proton::SignInUrl),
 }
@@ -388,6 +397,12 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::SignInDone(r)) => drive::on_done(app, r),
         Event::Loaded(Loaded::DriveLoggedOut(r)) => drive::on_logged_out(app, r),
         Event::Loaded(Loaded::DriveStore(r)) => drive::on_store_set(app, r),
+        Event::Loaded(Loaded::DriveHosts(r)) => {
+            import::on_hosts(app, r);
+            None
+        }
+        Event::Loaded(Loaded::DriveBackups { host, result }) => import::on_backups(app, host, result),
+        Event::Loaded(Loaded::DriveDownloaded { remote, result }) => import::on_downloaded(app, remote, result),
         Event::Loaded(Loaded::Installed(set)) => {
             app.installed = Installed::Known(set);
             packages::sync(app)
@@ -513,7 +528,11 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 wizard::leave(app);
                 None
             }
-            Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) => {
+            Screen::Import(_) => {
+                app.screen = Screen::Menu;
+                Some(Command::DriveWipeRestore)
+            }
+            Screen::Summary(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) => {
                 app.screen = Screen::Menu;
                 None
             }

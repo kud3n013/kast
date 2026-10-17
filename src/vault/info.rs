@@ -58,6 +58,11 @@ pub fn read_info(zip: &Path) -> std::result::Result<InfoReport, String> {
         return Err(format!("No 'backup_manifest.json' found inside {}", zip.display()));
     };
     let m: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    Ok(info_from_manifest(zip.display().to_string(), format_bytes(zip), &m))
+}
+
+/// What a manifest says (from an archive, or a Proton Drive sidecar's copy of it).
+pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
     let media = m.get("include_media").map_or("Unknown".to_string(), |v| match v {
         Value::String(s) => s.clone(),
         other => other.to_string(),
@@ -65,7 +70,7 @@ pub fn read_info(zip: &Path) -> std::result::Result<InfoReport, String> {
     let mut apps = Vec::new();
     for key in m.get("apps").and_then(Value::as_object).map(|a| a.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
         let name: String = key.to_uppercase().chars().filter(|c| *c != ' ' && *c != '-').collect();
-        let field = |f: &str, d: &str| jq_str(&m, &["apps", &key, f], d);
+        let field = |f: &str, d: &str| jq_str(m, &["apps", &key, f], d);
         let mut fields: Vec<(String, String)> = Vec::new();
         let source = |fields: &mut Vec<(String, String)>, label: &str, f: &str| {
             let v = field(f, "");
@@ -103,16 +108,16 @@ pub fn read_info(zip: &Path) -> std::result::Result<InfoReport, String> {
         }
         apps.push(InfoApp { key, name, fields });
     }
-    Ok(InfoReport {
-        file: zip.display().to_string(),
-        size: format_bytes(zip),
-        created: jq_str(&m, &["created_at"], "Unknown"),
-        host: jq_str(&m, &["hostname"], "Unknown"),
-        user: jq_str(&m, &["user"], "Unknown"),
-        target: jq_str(&m, &["target"], "Unknown"),
+    InfoReport {
+        file,
+        size,
+        created: jq_str(m, &["created_at"], "Unknown"),
+        host: jq_str(m, &["hostname"], "Unknown"),
+        user: jq_str(m, &["user"], "Unknown"),
+        target: jq_str(m, &["target"], "Unknown"),
         media,
         apps,
-    })
+    }
 }
 
 pub fn cmd_info(file: Option<&Path>) -> Result<()> {

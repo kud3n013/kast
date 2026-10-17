@@ -175,6 +175,8 @@ pub fn spawn(kind: JobKind, tx: Sender<Event>, replies: Arc<super::Replies>) {
         report::install(Arc::new(TuiReporter { tx, next_id: AtomicU64::new(1), replies }));
         let result = panic::catch_unwind(AssertUnwindSafe(|| run(kind)));
         ctx::cleanup_temp_state();
+        // A restore from Proton Drive is done with its downloaded copy (decrypted app data)
+        crate::drive::wipe_restore();
         let msg = match result {
             Ok(Ok(outcome)) => Ok(outcome),
             Ok(Err(e)) if e.is::<Reported>() => Err("Action failed".to_string()),

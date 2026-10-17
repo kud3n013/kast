@@ -408,6 +408,7 @@ pub fn series_key(host: &str, series: &Series) -> String {
 /// A private folder of the user's under `~/.cache/kast/<kind>/` (0700). It holds backup data
 /// (decrypted app data on a restore), so it goes away when dropped, on errors and cancels
 /// too, and on signals through `ctx::cleanup_on_exit`; `keep` hands it over instead.
+#[derive(Debug)]
 pub struct Staging {
     pub dir: std::path::PathBuf,
     kept: bool,
@@ -757,9 +758,163 @@ pub fn cmd_upload_file(file: &std::path::Path, keep: Option<u32>) -> Result<()> 
     Ok(())
 }
 
+// --- Restoring from Drive -------------------------------------------------------------------------
+
+/// A backup on Drive, with its sidecar when there is one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemoteBackup {
+    pub name: String,
+    pub remote: String,
+    pub size: Option<u64>,
+    pub modified: Option<String>,
+    pub sidecar: Option<serde_json::Value>,
+}
+
+/// The machines with backups: the folders in the base folder (empty when it isn't there yet).
+pub fn list_hosts() -> Result<Vec<String>, Problem> {
+    let cli = ready_cli().map_err(|e| e.0)?;
+    let base = settings::load().folder();
+    match cli.list(&base) {
+        Ok(nodes) => Ok(nodes.into_iter().filter(|n| n.kind == proton::Kind::Folder).map(|n| n.name).collect()),
+        Err(Problem::NotFound(_)) => Ok(Vec::new()),
+        Err(p) => Err(p),
+    }
+}
+
+/// This host first, then the others by name.
+pub fn order_hosts(mut hosts: Vec<String>, this: &str) -> Vec<String> {
+    hosts.sort();
+    hosts.dedup();
+    if let Some(i) = hosts.iter().position(|h| h == this) {
+        let h = hosts.remove(i);
+        hosts.insert(0, h);
+    }
+    hosts
+}
+
+/// Pair each archive with its sidecar; newest first (by the time in the name, else modified).
+pub fn pair_backups(folder: &str, nodes: &[proton::Node], sidecars: &std::collections::HashMap<String, serde_json::Value>) -> Vec<RemoteBackup> {
+    let mut out: Vec<RemoteBackup> = nodes
+        .iter()
+        .filter(|n| n.kind != proton::Kind::Folder && (n.name.ends_with(".zip") || n.name.ends_with(".dat")))
+        .map(|n| RemoteBackup {
+            name: n.name.clone(),
+            remote: proton::join(folder, &[&n.name]),
+            size: n.size,
+            modified: n.modified.clone(),
+            sidecar: sidecars.get(&n.name).cloned(),
+        })
+        .collect();
+    let stamp = |b: &RemoteBackup| {
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re = RE.get_or_init(|| regex::Regex::new(r"(\d{4}-\d{2}-\d{2})_(\d{2})(\d{2})(\d{2})").unwrap());
+        re.captures(&b.name).map(|c| format!("{}T{}:{}:{}", &c[1], &c[2], &c[3], &c[4])).or_else(|| b.modified.clone()).unwrap_or_default()
+    };
+    out.sort_by(|a, b| stamp(b).cmp(&stamp(a)).then_with(|| a.name.cmp(&b.name)));
+    out
+}
+
+/// The backups in a host's folder: one listing, and one download for all the sidecars.
+pub fn list_backups(host: &str) -> Result<Vec<RemoteBackup>, Problem> {
+    let cli = ready_cli().map_err(|e| e.0)?;
+    let folder = proton::join(&settings::load().folder(), &[host]);
+    let nodes = match cli.list(&folder) {
+        Ok(n) => n,
+        Err(Problem::NotFound(_)) => return Ok(Vec::new()),
+        Err(p) => return Err(p),
+    };
+    let side_names: Vec<&String> = nodes.iter().map(|n| &n.name).filter(|n| n.ends_with(SIDECAR_EXT)).collect();
+    let mut sidecars = std::collections::HashMap::new();
+    if !side_names.is_empty() {
+        let st = Staging::new("proton-sidecars").map_err(|e| Problem::Other(e.to_string()))?;
+        let remote: Vec<String> = side_names.iter().map(|n| proton::join(&folder, &[n])).collect();
+        // Sidecars are a convenience: without them the list still shows, contents unknown
+        match cli.download(&remote, &st.dir, &mut |_| {}) {
+            Ok(_) => {
+                for n in &side_names {
+                    let Some(text) = settings::user_read(&st.dir.join(n)) else { continue };
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        sidecars.insert(n.trim_end_matches(SIDECAR_EXT).to_string(), v);
+                    }
+                }
+            }
+            Err(p) => crate::ctx::log("WARN", &format!("Could not download the sidecars of {folder}: {p}")),
+        }
+    }
+    Ok(pair_backups(&folder, &nodes, &sidecars))
+}
+
+/// The restore's staging folder: one at a time, wiped when replaced, after the restore job,
+/// when the restore screens close, and on the way out of kast.
+static RESTORE: std::sync::Mutex<Option<Staging>> = std::sync::Mutex::new(None);
+
+pub fn wipe_restore() {
+    drop(RESTORE.lock().unwrap().take());
+}
+
+/// What a download's file must match: the sidecar's sha256 and size.
+pub fn verify(file: &std::path::Path, sha256: Option<&str>, size: Option<u64>) -> Result<(), String> {
+    let len = std::fs::metadata(file).map_err(|e| format!("The download isn't there: {e}"))?.len();
+    if let Some(sz) = size.filter(|s| *s != len) {
+        return Err(format!("The download is incomplete: {len} of {sz} bytes"));
+    }
+    if let Some(want) = sha256 {
+        let got = crate::journal::sha256_file(file).unwrap_or_default();
+        if !got.eq_ignore_ascii_case(want) {
+            return Err("The download doesn't match its sidecar's checksum (sha256): it may be damaged or tampered with".into());
+        }
+    }
+    Ok(())
+}
+
+/// Download `b` into a fresh private staging folder and check it against its sidecar.
+/// Anything wrong: the folder is wiped and the reason returned.
+pub fn download_backup(b: &RemoteBackup) -> Result<std::path::PathBuf, String> {
+    wipe_restore();
+    proton::reset_transfer_cancel();
+    let cli = ready_cli().map_err(|e| e.to_string())?;
+    let st = Staging::new("proton-restore").map_err(|e| e.to_string())?;
+    let (file, st) = download_into(&cli, b, st)?;
+    *RESTORE.lock().unwrap() = Some(st);
+    Ok(file)
+}
+
+/// Download `b` into `st` and verify it; on any failure `st` is dropped (wiped).
+pub fn download_into(cli: &Cli, b: &RemoteBackup, st: Staging) -> Result<(std::path::PathBuf, Staging), String> {
+    let summary = cli.download(std::slice::from_ref(&b.remote), &st.dir, &mut |l| {
+        if let Some(line) = l {
+            crate::report::current().output_line(line);
+        }
+    });
+    let summary = summary.map_err(|p| p.to_string())?;
+    if summary.failed_items > 0 || summary.transferred_items == 0 {
+        let why: Vec<String> = summary.failures.iter().map(|f| f.error.clone()).collect();
+        return Err(format!("The download failed{}", if why.is_empty() { String::new() } else { format!(": {}", why.join("; ")) }));
+    }
+    let file = st.dir.join(&b.name);
+    let side = b.sidecar.as_ref();
+    verify(&file, side.and_then(|s| s["sha256"].as_str()), side.and_then(|s| s["size"].as_u64()))?;
+    Ok((file, st))
+}
+
+/// The manifest to show for a backup on Drive, from its sidecar.
+pub fn sidecar_info(b: &RemoteBackup) -> Option<crate::vault::info::InfoReport> {
+    let s = b.sidecar.as_ref()?;
+    let size = s["size"].as_u64().or(b.size).map(human).unwrap_or_default();
+    let m = if s["manifest"].is_object() { s["manifest"].clone() } else { s.clone() };
+    Some(crate::vault::info::info_from_manifest(b.remote.clone(), size, &m))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tests that make staging folders: one at a time, as one of them sweeps them all.
+    static STAGING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn staging_lock() -> std::sync::MutexGuard<'static, ()> {
+        STAGING.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn names(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
@@ -845,6 +1000,7 @@ mod tests {
 
     #[test]
     fn staging_is_private_and_always_wiped() {
+        let _lock = staging_lock();
         use std::os::unix::fs::PermissionsExt;
         crate::ctx::init_for_tests();
         let t = tempfile::tempdir().unwrap();
@@ -925,6 +1081,72 @@ mod tests {
         let err = upload_file(&cli, &z, &sidecar(&z, None, "fp2").unwrap(), &series, &host, &up).unwrap_err();
         assert_eq!(err.downcast_ref::<Problem>(), Some(&Problem::QuotaFull("x: ValidationError: Insufficient storage quota".into())));
         assert_eq!(err.to_string(), "Proton Drive is full");
+    }
+
+    #[test]
+    fn hosts_and_backups_on_drive() {
+        assert_eq!(order_hosts(names(&["b", "this", "a", "b"]), "this"), names(&["this", "a", "b"]));
+        assert_eq!(order_hosts(names(&["b", "a"]), "this"), names(&["a", "b"]));
+        let node =
+            |name: &str, kind| proton::Node { name: name.into(), uid: String::new(), kind, size: Some(10), modified: Some("2026-01-01T00:00:00Z".into()) };
+        let nodes = vec![
+            node("all_backup_2026-10-01_100000.zip", proton::Kind::File),
+            node("all_backup_2026-10-01_100000.zip.manifest.json", proton::Kind::File),
+            node("zen_backup_2026-10-05_100000.zip", proton::Kind::File),
+            node("p3ter_face_model_2026-09-01_100000.dat", proton::Kind::File),
+            node("notes.txt", proton::Kind::File),
+            node("old", proton::Kind::Folder),
+        ];
+        let mut sidecars = std::collections::HashMap::new();
+        sidecars.insert("all_backup_2026-10-01_100000.zip".to_string(), json!({ "sha256": "x", "manifest": { "target": "all" } }));
+        let b = pair_backups("/my-files/kast-backups/h", &nodes, &sidecars);
+        let names: Vec<&str> = b.iter().map(|b| b.name.as_str()).collect();
+        assert_eq!(names, ["zen_backup_2026-10-05_100000.zip", "all_backup_2026-10-01_100000.zip", "p3ter_face_model_2026-09-01_100000.dat"]);
+        assert_eq!(b[1].remote, "/my-files/kast-backups/h/all_backup_2026-10-01_100000.zip");
+        assert!(b[1].sidecar.is_some() && b[0].sidecar.is_none());
+        assert_eq!(sidecar_info(&b[1]).unwrap().target, "all");
+        assert!(sidecar_info(&b[0]).is_none());
+    }
+
+    #[test]
+    fn downloads_are_verified_and_wiped_on_failure() {
+        let _lock = staging_lock();
+        crate::ctx::init_for_tests();
+        let (dir, cli) = proton::tests::fake("ok");
+        let host = dir.path().join("drive/my-files/kast-backups/h");
+        std::fs::create_dir_all(&host).unwrap();
+        std::fs::write(host.join("all_backup_2026-10-01_100000.zip"), "zipdata").unwrap();
+        let t = tempfile::tempdir().unwrap();
+        let sha = crate::journal::sha256_file(&host.join("all_backup_2026-10-01_100000.zip")).unwrap();
+        let mut b = RemoteBackup {
+            name: "all_backup_2026-10-01_100000.zip".into(),
+            remote: "/my-files/kast-backups/h/all_backup_2026-10-01_100000.zip".into(),
+            size: Some(7),
+            modified: None,
+            sidecar: Some(json!({ "sha256": sha, "size": 7 })),
+        };
+        let (file, st) = download_into(&cli, &b, Staging::under(t.path()).unwrap()).unwrap();
+        assert_eq!(std::fs::read(&file).unwrap(), b"zipdata");
+        let staged = st.dir.clone();
+        drop(st);
+        assert!(!staged.exists(), "wiped once the restore is done");
+        // A checksum that doesn't match: stop, and nothing stays behind
+        b.sidecar = Some(json!({ "sha256": "00", "size": 7 }));
+        let st = Staging::under(t.path()).unwrap();
+        let d = st.dir.clone();
+        assert!(download_into(&cli, &b, st).unwrap_err().contains("checksum"));
+        assert!(!d.exists());
+        // A partial download (the CLI reports a failure)
+        proton::tests::set_mode(&dir, "download_fail");
+        let st = Staging::under(t.path()).unwrap();
+        let d = st.dir.clone();
+        assert!(download_into(&cli, &b, st).unwrap_err().starts_with("The download failed: IntegrityError"));
+        assert!(!d.exists());
+        // No sidecar: only the CLI's word, and that's accepted
+        proton::tests::set_mode(&dir, "ok");
+        b.sidecar = None;
+        assert!(download_into(&cli, &b, Staging::under(t.path()).unwrap()).is_ok());
+        assert_eq!(verify(&file, None, Some(99)).unwrap_err(), "The download isn't there: No such file or directory (os error 2)");
     }
 
     #[test]

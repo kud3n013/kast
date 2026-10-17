@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/import.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Machines with backups in /my-files/kast-backups ─────────────────────────────╮
+│❯ archbox  this computer                                                      │
+│  desktop-old                                                                 │
+│  laptop                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│This computer's backups.                                                      │
+│                                                                              │
+│Enter lists them (one listing; each backup's sidecar tells what's inside).    │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter list backups  r refresh  Esc back

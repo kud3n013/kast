@@ -256,10 +256,70 @@ pub fn proton_gate(app: &mut App) -> Result<(), Option<Command>> {
     if drive::row(app).1 { Ok(()) } else { Err(drive::enter(app)) }
 }
 
+/// Restoring from Proton Drive: the machines with backups, and the chosen one's backups.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Remote {
+    pub hosts: Vec<String>,
+    pub host_sel: usize,
+    pub host: Option<String>,
+    pub loading_hosts: bool,
+    pub error: Option<String>,
+    /// This machine's folder name, and the base folder on Drive
+    pub this_host: String,
+    pub folder: String,
+    pub backups: Vec<crate::drive::RemoteBackup>,
+    /// Being downloaded (name, since when)
+    pub downloading: Option<(String, u64)>,
+}
+
+impl Remote {
+    fn backup(&self, remote: &Path) -> Option<&crate::drive::RemoteBackup> {
+        self.backups.iter().find(|b| Path::new(&b.remote) == remote)
+    }
+}
+
+/// A size the way `du -sh` prints it (as the local list shows sizes): 8.0K, 512M, 2.1G.
+pub fn short_size(bytes: u64) -> String {
+    let mut v = bytes as f64;
+    for unit in ["B", "K", "M", "G", "T"] {
+        if v < 1024.0 || unit == "T" {
+            return if unit == "B" {
+                format!("{bytes}B")
+            } else if v < 10.0 {
+                format!("{v:.1}{unit}")
+            } else {
+                format!("{}{unit}", v.round())
+            };
+        }
+        v /= 1024.0;
+    }
+    unreachable!()
+}
+
+/// The table rows for backups on Drive.
+pub fn remote_candidates(list: &[crate::drive::RemoteBackup]) -> Vec<Candidate> {
+    list.iter()
+        .map(|b| {
+            let path = PathBuf::from(&b.remote);
+            let modified = b
+                .sidecar
+                .as_ref()
+                .and_then(|s| s["created_at"].as_str().map(String::from))
+                .or_else(|| b.modified.clone())
+                .map(|t| t.chars().take(16).collect::<String>().replace('T', " "))
+                .unwrap_or_default();
+            let size = b.sidecar.as_ref().and_then(|s| s["size"].as_u64()).or(b.size).map(short_size).unwrap_or_default();
+            Candidate { name: b.name.clone(), tag: crate::interactive::candidate_tag(&path), size, modified, path }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub enum Stage {
     /// Local folder or Proton Drive
     Source,
+    /// Proton Drive: which machine's backups
+    Hosts,
     /// The folder to look in
     Folder,
     /// The backups in it
@@ -287,6 +347,8 @@ pub struct ImportState {
     pub completions: Vec<String>,
     pub preview: Option<(PathBuf, Result<Option<Inspected>, String>)>,
     pub stage: Stage,
+    /// Set while the backups come from Proton Drive
+    pub remote: Option<Box<Remote>>,
     last_click: Option<(usize, u64)>,
 }
 
@@ -307,6 +369,7 @@ impl ImportState {
             completions: Vec::new(),
             preview: None,
             stage: Stage::Source,
+            remote: None,
             last_click: None,
         }
     }
@@ -331,6 +394,10 @@ impl ImportState {
 
     /// Ask for the manifest of the highlighted archive if the panel shows another file.
     fn preview_cmd(&self) -> Option<Command> {
+        if self.remote.is_some() {
+            // The sidecar is the preview: nothing to read
+            return None;
+        }
         let c = self.selected_candidate()?;
         if c.is_dat() || self.preview.as_ref().is_some_and(|(p, _)| *p == c.path) {
             return None;
@@ -455,6 +522,7 @@ pub fn on_paste(app: &mut App, text: &str) {
 // --- Keys ----------------------------------------------------------------------------------
 
 pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    let now = app.now_ms;
     let home = app.header.home.clone();
     let user = app.header.user.clone();
     let st = state(app)?;
@@ -470,7 +538,12 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
             match k.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => st.source = 1 - st.source.min(1),
                 KeyCode::Enter | KeyCode::Char(' ') => return pick_source(app),
-                KeyCode::Esc | KeyCode::Char('q') => leave(app, auto),
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    leave(app, auto);
+                    // Leaving the restore: a backup downloaded from Drive goes (the automatic
+                    // run keeps it until it has run)
+                    return (!auto).then_some(Command::DriveWipeRestore);
+                }
                 _ => {}
             }
             return None;
@@ -511,7 +584,18 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
             };
         }
         Stage::Options(_) => return options_key(app, k),
+        Stage::Hosts => return hosts_key(app, k),
         Stage::Pick => {}
+    }
+    if let Some(r) = st.remote.as_mut()
+        && r.downloading.is_some()
+    {
+        // Only Esc while downloading: it stops the download
+        if matches!(k.code, KeyCode::Esc) || crate::tui::app::is_ctrl_c(&k) {
+            r.downloading = None;
+            return Some(Command::DriveCancelTransfer);
+        }
+        return None;
     }
     if st.filtering {
         match k.code {
@@ -538,9 +622,17 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
             st.filtering = true;
             None
         }
-        KeyCode::Enter => open_row(st),
+        KeyCode::Enter => {
+            let cmd = open_row(st);
+            if let Some(r) = st.remote.as_mut()
+                && let Some(d) = r.downloading.as_mut()
+            {
+                d.1 = now;
+            }
+            cmd
+        }
         KeyCode::Esc | KeyCode::Char('q') => {
-            st.stage = Stage::Folder;
+            st.stage = if st.remote.is_some() { Stage::Hosts } else { Stage::Folder };
             None
         }
         _ => None,
@@ -558,12 +650,118 @@ fn pick_source(app: &mut App) -> Option<Command> {
     if let Err(cmd) = proton_gate(app) {
         return cmd;
     }
-    app.toast(ToastKind::Info, "Signed in to Proton Drive");
+    let d = app.drive.clone()?;
+    let st = state(app)?;
+    st.remote = Some(Box::new(Remote { this_host: d.host.clone(), folder: d.folder.clone(), loading_hosts: true, ..Default::default() }));
+    st.stage = Stage::Hosts;
+    Some(Command::DriveHosts)
+}
+
+/// The machines with backups on Drive arrived.
+pub fn on_hosts(app: &mut App, result: Result<Vec<String>, String>) {
+    if let Some(st) = state(app)
+        && let Some(r) = st.remote.as_mut()
+    {
+        r.loading_hosts = false;
+        r.host_sel = 0;
+        match result {
+            Ok(h) => {
+                r.hosts = crate::drive::order_hosts(h, &r.this_host);
+                r.error = None;
+            }
+            Err(e) => r.error = Some(e),
+        }
+    }
+}
+
+/// A machine's backups (with sidecars) arrived.
+pub fn on_backups(app: &mut App, host: String, result: Result<Vec<crate::drive::RemoteBackup>, String>) -> Option<Command> {
+    let st = state(app)?;
+    let r = st.remote.as_mut()?;
+    if r.host.as_deref() != Some(host.as_str()) {
+        return None;
+    }
+    st.loading = false;
+    st.selected = 0;
+    match result {
+        Ok(list) => {
+            st.all = remote_candidates(&list);
+            r.backups = list;
+            r.error = None;
+        }
+        Err(e) => {
+            st.all.clear();
+            r.backups.clear();
+            r.error = Some(e);
+        }
+    }
+    None
+}
+
+/// The download finished: on to the usual restore steps with the local copy.
+pub fn on_downloaded(app: &mut App, remote: String, result: Result<PathBuf, String>) -> Option<Command> {
+    let st = state(app)?;
+    let r = st.remote.as_mut()?;
+    r.downloading = None;
+    match result {
+        Ok(path) => Some(Command::Inspect { path, pick: true }),
+        Err(e) => {
+            let name = remote.rsplit('/').next().unwrap_or(&remote).to_string();
+            app.toast(ToastKind::Error, format!("{name}: {e}"));
+            None
+        }
+    }
+}
+
+fn hosts_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    let st = state(app)?;
+    let r = st.remote.as_mut()?;
+    let n = r.hosts.len();
+    match k.code {
+        KeyCode::Up | KeyCode::Char('k') if n > 0 => r.host_sel = r.host_sel.checked_sub(1).unwrap_or(n - 1),
+        KeyCode::Down | KeyCode::Char('j') if n > 0 => r.host_sel = (r.host_sel + 1) % n,
+        KeyCode::Char('r') => {
+            r.loading_hosts = true;
+            return Some(Command::DriveHosts);
+        }
+        KeyCode::Enter | KeyCode::Char(' ') if n > 0 && !r.loading_hosts => {
+            let host = r.hosts[r.host_sel].clone();
+            r.host = Some(host.clone());
+            r.backups.clear();
+            r.error = None;
+            st.dir = PathBuf::from(crate::proton::join(&r.folder, &[&host]));
+            st.stage = Stage::Pick;
+            st.loading = true;
+            st.all.clear();
+            st.preview = None;
+            st.selected = 0;
+            st.filter = Input::default();
+            return Some(Command::DriveBackups(host));
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            st.remote = None;
+            st.stage = Stage::Source;
+        }
+        _ => {}
+    }
     None
 }
 
 fn open_row(st: &mut ImportState) -> Option<Command> {
-    st.selected_candidate().map(|c| Command::Inspect { path: c.path.clone(), pick: true })
+    let c = st.selected_candidate()?.clone();
+    if let Some(r) = st.remote.as_mut() {
+        if r.downloading.is_some() {
+            return None;
+        }
+        let b = r.backup(&c.path)?.clone();
+        if st.mode == Mode::Inspect && b.sidecar.is_some() {
+            // Its sidecar already says what's inside: no download
+            return None;
+        }
+        r.downloading = Some((b.name.clone(), 0));
+        return Some(Command::DriveDownload(Box::new(b)));
+    }
+    Some(Command::Inspect { path: c.path.clone(), pick: true })
 }
 
 fn options_key(app: &mut App, k: KeyEvent) -> Option<Command> {
@@ -738,14 +936,17 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ImportState) {
         Stage::Options(o) => return options_view(f, body, theme, o, st.auto),
         Stage::Source => return source_view(f, body, app, st),
         Stage::Folder => return folder_view(f, body, theme, st),
+        Stage::Hosts => return hosts_view(f, body, app, st),
         Stage::Pick => {}
     }
     let (table_area, panel) = layout(body);
     let wide = body.width >= 100;
     let visible = st.visible();
     let dir = ellipsize(&st.dir.display().to_string(), table_area.width.saturating_sub(30) as usize, theme.sym.ellipsis);
+    let host = st.remote.as_ref().and_then(|r| r.host.clone());
     let title = match (st.mode, st.filtering || !st.filter.value.is_empty()) {
         (_, true) => format!(" Filter: {}{} ", st.filter.value, if st.filtering { theme.sym.caret } else { "" }),
+        (_, false) if host.is_some() => format!(" Backups of {} on Proton Drive (newest first) ", host.as_deref().unwrap_or_default()),
         (Mode::Restore, false) => format!(" Backups in {dir} (newest first) "),
         (Mode::Inspect, false) => format!(" Archives in {dir} (newest first) "),
     };
@@ -777,10 +978,18 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ImportState) {
     let mut lines: Vec<Line> = Vec::new();
     if st.loading {
         lines.push(Line::styled(format!("{} Looking for backups{}", theme.sym.spinner[app.frame % theme.sym.spinner.len()], theme.sym.ellipsis), theme.dim()));
+    } else if let Some(e) = st.remote.as_ref().and_then(|r| r.error.as_ref()) {
+        lines.push(Line::styled(format!("{} {e}", theme.sym.fail), theme.error()));
+    } else if st.all.is_empty() && st.remote.is_some() {
+        lines.push(Line::raw(format!("No kast backups in {} yet.", st.dir.display())));
+        lines.push(Line::raw(""));
+        lines.push(Line::styled("Press Esc to pick another machine.", theme.dim()));
     } else if st.all.is_empty() {
         lines.push(Line::raw(format!("No backups in {}", st.dir.display())));
         lines.push(Line::raw(""));
         lines.push(Line::styled("Press Esc to change the folder.", theme.dim()));
+    } else if let (Some(c), Some(r)) = (st.selected_candidate(), st.remote.as_ref()) {
+        lines.extend(remote_lines(app, st, r, c));
     } else if let Some(c) = st.selected_candidate() {
         lines.push(Line::from(vec![Span::styled("Path: ", theme.bold()), Span::raw(c.path.display().to_string())]));
         lines.push(Line::from(vec![Span::styled("Size: ", theme.bold()), Span::raw(format!("{}   modified {}", c.size, c.modified))]));
@@ -799,6 +1008,84 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ImportState) {
     }
     let panel_title = if st.mode == Mode::Inspect { " Manifest " } else { " Details " };
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(block(theme, panel_title)), panel);
+}
+
+/// The details of a backup on Drive: from its sidecar, or "unknown until downloaded".
+fn remote_lines<'a>(app: &App, st: &ImportState, r: &'a Remote, c: &Candidate) -> Vec<Line<'a>> {
+    let theme = &app.theme;
+    let mut lines = vec![
+        Line::from(vec![Span::styled("On Drive: ", theme.bold()), Span::raw(c.path.display().to_string())]),
+        Line::from(vec![Span::styled("Size: ", theme.bold()), Span::raw(format!("{}   made {}", c.size, c.modified))]),
+    ];
+    if let Some((name, since)) = &r.downloading {
+        let e = app.now_ms.saturating_sub(*since) / 1000;
+        let spin = theme.sym.spinner[app.frame % theme.sym.spinner.len()];
+        lines.push(Line::raw(""));
+        lines.push(Line::styled(format!("{spin} Downloading {name} · {}:{:02} · Esc stops", e / 60, e % 60), theme.info()));
+    }
+    lines.push(Line::raw(""));
+    let b = r.backup(&c.path);
+    if c.is_dat() {
+        lines.push(Line::raw(format!("Howdy face model. Restoring installs it as /etc/howdy/models/{}.dat.", app.header.user)));
+    } else if let Some(info) = b.and_then(crate::drive::sidecar_info) {
+        lines.extend(
+            manifest_lines(theme, &info)
+                .into_iter()
+                .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content.into_owned(), s.style)).collect::<Vec<_>>())),
+        );
+    } else {
+        lines.push(Line::styled("Contents unknown until downloaded (no sidecar).", theme.dim()));
+    }
+    lines.push(Line::raw(""));
+    let next = if st.mode == Mode::Inspect && b.is_some_and(|b| b.sidecar.is_some()) {
+        "Shown from its sidecar: nothing is downloaded."
+    } else {
+        "Enter downloads it to a private folder, checks it against its sidecar, then goes on as usual. The copy is wiped afterwards."
+    };
+    lines.push(Line::styled(next, theme.dim()));
+    lines
+}
+
+fn hosts_view(f: &mut Frame, body: Rect, app: &App, st: &ImportState) {
+    let theme = &app.theme;
+    let Some(r) = st.remote.as_ref() else { return };
+    let rows = (r.hosts.len().max(1) as u16 + 2).min(body.height.saturating_sub(5));
+    let [list_area, details] = Layout::vertical([Constraint::Length(rows), Constraint::Min(3)]).areas(body);
+    let items: Vec<ListItem> = r
+        .hosts
+        .iter()
+        .map(|h| {
+            if *h == r.this_host {
+                ListItem::new(Line::from(vec![Span::raw(h.clone()), Span::styled("  this computer", theme.dim())]))
+            } else {
+                ListItem::new(h.clone())
+            }
+        })
+        .collect();
+    let list = List::new(items).highlight_style(theme.selected()).highlight_symbol(format!("{} ", theme.sym.pointer));
+    let mut ls = ListState::default().with_selected((!r.hosts.is_empty()).then_some(r.host_sel));
+    f.render_stateful_widget(list.block(block(theme, format!(" Machines with backups in {} ", r.folder))), list_area, &mut ls);
+    let mut lines: Vec<Line> = Vec::new();
+    if r.loading_hosts {
+        lines.push(Line::styled(format!("{} Asking Proton Drive{}", theme.sym.spinner[app.frame % theme.sym.spinner.len()], theme.sym.ellipsis), theme.dim()));
+    } else if let Some(e) = &r.error {
+        lines.push(Line::styled(format!("{} {e}", theme.sym.fail), theme.error()));
+        lines.push(Line::styled("r tries again", theme.dim()));
+    } else if r.hosts.is_empty() {
+        lines.push(Line::raw("No kast backups on Proton Drive yet."));
+        lines.push(Line::raw(""));
+        lines.push(Line::styled("Back up to Proton Drive from Export (7) first.", theme.dim()));
+    } else {
+        let h = &r.hosts[r.host_sel.min(r.hosts.len() - 1)];
+        lines.push(Line::raw(if *h == r.this_host {
+            "This computer's backups.".to_string()
+        } else {
+            format!("Backups made on {h}: restoring another machine's backup works too (the apps' data is the same everywhere).")
+        }));
+        lines.push(Line::raw(""));
+        lines.push(Line::styled("Enter lists them (one listing; each backup's sidecar tells what's inside).", theme.dim()));
+    }
+    f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true }).block(block(theme, " Details ")), details);
 }
 
 /// (source list, details) areas.
@@ -961,6 +1248,11 @@ pub fn hints(st: &ImportState) -> &'static [(&'static str, &'static str)] {
     match st.stage {
         Stage::Source => &[("↑/↓", "move"), ("Enter", "choose"), ("Esc", "back"), ("?", "help")],
         Stage::Folder => &[("Tab", "complete"), ("Enter", "list backups"), ("Esc", "back")],
+        Stage::Hosts => &[("↑/↓", "move"), ("Enter", "list backups"), ("r", "refresh"), ("Esc", "back")],
+        Stage::Pick if st.remote.as_ref().is_some_and(|r| r.downloading.is_some()) => &[("Esc", "stop the download")],
+        Stage::Pick if st.remote.is_some() && !st.filtering => {
+            &[("↑/↓", "move"), ("Enter", "download & choose"), ("/", "filter"), ("Esc", "machines"), ("?", "help")]
+        }
         Stage::Options(_) if st.auto => &[("↑/↓", "move"), ("Space", "toggle"), ("Enter", "choose"), ("s", "use this"), ("Esc", "back"), ("?", "help")],
         Stage::Options(_) => &[("↑/↓", "move"), ("Space", "toggle"), ("Enter", "choose"), ("s", "start"), ("Esc", "back"), ("?", "help")],
         Stage::Pick if st.filtering => &[("type", "filter"), ("Enter", "done"), ("Esc", "clear")],
@@ -1133,6 +1425,107 @@ mod tests {
         assert!(matches!(st(&a).stage, Stage::Source));
         update(&mut a, key(KeyCode::Esc));
         assert!(matches!(a.screen, Screen::Menu));
+    }
+
+    #[test]
+    fn short_sizes() {
+        assert_eq!([short_size(900), short_size(8192), short_size(536_870_912), short_size(2_254_857_216)], ["900B", "8.0K", "512M", "2.1G"]);
+    }
+
+    fn remote_list() -> Vec<crate::drive::RemoteBackup> {
+        let side = serde_json::json!({
+            "size": 2_254_857_216u64, "sha256": "ab", "created_at": "2026-10-16T21:04:11+02:00",
+            "manifest": { "created_at": "2026-10-16T21:04:11+02:00", "hostname": "archbox", "user": "p3ter", "target": "all", "include_media": true,
+                          "apps": { "beeper": { "folder": "BeeperTexts" }, "zen": {}, "kde": {} } }
+        });
+        let b = |name: &str, size: u64, sidecar: Option<serde_json::Value>| crate::drive::RemoteBackup {
+            name: name.into(),
+            remote: format!("/my-files/kast-backups/archbox/{name}"),
+            size: Some(size),
+            modified: Some("2026-10-10T08:00:00.000Z".into()),
+            sidecar,
+        };
+        vec![
+            b("all_backup_2026-10-16_210411.zip", 2_254_857_216, Some(side)),
+            b("zen_backup_2026-10-10_080000.zip", 536_870_912, None),
+            b("p3ter_face_model_2026-09-01_100000.dat", 8192, None),
+        ]
+    }
+
+    /// The restore screen on Proton Drive's machines.
+    fn on_drive(w: u16, h: u16) -> App {
+        let mut a = app(w, h);
+        a.drive = Some(Box::new(drive::tests::info(Some(crate::proton::Status::SignedIn))));
+        update(&mut a, key(KeyCode::Char('6')));
+        update(&mut a, key(KeyCode::Down));
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::DriveHosts)));
+        update(&mut a, Event::Loaded(Loaded::DriveHosts(Ok(vec!["laptop".into(), "archbox".into(), "desktop-old".into()]))));
+        a
+    }
+
+    #[test]
+    fn restore_from_proton_drive() {
+        let a = on_drive(80, 24);
+        let r = st(&a).remote.as_ref().unwrap();
+        assert_eq!(r.hosts, ["archbox", "desktop-old", "laptop"], "this machine first, preselected");
+        insta::assert_snapshot!("import_drive_hosts_80x24", render(&a));
+        for (w, h) in [(80, 24), (140, 40)] {
+            let mut a = on_drive(w, h);
+            assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::DriveBackups(h)) if h == "archbox"));
+            assert!(matches!(st(&a).stage, Stage::Pick) && st(&a).loading);
+            update(&mut a, Event::Loaded(Loaded::DriveBackups { host: "archbox".into(), result: Ok(remote_list()) }));
+            insta::assert_snapshot!(format!("import_drive_backups_{w}x{h}"), render(&a));
+            // The second has no sidecar
+            update(&mut a, key(KeyCode::Down));
+            assert!(render(&a).contains("Contents unknown until downloaded"));
+            // Enter downloads; Esc stops it; Enter again, and the copy goes to the usual steps
+            let Some(Command::DriveDownload(b)) = update(&mut a, key(KeyCode::Enter)) else { panic!("no download") };
+            assert_eq!(b.name, "zen_backup_2026-10-10_080000.zip");
+            assert!(render(&a).contains("Downloading zen_backup_2026-10-10_080000.zip"));
+            assert!(update(&mut a, key(KeyCode::Down)).is_none(), "keys wait while downloading");
+            assert!(matches!(update(&mut a, key(KeyCode::Esc)), Some(Command::DriveCancelTransfer)));
+            assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::DriveDownload(_))));
+            let local = PathBuf::from("/home/p3ter/.cache/kast/proton-restore/x/zen_backup_2026-10-10_080000.zip");
+            let cmd = update(&mut a, Event::Loaded(Loaded::DriveDownloaded { remote: b.remote.clone(), result: Ok(local.clone()) }));
+            assert!(matches!(cmd, Some(Command::Inspect { path, pick: true }) if path == local));
+        }
+        // A failed download is shown, and Esc goes back to the machines, then the sources
+        let mut a = on_drive(80, 24);
+        update(&mut a, key(KeyCode::Enter));
+        update(&mut a, Event::Loaded(Loaded::DriveBackups { host: "archbox".into(), result: Ok(remote_list()) }));
+        update(&mut a, key(KeyCode::Enter));
+        update(
+            &mut a,
+            Event::Loaded(Loaded::DriveDownloaded {
+                remote: "/x/all.zip".into(),
+                result: Err("The download doesn't match its sidecar's checksum (sha256)".into()),
+            }),
+        );
+        assert!(a.toast.as_ref().unwrap().text.contains("checksum"));
+        update(&mut a, key(KeyCode::Esc));
+        assert!(matches!(st(&a).stage, Stage::Hosts));
+        update(&mut a, key(KeyCode::Esc));
+        assert!(matches!(st(&a).stage, Stage::Source) && st(&a).remote.is_none());
+        assert!(matches!(update(&mut a, key(KeyCode::Esc)), Some(Command::DriveWipeRestore)));
+        // Nothing there yet
+        let mut a = on_drive(80, 24);
+        update(&mut a, Event::Loaded(Loaded::DriveHosts(Ok(vec![]))));
+        assert!(render(&a).contains("No kast backups on Proton Drive yet"));
+    }
+
+    #[test]
+    fn inspect_from_proton_drive_uses_the_sidecar() {
+        let mut a = app(140, 40);
+        a.drive = Some(Box::new(drive::tests::info(Some(crate::proton::Status::SignedIn))));
+        update(&mut a, key(KeyCode::Char('9')));
+        update(&mut a, key(KeyCode::Down));
+        update(&mut a, key(KeyCode::Enter));
+        update(&mut a, Event::Loaded(Loaded::DriveHosts(Ok(vec!["archbox".into()]))));
+        update(&mut a, key(KeyCode::Enter));
+        update(&mut a, Event::Loaded(Loaded::DriveBackups { host: "archbox".into(), result: Ok(remote_list()) }));
+        let out = render(&a);
+        assert!(out.contains("Shown from its sidecar") && out.contains("BEEPER"));
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none(), "no download for a sidecar");
     }
 
     #[test]

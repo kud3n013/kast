@@ -750,7 +750,7 @@ impl Cli {
                 on_line(None);
                 next_tick += Duration::from_secs(1);
             }
-            let canceled = tracked && crate::report::cancel_requested();
+            let canceled = (tracked && crate::report::cancel_requested()) || TRANSFER_CANCEL.load(std::sync::atomic::Ordering::SeqCst);
             if canceled || Instant::now() >= deadline {
                 kill_group(pgid);
                 let _ = child.wait();
@@ -880,6 +880,17 @@ pub fn kill_group(pgid: i32) {
 /// The running `auth login`, killed on cancel and by `ctx::cleanup_temp_state` on the way out
 /// (an orphan would keep polling Proton for ten minutes).
 static LOGIN_PGID: std::sync::Mutex<Option<i32>> = std::sync::Mutex::new(None);
+
+/// Stops a transfer running outside a job (the restore screen's download): Esc sets it.
+static TRANSFER_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn cancel_transfer() {
+    TRANSFER_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn reset_transfer_cancel() {
+    TRANSFER_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+}
 
 pub fn kill_login() {
     if let Some(pgid) = LOGIN_PGID.lock().unwrap().take() {
