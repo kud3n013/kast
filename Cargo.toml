@@ -1,6 +1,6 @@
 [package]
 name = "kast"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Kud3n's Arch Setup Tool: Arch Linux / CachyOS fast setup TUI with an embedded App Vault backup engine"
 
