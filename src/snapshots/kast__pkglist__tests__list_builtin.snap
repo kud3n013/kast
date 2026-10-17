@@ -1,0 +1,49 @@
+---
+source: src/pkglist.rs
+expression: "list_text(&pl, Some(&installed))"
+---
+Package list: Built-in · kast 0.0.0 · 36 packages · offline: could not reach raw.githubusercontent.com (timeout)
+
+Official repositories (23)
+    zen-browser-bin
+  ✔ zotero
+    proton-vpn-cli
+    inkscape
+    chromium
+    obsidian
+  ✔ fcitx5
+    fcitx5-configtool
+    fcitx5-gtk
+    fcitx5-qt
+    fcitx5-unikey
+    vesktop-bin                   → fallback vesktop
+    valkey
+    kdenlive
+    steam
+    zed-globalmenu                replaces zed
+    wine
+    wine-gecko
+    wine-mono
+    gwenview
+    haruna
+    libreoffice-fresh
+    libreoffice-fresh-vi
+
+kud3n's repository (6)
+    beeper
+    howdy-next
+    gdlauncher-carbon
+    searxng
+    archrepo/freedownloadmanager  replaces freedownloadmanager-bin
+  ✔ archrepo/sine                 replaces sine-bin
+
+Add-ons (7)
+    freedownloadmanager-elephant  needs archrepo/freedownloadmanager
+    zotero-better-bibtex          needs zotero
+    zotmoov                       needs zotero
+    zotero-better-notes           needs zotero
+    zotero-ocr                    needs zotero
+    zotero-pdf-translate          needs zotero
+    zotero-mcp                    needs zotero
+
+✔ already installed

@@ -981,6 +981,7 @@ pub mod tests {
             partition: None,
             repo_configured: true,
             log_file: "/var/log/kast.log".into(),
+            packages: "Online · kud3n013/kast@main · fetched 04:39 · 36 packages".into(),
             issues,
             howdy_enrolled: howdy,
         }

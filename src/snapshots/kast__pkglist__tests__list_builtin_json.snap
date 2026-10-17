@@ -1,0 +1,196 @@
+---
+source: src/pkglist.rs
+expression: "serde_json::to_string_pretty(&list_json(&pl, Some(&installed))).unwrap()"
+---
+{
+  "source": "builtin",
+  "line": "Built-in · kast 0.0.0 · 36 packages · offline: could not reach raw.githubusercontent.com (timeout)",
+  "location": "kast 0.0.0",
+  "fetched": null,
+  "schema": 1,
+  "reason": "offline: could not reach raw.githubusercontent.com (timeout)",
+  "warnings": [],
+  "count": 36,
+  "added": [],
+  "removed": [],
+  "groups": [
+    {
+      "id": "official",
+      "name": "Official repositories",
+      "packages": [
+        {
+          "name": "zen-browser-bin",
+          "installed": false
+        },
+        {
+          "name": "zotero",
+          "installed": true
+        },
+        {
+          "name": "proton-vpn-cli",
+          "installed": false
+        },
+        {
+          "name": "inkscape",
+          "installed": false
+        },
+        {
+          "name": "chromium",
+          "installed": false
+        },
+        {
+          "name": "obsidian",
+          "installed": false
+        },
+        {
+          "name": "fcitx5",
+          "installed": true
+        },
+        {
+          "name": "fcitx5-configtool",
+          "installed": false
+        },
+        {
+          "name": "fcitx5-gtk",
+          "installed": false
+        },
+        {
+          "name": "fcitx5-qt",
+          "installed": false
+        },
+        {
+          "name": "fcitx5-unikey",
+          "installed": false
+        },
+        {
+          "name": "vesktop-bin",
+          "fallback": "vesktop",
+          "installed": false
+        },
+        {
+          "name": "valkey",
+          "installed": false
+        },
+        {
+          "name": "kdenlive",
+          "installed": false
+        },
+        {
+          "name": "steam",
+          "installed": false
+        },
+        {
+          "name": "zed-globalmenu",
+          "replaces": "zed",
+          "installed": false
+        },
+        {
+          "name": "wine",
+          "installed": false
+        },
+        {
+          "name": "wine-gecko",
+          "installed": false
+        },
+        {
+          "name": "wine-mono",
+          "installed": false
+        },
+        {
+          "name": "gwenview",
+          "installed": false
+        },
+        {
+          "name": "haruna",
+          "installed": false
+        },
+        {
+          "name": "libreoffice-fresh",
+          "installed": false
+        },
+        {
+          "name": "libreoffice-fresh-vi",
+          "installed": false
+        }
+      ]
+    },
+    {
+      "id": "cachyos",
+      "name": "CachyOS repositories",
+      "packages": []
+    },
+    {
+      "id": "kud3n",
+      "name": "kud3n's repository",
+      "packages": [
+        {
+          "name": "beeper",
+          "installed": false
+        },
+        {
+          "name": "howdy-next",
+          "installed": false
+        },
+        {
+          "name": "gdlauncher-carbon",
+          "installed": false
+        },
+        {
+          "name": "searxng",
+          "installed": false
+        },
+        {
+          "name": "archrepo/freedownloadmanager",
+          "replaces": "freedownloadmanager-bin",
+          "installed": false
+        },
+        {
+          "name": "archrepo/sine",
+          "replaces": "sine-bin",
+          "installed": true
+        }
+      ]
+    },
+    {
+      "id": "addons",
+      "name": "Add-ons",
+      "packages": [
+        {
+          "name": "freedownloadmanager-elephant",
+          "requires": "archrepo/freedownloadmanager",
+          "installed": false
+        },
+        {
+          "name": "zotero-better-bibtex",
+          "requires": "zotero",
+          "installed": false
+        },
+        {
+          "name": "zotmoov",
+          "requires": "zotero",
+          "installed": false
+        },
+        {
+          "name": "zotero-better-notes",
+          "requires": "zotero",
+          "installed": false
+        },
+        {
+          "name": "zotero-ocr",
+          "requires": "zotero",
+          "installed": false
+        },
+        {
+          "name": "zotero-pdf-translate",
+          "requires": "zotero",
+          "installed": false
+        },
+        {
+          "name": "zotero-mcp",
+          "requires": "zotero",
+          "installed": false
+        }
+      ]
+    }
+  ]
+}

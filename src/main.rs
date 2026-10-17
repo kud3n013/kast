@@ -34,13 +34,16 @@ use crate::vault::import::{ImportOpts, cmd_import};
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
+    /// For the menu: which package list to use (see `kast packages --help`)
+    #[command(flatten)]
+    list: ListSource,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
     /// Run the full automatic setup: upgrade, repo, packages, services (no data partition or import)
     #[command(visible_alias = "automatic")]
-    Auto,
+    Auto(ListSource),
     /// Set up the universal data partition (/media/data & user dir symlinks); not part of auto
     #[command(visible_alias = "data")]
     Partition,
@@ -48,8 +51,12 @@ enum Cmd {
     #[command(visible_alias = "archrepo")]
     Repo,
     /// Install packages (official, CachyOS, kud3n, add-ons)
-    #[command(visible_alias = "pkgs")]
-    Packages,
+    #[command(
+        visible_alias = "pkgs",
+        after_help = "The list is packages.toml from kud3n013/kast's main branch, downloaded on every run. When it can't be\n\
+                      downloaded or isn't valid, kast uses the copy built into it and says why."
+    )]
+    Packages(PackagesArgs),
     /// Set up services (ProtonVPN & Fcitx5 packages, Howdy, Valkey/SearXNG)
     Services,
     /// Restore app data, KDE Plasma settings & face model (interactive without arguments)
@@ -114,6 +121,52 @@ const TARGETS: [&str; 16] = [
     "hypr",
     "hyprland",
 ];
+
+/// Which package list to use.
+#[derive(Args, Default, Clone)]
+struct ListSource {
+    /// Don't download the package list; use the one built into kast
+    #[arg(long, conflicts_with = "packages_file")]
+    offline: bool,
+    /// Use this package list instead of downloading it (to try edits to packages.toml)
+    #[arg(long, value_name = "PATH")]
+    packages_file: Option<PathBuf>,
+}
+
+impl ListSource {
+    /// The subcommand's choice, else the one given before it.
+    fn or(self, top: ListSource) -> ListSource {
+        if self.offline || self.packages_file.is_some() { self } else { top }
+    }
+
+    /// The list when it's known without a download: `--offline` or `--packages-file`.
+    fn known(&self) -> Result<Option<pkglist::PkgList>> {
+        Ok(match &self.packages_file {
+            Some(p) => Some(pkglist::load_local(p)?),
+            None if self.offline => Some(pkglist::load(true, pkglist::curl_fetch)),
+            None => None,
+        })
+    }
+
+    fn load(&self) -> Result<pkglist::PkgList> {
+        Ok(match self.known()? {
+            Some(l) => l,
+            None => pkglist::load(false, pkglist::curl_fetch),
+        })
+    }
+}
+
+#[derive(Args)]
+struct PackagesArgs {
+    /// Show the list and where it came from, without installing (no root needed)
+    #[arg(long)]
+    list: bool,
+    /// With --list: print JSON
+    #[arg(long, requires = "list")]
+    json: bool,
+    #[command(flatten)]
+    source: ListSource,
+}
 
 #[derive(Args)]
 struct LogArgs {
@@ -224,17 +277,44 @@ fn interactive_vault(cmd: &Option<Cmd>) -> bool {
 }
 
 fn needs_root(cmd: &Option<Cmd>) -> bool {
-    matches!(cmd, None | Some(Cmd::Auto | Cmd::Partition | Cmd::Repo | Cmd::Packages | Cmd::Services)) || interactive_vault(cmd)
+    match cmd {
+        Some(Cmd::Packages(a)) => !a.list,
+        _ => matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Partition | Cmd::Repo | Cmd::Services)) || interactive_vault(cmd),
+    }
 }
 
-fn dispatch(cmd: Option<Cmd>) -> Result<()> {
+/// Load the list and say which one it is, before anything is installed.
+fn announce_list(source: &ListSource) -> Result<pkglist::PkgList> {
+    let pl = source.load()?;
+    println!("Package list: {}", pl.source_line());
+    for w in &pl.list.warnings {
+        println!("  warning: {w}");
+    }
+    Ok(pl)
+}
+
+fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
     match cmd {
         None => tui::run(tui::Start::Menu),
-        Some(Cmd::Auto) => setup::run_automatic(&pkglist::builtin()),
+        Some(Cmd::Auto(s)) => setup::run_automatic(&announce_list(&s.or(top))?),
         Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
         Some(Cmd::Repo) => setup::add_kud3n_repo(false, 0, 1, 1),
-        Some(Cmd::Packages) => {
-            setup::install_packages(&pkglist::builtin(), false, 0, 1, 1);
+        Some(Cmd::Packages(a)) if a.list => {
+            // A fallback is a valid answer: it's shown with its reason, and the exit status is 0
+            let pl = a.source.or(top).load()?;
+            let installed: Option<std::collections::HashSet<String>> = ctx::output("pacman", &["-Qq"]).map(|o| o.lines().map(str::to_string).collect());
+            if a.json {
+                println!("{}", serde_json::to_string_pretty(&pkglist::list_json(&pl, installed.as_ref()))?);
+            } else {
+                print!("{}", pkglist::list_text(&pl, installed.as_ref()));
+            }
+            Ok(())
+        }
+        Some(Cmd::Packages(a)) => {
+            let pl = announce_list(&a.source.or(top))?;
+            setup::install_packages(&pl.list, false, 0, 1, 1);
+            // The dashboard drew over the line above
+            println!("Package list: {}", pl.source_line());
             Ok(())
         }
         Some(Cmd::Services) => setup::setup_services(false, 0, 1, 1),
@@ -285,7 +365,24 @@ fn install_signal_handlers() {
 }
 
 /// Variables the sudo re-exec keeps.
-const CARRIED_ENV: [&str; 10] = ["NO_COLOR", "KAST_PAGER", "PAGER", "VISUAL", "EDITOR", "TMUX", "STY", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY"];
+const CARRIED_ENV: [&str; 16] = [
+    "NO_COLOR",
+    "KAST_PAGER",
+    "PAGER",
+    "VISUAL",
+    "EDITOR",
+    "TMUX",
+    "STY",
+    "WAYLAND_DISPLAY",
+    "DISPLAY",
+    "XAUTHORITY",
+    "https_proxy",
+    "HTTPS_PROXY",
+    "all_proxy",
+    "ALL_PROXY",
+    "no_proxy",
+    "NO_PROXY",
+];
 
 /// The full-screen UI needs a terminal on both ends.
 fn interactive_terminal() -> bool {
@@ -307,7 +404,8 @@ fn main() -> ExitCode {
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(std::env::args().next().unwrap_or_default()));
         let mut sudo = Command::new("sudo");
         // sudo resets the environment; carry over what the app uses: NO_COLOR, the user's
-        // pager/editor for `e`/`E`, and the session/multiplexer for opening and copying the log
+        // pager/editor for `e`/`E`, the session/multiplexer for opening and copying the log, and
+        // the proxy for downloading the package list
         let carried: Vec<std::ffi::OsString> = CARRIED_ENV
             .iter()
             .filter_map(|k| {
@@ -328,7 +426,7 @@ fn main() -> ExitCode {
     ctx::init();
     install_signal_handlers();
 
-    let result = panic::catch_unwind(AssertUnwindSafe(|| dispatch(cli.cmd)));
+    let result = panic::catch_unwind(AssertUnwindSafe(|| dispatch(cli.cmd, cli.list)));
     ctx::cleanup_temp_state();
     tui::restore_terminal();
     match result {

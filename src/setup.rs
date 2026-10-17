@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 
 use crate::ctx::{self, add_issue, ctx, have, log, ok, ok_logged, output, run_as_user};
-use crate::pkglist::{Parsed, Pkg};
+use crate::pkglist::{Parsed, Pkg, PkgList};
 use crate::ui::{self, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW, Dash};
 
 pub const MOUNT_POINT: &str = "/media/data";
@@ -389,7 +389,12 @@ pub fn install_packages(list: &Parsed, auto: bool, o_start: i64, o_step: i64, o_
         let mut rc = d.exec_monitored(idx - 1, s_total, &format!("Installing {install} (pacman)"), pacman(args));
         let (mut status, mut mark) = (format!("[SUCCESS] {install} installed"), "✔");
         if rc != 0 {
-            if c.target_user != "root" && have("yay") && ctx::grant_yay_sudo() {
+            // A downloaded list can name any package: only the built-in list's may be built from the AUR
+            let aur_ok = crate::pkglist::builtin().allows_aur(install);
+            if !aur_ok && c.target_user != "root" && have("yay") {
+                log("WARN", &format!("pacman failed for {install}; not building it with yay: it isn't in kast's built-in package list."));
+            }
+            if aur_ok && c.target_user != "root" && have("yay") && ctx::grant_yay_sudo() {
                 log("WARN", &format!("pacman failed for {install}, attempting fallback with yay as {}...", c.target_user));
                 let yay =
                     run_as_user(&["yay", "-S", "--needed", "--noconfirm", "--answerclean", "None", "--answerdiff", "None", "--answeredit", "None", install]);
@@ -576,21 +581,23 @@ pub struct Summary {
     pub partition: Option<String>,
     pub repo_configured: bool,
     pub log_file: String,
+    /// Where the package list came from (`PkgList::source_line`)
+    pub packages: String,
     pub issues: Vec<String>,
     pub howdy_enrolled: bool,
 }
 
-pub fn run_automatic(list: &Parsed) -> Result<()> {
+pub fn run_automatic(list: &PkgList) -> Result<()> {
     let o_start = run_automatic_steps(list)?;
     ui::restore_terminal_interactive();
     ui::clear_screen();
-    print_summary(&collect_summary(o_start));
+    print_summary(&collect_summary(o_start, list));
     ui::read_choice("Press Enter to return to master menu...");
     Ok(())
 }
 
 /// The four steps of the automatic run; returns its start time.
-pub fn run_automatic_steps(list: &Parsed) -> Result<i64> {
+pub fn run_automatic_steps(list: &PkgList) -> Result<i64> {
     let o_start = ui::now();
     let o_total = 4;
     ctx::clear_issues();
@@ -600,13 +607,13 @@ pub fn run_automatic_steps(list: &Parsed) -> Result<i64> {
 
     system_upgrade(true, o_start, 1, o_total);
     add_kud3n_repo(true, o_start, 2, o_total)?;
-    install_packages(list, true, o_start, 3, o_total);
+    install_packages(&list.list, true, o_start, 3, o_total);
     setup_services(true, o_start, 4, o_total)?;
     Ok(o_start)
 }
 
 /// The state after the automatic run (takes the recorded issues).
-pub fn collect_summary(o_start: i64) -> Summary {
+pub fn collect_summary(o_start: i64, list: &PkgList) -> Summary {
     let c = ctx();
     let partition = is_mounted(MOUNT_POINT).then(|| {
         let mut p = format!("{MOUNT_POINT} mounted");
@@ -623,6 +630,7 @@ pub fn collect_summary(o_start: i64) -> Summary {
         partition,
         repo_configured: fs::read_to_string("/etc/pacman.conf").is_ok_and(|s| s.lines().any(|l| l.starts_with("[archrepo]"))),
         log_file: c.log_file.display().to_string(),
+        packages: list.source_line(),
         issues: ctx::take_issues(),
         howdy_enrolled: Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file(),
     }
@@ -647,6 +655,7 @@ fn print_summary(s: &Summary) {
     println!("  • Data Partition:     {partition}");
     println!("  • Kud3n Repo:         {repo}");
     println!("  • Log File:           {}", s.log_file);
+    println!("  • Package List:       {}", s.packages);
     if !issues.is_empty() {
         println!("\n{C_YELLOW}{C_BOLD}Issues:{C_RESET}");
         for issue in issues {

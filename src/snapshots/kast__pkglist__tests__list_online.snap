@@ -1,0 +1,51 @@
+---
+source: src/pkglist.rs
+expression: "list_text(&pl, None)"
+---
+Package list: Online · kud3n013/kast@main · fetched 04:39 · 36 packages
+  +1 added / −1 removed vs built-in
+    + gimp
+    − steam
+  warning: skipped unknown group "games" (1 packages)
+
+Official repositories (23)
+    zen-browser-bin
+    zotero
+    proton-vpn-cli
+    inkscape
+    chromium
+    obsidian
+    fcitx5
+    fcitx5-configtool
+    fcitx5-gtk
+    fcitx5-qt
+    fcitx5-unikey
+    vesktop-bin                   → fallback vesktop
+    valkey
+    kdenlive
+    zed-globalmenu                replaces zed
+    wine
+    gimp
+    wine-gecko
+    wine-mono
+    gwenview
+    haruna
+    libreoffice-fresh
+    libreoffice-fresh-vi
+
+kud3n's repository (6)
+    beeper
+    howdy-next
+    gdlauncher-carbon
+    searxng
+    archrepo/freedownloadmanager  replaces freedownloadmanager-bin
+    archrepo/sine                 replaces sine-bin
+
+Add-ons (7)
+    freedownloadmanager-elephant  needs archrepo/freedownloadmanager
+    zotero-better-bibtex          needs zotero
+    zotmoov                       needs zotero
+    zotero-better-notes           needs zotero
+    zotero-ocr                    needs zotero
+    zotero-pdf-translate          needs zotero
+    zotero-mcp                    needs zotero
