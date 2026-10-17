@@ -16,6 +16,9 @@ pub const MOUNT_POINT: &str = "/media/data";
 const DEFAULT_DATA_UUID: &str = "6C62ADEA62ADB96A";
 pub const REPO_URL: &str = "https://github.com/kud3n013/archrepo/releases/download/packages";
 const OLD_REPO_URL: &str = "https://kud3n013.github.io/archrepo/x86_64";
+/// archrepo signs its database and packages with this key (see the archrepo README).
+const REPO_KEY: &str = include_str!("../assets/archrepo.asc");
+const REPO_KEY_FPR: &str = "CFB791543B4B2D2821E9127AC012A9476C170A37";
 const PAM_RULE: &str = "auth      sufficient pam_howdy.so workaround=native";
 const HOWDY_HOOK: &str = "/usr/lib/systemd/system-sleep/howdy-resume.sh";
 const USER_DIRS: [&str; 9] = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Public", "Templates", "Videos", "Projects"];
@@ -228,13 +231,47 @@ pub fn migrate_user_dirs(
 
 // --- State 3: kud3n's repository ----------------------------------------------------
 
-/// New pacman.conf content with the [archrepo] block present and pointing at REPO_URL.
+/// New pacman.conf content with the [archrepo] block present, pointing at REPO_URL and
+/// requiring signatures. Older versions wrote `SigLevel = Optional TrustAll`; that line is
+/// upgraded, any other SigLevel the user set is kept.
 pub fn patch_pacman_conf(content: &str) -> String {
-    if content.contains("[archrepo]") {
-        content.replace(&format!("Server = {OLD_REPO_URL}"), &format!("Server = {REPO_URL}"))
-    } else {
-        format!("{content}\n[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n")
+    if !content.contains("[archrepo]") {
+        return format!("{content}\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n");
     }
+    let mut in_repo = false;
+    let mut out = String::with_capacity(content.len());
+    for line in content.split_inclusive('\n') {
+        let t = line.trim();
+        if t.starts_with('[') {
+            in_repo = t == "[archrepo]";
+        }
+        if in_repo && t.split_once('=').is_some_and(|(k, v)| k.trim() == "SigLevel" && v.split_whitespace().eq(["Optional", "TrustAll"])) {
+            out.push_str(&line.replace(t, "SigLevel = Required"));
+        } else if in_repo && t == format!("Server = {OLD_REPO_URL}") {
+            out.push_str(&line.replace(t, &format!("Server = {REPO_URL}")));
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
+/// Import archrepo's signing key into pacman's keyring and sign it locally, so pacman
+/// trusts the repo's signed database and packages. Safe to repeat.
+fn import_repo_key() -> Result<()> {
+    if !Path::new("/etc/pacman.d/gnupg/pubring.gpg").exists() && !ok_logged("pacman-key", &["--init"]) {
+        anyhow::bail!("pacman-key --init failed");
+    }
+    let mut key = tempfile::NamedTempFile::new().context("creating a temp file for the archrepo key")?;
+    std::io::Write::write_all(&mut key, REPO_KEY.as_bytes()).context("writing the archrepo key")?;
+    let path = key.path().to_string_lossy().into_owned();
+    if !ok_logged("pacman-key", &["--add", &path]) {
+        anyhow::bail!("pacman-key --add failed");
+    }
+    if !ok_logged("pacman-key", &["--lsign-key", REPO_KEY_FPR]) {
+        anyhow::bail!("pacman-key --lsign-key {REPO_KEY_FPR} failed");
+    }
+    Ok(())
 }
 
 pub fn add_kud3n_repo(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Result<()> {
@@ -243,6 +280,13 @@ pub fn add_kud3n_repo(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
     d.step("Repo", 0, s_total, "Inspecting /etc/pacman.conf", "Reading repository definitions...");
 
     d.step("Repo", 1, s_total, "Updating pacman.conf", "Configuring [archrepo]...");
+    match import_repo_key() {
+        Ok(()) => log("INFO", &format!("Imported and locally signed the archrepo key {REPO_KEY_FPR}")),
+        Err(e) => {
+            log("WARN", &format!("Could not import the archrepo signing key: {e:#}"));
+            add_issue("archrepo signing key could not be imported");
+        }
+    }
     let conf = fs::read_to_string("/etc/pacman.conf").context("reading /etc/pacman.conf")?;
     let had_repo = conf.contains("[archrepo]");
     let new = patch_pacman_conf(&conf);
@@ -686,10 +730,25 @@ mod tests {
     #[test]
     fn pacman_conf_block() {
         let added = patch_pacman_conf("[core]\nInclude = x\n");
-        assert_eq!(added, format!("[core]\nInclude = x\n\n[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n"));
+        assert_eq!(added, format!("[core]\nInclude = x\n\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n"));
         assert_eq!(patch_pacman_conf(&added), added);
         let old = format!("[archrepo]\nServer = {OLD_REPO_URL}\n");
         assert_eq!(patch_pacman_conf(&old), format!("[archrepo]\nServer = {REPO_URL}\n"));
+        // the SigLevel older versions wrote is upgraded, only inside [archrepo]
+        let trusting = format!("[extra]\nSigLevel = Optional TrustAll\n\n[archrepo]\nSigLevel = Optional  TrustAll\nServer = {REPO_URL}\n[x]\n");
+        assert_eq!(
+            patch_pacman_conf(&trusting),
+            format!("[extra]\nSigLevel = Optional TrustAll\n\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n[x]\n")
+        );
+        // a SigLevel the user chose is left alone
+        let custom = format!("[archrepo]\nSigLevel = Required DatabaseOptional\nServer = {REPO_URL}\n");
+        assert_eq!(patch_pacman_conf(&custom), custom);
+    }
+
+    #[test]
+    fn embedded_repo_key_is_armored() {
+        assert!(REPO_KEY.starts_with("-----BEGIN PGP PUBLIC KEY BLOCK-----"));
+        assert_eq!(REPO_KEY_FPR.len(), 40);
     }
 
     #[test]
