@@ -306,6 +306,9 @@ struct BackupArgs {
     /// Show actions without copying files or creating an archive
     #[arg(long)]
     dry_run: bool,
+    /// Don't start the apps -k (or the prompt) closed again after the backup
+    #[arg(long)]
+    no_relaunch: bool,
     /// Upload the backup to Proton Drive (sign in first: kast drive login)
     #[arg(long, value_name = "WHERE", value_parser = ["proton"])]
     upload: Option<String>,
@@ -332,6 +335,7 @@ impl BackupArgs {
             && !self.kill
             && !self.force
             && !self.dry_run
+            && !self.no_relaunch
             && self.upload.is_none()
             && self.keep.is_none()
             && self.also_local.is_none()
@@ -347,6 +351,7 @@ impl BackupArgs {
             kill: self.kill,
             force: self.force,
             dry_run: self.dry_run,
+            no_relaunch: self.no_relaunch,
             ..Default::default()
         }
     }

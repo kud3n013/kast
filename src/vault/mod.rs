@@ -411,6 +411,60 @@ pub fn process_running(name: &str, user: Option<&str>) -> bool {
     }
 }
 
+/// An app kast closed for a backup, and how to start it again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Relaunch {
+    pub app: String,
+    pub argv: Vec<String>,
+    pub cwd: Option<PathBuf>,
+}
+
+/// The processes among `procs` (pid, parent pid) whose parent isn't one of them: the ones
+/// that started the app (an Electron app's or Firefox's helpers are their children).
+pub fn top_processes(procs: &[(i32, i32)]) -> Vec<i32> {
+    procs.iter().filter(|(_, ppid)| !procs.iter().any(|(p, _)| p == ppid)).map(|(p, _)| *p).collect()
+}
+
+/// The parent pid from `/proc/<pid>/stat` ("pid (comm) state ppid ..."; comm may hold spaces).
+pub fn stat_ppid(stat: &str) -> Option<i32> {
+    stat[stat.rfind(')')? + 1..].split_whitespace().nth(1)?.parse().ok()
+}
+
+/// `/proc/<pid>/cmdline` as arguments.
+pub fn cmdline_argv(raw: &[u8]) -> Vec<String> {
+    raw.split(|b| *b == 0).filter(|a| !a.is_empty()).map(|a| String::from_utf8_lossy(a).into_owned()).collect()
+}
+
+/// How to start `apps` again after closing them (read before they're closed). The face model
+/// isn't an app, and the desktop session is never touched.
+pub fn relaunch_plan(apps: &[String]) -> Vec<Relaunch> {
+    let mut out: Vec<Relaunch> = Vec::new();
+    for app in apps.iter().filter(|a| !matches!(a.as_str(), "howdy" | "kde" | "hypr")) {
+        let procs: Vec<(i32, i32)> = running_pids(app)
+            .into_iter()
+            .filter_map(|p| fs::read_to_string(format!("/proc/{p}/stat")).ok().and_then(|s| stat_ppid(&s)).map(|pp| (p, pp)))
+            .collect();
+        for pid in top_processes(&procs) {
+            let argv = cmdline_argv(&fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default());
+            if argv.is_empty() || out.iter().any(|r| r.argv == argv) {
+                continue;
+            }
+            out.push(Relaunch { app: app.clone(), argv, cwd: fs::read_link(format!("/proc/{pid}/cwd")).ok() });
+        }
+    }
+    out
+}
+
+/// Start the closed apps again, as the user, in the background with no output.
+pub fn relaunch(list: &[Relaunch]) {
+    for r in list {
+        match crate::logio::os::start_detached(&r.argv, r.cwd.as_deref()) {
+            Ok(()) => log_info(&format!("Started {} again.", r.app)),
+            Err(e) => log_warn(&format!("Could not start {} again ({e}); start it yourself.", r.app)),
+        }
+    }
+}
+
 /// SIGTERM (so databases commit), wait up to 7s, then SIGKILL. False if any survived.
 pub fn terminate_apps(apps: &[String]) -> bool {
     let mut failed = false;
@@ -535,4 +589,20 @@ pub fn file_owner() -> (u32, u32) {
 
 pub fn is_dat(path: &Path) -> bool {
     path.to_string_lossy().ends_with(".dat")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relaunch_reads_the_top_process() {
+        // beeper (100, started by plasmashell 50) and its helpers; a second window process
+        let procs = [(100, 50), (101, 100), (102, 101), (300, 1)];
+        assert_eq!(top_processes(&procs), vec![100, 300]);
+        assert_eq!(stat_ppid("4242 (Web Content (x)) S 4100 4242 ..."), Some(4100));
+        assert_eq!(stat_ppid("garbage"), None);
+        assert_eq!(cmdline_argv(b"/opt/beeper/beepertexts\0--no-sandbox\0\0"), vec!["/opt/beeper/beepertexts".to_string(), "--no-sandbox".into()]);
+        assert!(cmdline_argv(b"").is_empty());
+    }
 }

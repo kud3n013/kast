@@ -141,6 +141,21 @@ pub fn open_file(path: &Path, hint: &str) -> Report {
     }
 }
 
+/// Start a desktop app as the user, in its own session, with no output, and don't wait for
+/// it (an app kast closed for a backup, started again).
+pub fn start_detached(argv: &[String], cwd: Option<&Path>) -> io::Result<()> {
+    let (user, desktop) = desktop_session();
+    let mut cmd = Launch::as_user(ctx().is_root, &user, &desktop, argv).command();
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    if let Some(d) = cwd.filter(|d| d.is_dir()) {
+        cmd.current_dir(d);
+    }
+    detach(&mut cmd);
+    let mut child = cmd.spawn()?;
+    std::thread::spawn(move || child.wait());
+    Ok(())
+}
+
 /// Open a web address in the user's browser (the sign-in link).
 pub fn open_url(url: &str, hint: &str) -> Report {
     if !session().gui() {

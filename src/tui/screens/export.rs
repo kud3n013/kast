@@ -481,7 +481,11 @@ fn confirm_upload(app: &mut App) -> Option<Command> {
         None => "Built in a private folder and removed after the upload.".into(),
     });
     details.push(format!("Keeps the newest {} on Drive; older ones go to its trash.", up.keep));
-    details.push(if st.kill { "Running apps among these are closed first.".into() } else { "If any of these apps run, you will be asked what to do.".into() });
+    details.push(if st.kill {
+        "Running apps among these are closed first and started again after.".into()
+    } else {
+        "If any of these apps run, you will be asked what to do.".into()
+    });
     app.modal = Some(Modal {
         kind: ModalKind::Confirm(Box::new(JobKind::Upload(opts, up))),
         title: "Back up to Proton Drive".into(),
@@ -526,7 +530,7 @@ fn confirm(app: &mut App) -> Option<Command> {
         details.push(format!("Media:       {}", if st.include_media { "included" } else { "left out (smaller archive)" }));
     }
     details.push(if st.kill {
-        "Running apps among these are closed first, so databases are consistent.".into()
+        "Running apps among these are closed first, so databases are consistent, and started again after.".into()
     } else {
         "If any of these apps run, you will be asked what to do.".into()
     });
@@ -616,7 +620,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
             }
             Row::Media => ListItem::new(format!("{} Include large media (attachments, site data)", check(st.include_media))),
             Row::Format => ListItem::new(format!("{} Standalone .dat (otherwise a .zip with manifest)", check(st.dat))),
-            Row::Kill => ListItem::new(format!("{} Close running apps first", check(st.kill))),
+            Row::Kill => ListItem::new(format!("{} Close running apps first (started again after)", check(st.kill))),
             Row::LocalCopy => ListItem::new(format!("{} Also keep a copy in {}", check(st.local_copy), st.dir.display())),
             Row::Unchanged => ListItem::new(format!("{} Skip the upload if nothing changed since the last one", check(st.skip_unchanged))),
             Row::Dest => {

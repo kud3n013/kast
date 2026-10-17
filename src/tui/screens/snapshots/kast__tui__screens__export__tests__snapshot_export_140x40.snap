@@ -16,7 +16,7 @@ expression: render(&a)
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
 │  [x] Include large media (attachments, site data)                         ││                                                             │
-│  [x] Close running apps first                                             ││                                                             │
+│  [x] Close running apps first (started again after)                       ││                                                             │
 │  File name: beeper_backup_2026-10-17_101500.zip                           ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
 │                                                                           ││                                                             │

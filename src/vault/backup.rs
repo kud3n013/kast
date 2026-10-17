@@ -25,6 +25,20 @@ pub struct BackupOpts {
     pub no_howdy: bool,
     /// Built into a staging folder for an upload: not recorded as a local backup
     pub staged: bool,
+    /// Don't start the apps kast closed again afterwards
+    pub no_relaunch: bool,
+}
+
+/// Starts the apps a backup closed again when the backup ends, however it ends (an error
+/// or a canceled job unwinding included).
+struct RelaunchAfter(Vec<Relaunch>);
+
+impl Drop for RelaunchAfter {
+    fn drop(&mut self) {
+        if !self.0.is_empty() {
+            relaunch(&self.0);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -210,6 +224,8 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
             running_info.push(format!("{app} (PID: {})", pid_list(&pids)));
         }
     }
+    let mut _relaunch = RelaunchAfter(Vec::new());
+    let plan = || if o.no_relaunch || o.dry_run { Vec::new() } else { relaunch_plan(&running) };
     if !running.is_empty() && o.running == RunningPolicy::Skip {
         // Never close an app the user is working in: back up the rest, say what was left out
         for app in &running {
@@ -228,6 +244,7 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
                 "Notice: Running applications detected ({list}). During a live backup, you will be prompted to close/kill them or use -k/--kill."
             ));
         } else if o.kill {
+            _relaunch.0 = plan();
             if !terminate_apps(&running) {
                 log_error("Could not terminate all running applications. Backup aborted to protect data.");
                 return Err(reported());
@@ -237,6 +254,7 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
             log_warn("Backing up applications while active can produce inconsistent or corrupted database snapshots (SQLite WAL / LevelDB locks).");
             let ask = Prompt::yes_no(format!("Close/kill active application(s) ({list}) to run backup safely?"), true);
             if report::ask(&ask.with_details(running_info)) {
+                _relaunch.0 = plan();
                 if !terminate_apps(&running) {
                     log_error("Could not terminate all running applications. Backup aborted to protect data.");
                     return Err(reported());
