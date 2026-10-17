@@ -57,10 +57,12 @@ kast                  # full-screen app (re-runs itself through sudo)
 kast import           # full-screen restore screen (also through sudo)
 kast export           # full-screen backup screen (also through sudo)
 
-kast auto             # upgrade, repo, packages, services (no partition, no import)
-kast partition        # optional: /media/data + home folder symlinks
+kast auto             # upgrade, repo, packages, services (--no-snapshot: no btrfs snapshot first)
+kast partition        # disabled for now (it will return)
 kast repo | packages | services
 kast packages --list  # what would be installed, and from which list (no root needed)
+kast undo --list      # what kast changed, run by run; kast undo <run> / --last undoes it
+kast uninstall steam  # remove apps of the list (keeps what something else needs)
 kast status           # detected apps, Howdy, KDE, Hyprland
 kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
@@ -147,7 +149,7 @@ and `l` opens the log (`/var/log/kast.log`). Below 60×20 it asks for a bigger w
 | Screen | Keys |
 | --- | --- |
 | Everywhere | `?` help · `Ctrl+C` cancel / back / quit · mouse wheel scrolls |
-| Menu | `↑/↓` `j/k` move (wraps) · `Home/End` · `Enter` run · `1`–`9` run directly · `l` log · `q`/`Esc` quit · click selects, double-click runs |
+| Menu | `↑/↓` `j/k` move (wraps, skips the disabled entry) · `Home/End` · `Enter` run · `1`–`9` `u` `x` run directly · `l` log · `q`/`Esc` quit · click selects, double-click runs |
 | Progress | `PgUp/PgDn` `↑/↓` scroll (pauses following) · `g`/`G` oldest / follow · `Esc`/`q` cancel the job (asks first) · when done: `Enter` back, `l` full log |
 | Questions | `y`/`n` · `←/→` `Tab` choose · `Enter` the highlighted button · `Esc` always answers No |
 | Summary | `Enter` back to menu · `l` full log |
@@ -162,7 +164,7 @@ and `l` opens the log (`/var/log/kast.log`). Below 60×20 it asks for a bigger w
 
 Menu option 1 first shows the steps of a full setup, in the order they run:
 
-1. Data partition (off by default): first, since backups usually live on `/media/data`
+1. Data partition: **disabled for now** (shown greyed out; it will return in a future version)
 2. Export data (off by default): before anything below changes your apps
 3. System upgrade · 4. kud3n's repository · 5. Install packages · 6. Services (all on by default)
 7. Import data (off by default): last, once the apps are installed and `/media/data` is mounted
@@ -177,8 +179,72 @@ Menu option 4 uses the same app picker, then asks before installing. On the comm
 `kast packages --only a,b` / `--skip a,b` do the same; `kast auto` and `kast packages` without
 them install everything, as before.
 | Status | `r` refresh · `↑/↓` scroll · `Esc` back |
+| Undo (`u`) | runs: `↑/↓` move, `Enter` open, `p` prune · changes: the checklist · preview: `←/→` Start / Back, `s` start · `Esc` back one stage |
+| Uninstall (`x`) | the checklist (nothing checked to start with) · `Enter` preview · `s` start |
 | Log | `PgUp/PgDn` `↑/↓` scroll · `g`/`G` top / end · `Esc` back |
 | Log file (menu, log, summary, progress when done) | `e` pager · `E` editor · `o` open with the default app · `f` show in the file manager · `y` copy the log · `Y` copy its path (`y`/`Y` also while a job runs) |
+
+Checking the system upgrade adds a stage that says plainly that upgrades can't be undone by
+kast, and offers a snapshot first when the machine can take one (see below).
+
+## Undo and uninstall
+
+Everything kast changes on the system is recorded in **`/var/lib/kast/`** (root only: the
+folder is 0700, files 0600): `journal.jsonl`, one JSON line per change, written *before* the
+change with what was there before and again after it, and `files/<run>/<sha256>`, copies of
+the files kast changed. A journal or copy that isn't root's or that others can write is
+refused, never used. A change that was interrupted (a crash, a power cut) shows as
+"incomplete" and is undone from what was there before it.
+
+Menu `u` **Undo changes** lists the runs newest first → the changes of one → a preview of
+exactly what will run, in order → a job. What it can undo, newest first:
+
+| Change | Undo |
+| --- | --- |
+| Packages kast installed | `pacman -Rns`, first (archrepo's packages go before `[archrepo]`); packages something else needs now, or that you marked explicitly installed since, are kept and say why |
+| Legacy packages a swap removed (`sine-bin`, `zed`, ...) | offered for reinstall, unchecked |
+| `/etc/pacman.conf`, the archrepo key | the file restored (or just the `[archrepo]` block taken out if you edited it since); the key removed if kast imported it; packages still installed from archrepo are listed (they stop getting updates) and can be removed too |
+| PAM files, the Howdy resume hook, `howdy set`, services | files restored or deleted; then the PAM files are checked (they parse, their modules and includes exist, `sudo` keeps an auth stack): if not, they're put back as they were and the undo stops, so `sudo` keeps working; values set back; only units kast enabled are disabled |
+| A restore | put back from its safety snapshot (as your user). Without a snapshot it can't be undone and shows greyed out |
+| A backup | "delete the backup file", unchecked |
+| The system upgrade | never undone by kast; with a snapshot the summary and the undo list give the rollback commands |
+
+A file changed since kast wrote it is flagged with a short diff: restore it anyway or keep
+yours (`kast undo` skips it unless `--force`). An undone change is marked as such and isn't
+undone twice.
+
+Menu `x` **Uninstall apps** lists the list's installed apps, marked "installed by kast" (with
+the date) or "installed before kast / outside kast", none checked; removal keeps anything
+another package needs. Uninstalls are recorded too.
+
+```sh
+sudo kast undo --list [--json]              # runs and their changes (needs sudo: /var/lib/kast is root's)
+sudo kast undo <run> [--step services] [--dry-run] [--force]
+sudo kast undo --last
+sudo kast undo --prune [--keep 5]           # delete the file copies of old or fully undone runs
+sudo kast uninstall zotero steam [--dry-run]
+```
+
+The last 10 runs keep their file copies by default (`keep_runs` in
+`/var/lib/kast/settings.json` changes it); the undo screen shows how much they take and `p`
+prunes the rest, after asking. `kast import FILE` / `kast backup ...` run as your own user
+aren't recorded (they say so); run them with sudo to record them.
+
+**Restores ask first:** "Snapshot your current app data before importing?", with its size
+and time, yes by default. Saying no needs a second keypress after a warning: such an import
+can't be undone. `--no-safety-backup` prints the same warning.
+
+### Snapshots before the upgrade
+
+| `/` is | kast offers |
+| --- | --- |
+| btrfs, snapper with a `root` config | a `snapper -c root create --type pre` snapshot before the upgrade and a `post` one after, on by default. With snap-pac installed (it already snapshots every pacman run) it's off by default but still offered. Roll back with your boot menu (limine-snapper-sync, grub-btrfs) or `sudo snapper -c root rollback <pre>` and reboot, or file by file with `snapper undochange <pre>..<post>`: the summary names the numbers |
+| btrfs, Timeshift in btrfs mode | `timeshift --create --comments "kast before upgrade" --tags O`; restore with `sudo timeshift --restore` |
+| btrfs, nothing set up | the hint to install snapper (on CachyOS likely `cachyos-snapper-support`); kast installs nothing |
+| anything else | the warning, and the advice to make a backup first |
+
+If the snapshot fails, the app asks whether to upgrade without one. `kast auto` stops
+before the upgrade then, unless it was started with `--no-snapshot`.
 
 ### Getting the log out
 
