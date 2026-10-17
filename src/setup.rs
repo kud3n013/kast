@@ -300,30 +300,16 @@ const PKGS_OFFICIAL: &[&str] = &[
     "libreoffice-fresh",
     "libreoffice-fresh-vi",
 ];
-const PKGS_KUD3N: &[&str] = &[
-    "zalo-for-linux",
-    "beeper",
-    "howdy-next",
-    "antigravity",
-    "gdlauncher-carbon",
-    "searxng",
-    "archrepo/proton-mail",
-    "archrepo/proton-pass",
-    "archrepo/freedownloadmanager",
-    "archrepo/sine",
-    "archrepo/hyprmod",
-];
+const PKGS_KUD3N: &[&str] =
+    &["zalo-for-linux", "beeper", "howdy-next", "antigravity", "gdlauncher-carbon", "searxng", "archrepo/freedownloadmanager", "archrepo/sine"];
 const PKGS_ADDONS: &[&str] =
     &["freedownloadmanager-elephant", "zotero-better-bibtex", "zotmoov", "zotero-better-notes", "zotero-ocr", "zotero-pdf-translate", "zotero-mcp"];
 
 /// Ensure archrepo versions are used instead of legacy/AUR packages.
 fn canonical_pkg(pkg: &str) -> &str {
     match pkg {
-        "proton-mail-bin" | "proton-mail" => "archrepo/proton-mail",
-        "proton-pass" => "archrepo/proton-pass",
         "freedownloadmanager" => "archrepo/freedownloadmanager",
         "sine" | "sine-bin" => "archrepo/sine",
-        "hyprmod" | "hyprmod-bin" | "hyprmod-git" => "archrepo/hyprmod",
         "zed" => "zed-globalmenu",
         p => p,
     }
@@ -370,11 +356,8 @@ pub fn install_packages(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
         // Replace a conflicting legacy/bin package, but only when the replacement is
         // actually available, otherwise the app would just disappear.
         let legacy = match name {
-            "proton-mail" => Some("proton-mail-bin"),
-            "proton-pass" => Some("proton-pass-bin"),
             "freedownloadmanager" => Some("freedownloadmanager-bin"),
             "sine" => Some("sine-bin"),
-            "hyprmod" => Some(if ok("pacman", &["-Qq", "hyprmod-bin"]) { "hyprmod-bin" } else { "hyprmod-git" }),
             "zed-globalmenu" => Some("zed"),
             _ => None,
         };
