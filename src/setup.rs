@@ -329,6 +329,20 @@ fn canonical_pkg(pkg: &str) -> &str {
     }
 }
 
+/// `pacman -Si` output in the C locale, so the field labels are the English ones.
+fn sync_info(pkg: &str) -> Option<String> {
+    let out = pacman(&["-Si", pkg]).env("LC_ALL", "C").stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Whether `pacman -Si` output lists `legacy` under "Conflicts With" (version constraints ignored).
+fn conflicts_with(si: &str, legacy: &str) -> bool {
+    si.lines()
+        .filter_map(|l| l.split_once(':'))
+        .filter(|(k, _)| k.trim() == "Conflicts With")
+        .any(|(_, v)| v.split_whitespace().any(|c| c.split(['<', '>', '=']).next() == Some(legacy)))
+}
+
 fn pkg_installed(pkg: &str) -> bool {
     match pkg.split_once('/') {
         Some((repo, name)) => output("pacman", &["-Sl", repo]).is_some_and(|list| {
@@ -364,12 +378,17 @@ pub fn install_packages(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
             "zed-globalmenu" => Some("zed"),
             _ => None,
         };
+        // The swap happens in the install transaction itself (pacman removes the conflicting
+        // package there), so a failed or canceled install leaves the legacy package in place.
+        let mut swap = false;
         if let Some(legacy) = legacy.filter(|l| ok("pacman", &["-Qq", l])) {
-            if ok("pacman", &["-Si", pkg]) {
-                log("INFO", &format!("Detected {legacy}; removing to replace with {pkg}..."));
-                ok_logged("pacman", &["-Rdd", "--noconfirm", legacy]);
-            } else {
-                log("WARN", &format!("{pkg} is not available in the sync databases; keeping installed {legacy}."));
+            match sync_info(pkg) {
+                Some(info) if conflicts_with(&info, legacy) => {
+                    log("INFO", &format!("Detected {legacy}; replacing it with {pkg}..."));
+                    swap = true;
+                }
+                Some(_) => log("WARN", &format!("{pkg} does not declare a conflict with {legacy}; keeping installed {legacy}.")),
+                None => log("WARN", &format!("{pkg} is not available in the sync databases; keeping installed {legacy}.")),
             }
         }
 
@@ -381,7 +400,9 @@ pub fn install_packages(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
 
         let install = if pkg == "vesktop-bin" && !ok("pacman", &["-Si", "vesktop-bin"]) && ok("pacman", &["-Si", "vesktop"]) { "vesktop" } else { pkg };
 
-        let mut rc = d.exec_monitored(idx - 1, s_total, &format!("Installing {install} (pacman)"), pacman(&["-S", "--needed", "--noconfirm", install]));
+        // --ask=4 answers yes to "remove the conflicting package?", which --noconfirm declines
+        let args: &[&str] = if swap { &["-S", "--needed", "--noconfirm", "--ask=4", install] } else { &["-S", "--needed", "--noconfirm", install] };
+        let mut rc = d.exec_monitored(idx - 1, s_total, &format!("Installing {install} (pacman)"), pacman(args));
         let (mut status, mut mark) = (format!("[SUCCESS] {install} installed"), "✔");
         if rc != 0 {
             if c.target_user != "root" && have("yay") && ctx::grant_yay_sudo() {
@@ -700,6 +721,15 @@ mod tests {
         let h = howdy_hook("/dev/video4");
         assert!(h.starts_with("#!/bin/sh\ncase $1/$2 in\n"));
         assert!(h.contains("while [ ! -c /dev/video4 ] && [ $count -lt 30 ]; do"));
+    }
+
+    #[test]
+    fn conflict_parsed_from_sync_info() {
+        let si = "Repository      : archrepo\nName            : sine\nProvides        : sine-bin\nConflicts With  : sine-bin>=1  fdm\nReplaces        : None\n";
+        assert!(conflicts_with(si, "sine-bin"));
+        assert!(conflicts_with(si, "fdm"));
+        assert!(!conflicts_with(si, "sine"));
+        assert!(!conflicts_with("Conflicts With  : None\n", "sine-bin"));
     }
 
     #[test]
