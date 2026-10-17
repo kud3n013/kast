@@ -43,6 +43,8 @@ pub enum Loaded {
         ts: String,
     },
     Status(Box<crate::vault::status::StatusReport>),
+    /// How a log action went (shown as a toast)
+    LogIo(crate::logio::Report),
 }
 
 /// Messages from a job thread (the engines, through `TuiReporter`).

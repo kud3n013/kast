@@ -243,7 +243,11 @@ fn install_signal_handlers() {
     use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
     let Ok(mut signals) = signal_hook::iterator::Signals::new([SIGINT, SIGTERM, SIGHUP]) else { return };
     std::thread::spawn(move || {
-        if let Some(sig) = signals.forever().next() {
+        for sig in signals.forever() {
+            // Ctrl+C in a pager or editor the app handed the terminal to is for that program
+            if sig == SIGINT && tui::suspended() {
+                continue;
+            }
             let interrupted = ctx::pacman_interrupted();
             report::kill_child(std::time::Duration::from_secs(2));
             ctx::cleanup_temp_state();
@@ -255,6 +259,9 @@ fn install_signal_handlers() {
         }
     });
 }
+
+/// Variables the sudo re-exec keeps.
+const CARRIED_ENV: [&str; 10] = ["NO_COLOR", "KAST_PAGER", "PAGER", "VISUAL", "EDITOR", "TMUX", "STY", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY"];
 
 /// The full-screen UI needs a terminal on both ends.
 fn interactive_terminal() -> bool {
@@ -275,11 +282,19 @@ fn main() -> ExitCode {
         println!("Privileges required. Re-executing with sudo...");
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(std::env::args().next().unwrap_or_default()));
         let mut sudo = Command::new("sudo");
-        // sudo resets the environment; carry NO_COLOR over so the app stays colourless
-        if let Some(v) = std::env::var_os("NO_COLOR").filter(|v| !v.is_empty()) {
-            let mut kv = std::ffi::OsString::from("NO_COLOR=");
-            kv.push(v);
-            sudo.arg("env").arg(kv);
+        // sudo resets the environment; carry over what the app uses: NO_COLOR, the user's
+        // pager/editor for `e`/`E`, and the session/multiplexer for opening and copying the log
+        let carried: Vec<std::ffi::OsString> = CARRIED_ENV
+            .iter()
+            .filter_map(|k| {
+                let v = std::env::var_os(k).filter(|v| !v.is_empty())?;
+                let mut kv = std::ffi::OsString::from(format!("{k}="));
+                kv.push(v);
+                Some(kv)
+            })
+            .collect();
+        if !carried.is_empty() {
+            sudo.arg("env").args(carried);
         }
         let err = sudo.arg(exe).args(std::env::args_os().skip(1)).exec();
         eprintln!("{C_RED}[ERROR]{C_RESET} Could not run sudo: {err}");

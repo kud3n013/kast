@@ -102,6 +102,17 @@ pub enum Command {
     LoadExportTargets,
     /// Collect the app status (answered with `Loaded::Status`)
     LoadStatus,
+    /// Show the log file in a pager (or an editor) on the real terminal, the app suspended
+    ViewLog { editor: bool },
+}
+
+/// Which part of the log `y` copies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogScope {
+    /// Since the app started
+    Session,
+    /// Since the last job started
+    Job,
 }
 
 pub struct App {
@@ -223,6 +234,10 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Key(k) => on_key(app, k),
         Event::Mouse(m) => on_mouse(app, m),
         Event::Job(m) => on_job(app, m),
+        Event::Loaded(Loaded::LogIo(r)) => {
+            app.toast(if r.ok { ToastKind::Ok } else { ToastKind::Error }, r.text);
+            None
+        }
         Event::Loaded(Loaded::Log(lines)) => {
             let back = std::mem::replace(&mut app.screen, Screen::Menu);
             app.screen = Screen::Log(Box::new(LogState::from_lines(lines)), Box::new(back));
@@ -369,7 +384,7 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 None
             }
             KeyCode::Char('l') => Some(Command::OpenLog),
-            _ => None,
+            _ => log_action(&k, LogScope::Job, false),
         },
         Screen::Log(..) => log_key(app, k),
         Screen::Import(_) => import::key(app, k),
@@ -439,7 +454,24 @@ fn ask_cancel(app: &mut App) -> Option<Command> {
     None
 }
 
+/// `e E o f y Y`: get the log out of kast. While a job runs only the copies are allowed (the
+/// others suspend the terminal or start programs).
+fn log_action(k: &KeyEvent, scope: LogScope, running: bool) -> Option<Command> {
+    if k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) || running {
+        return None;
+    }
+    let _ = scope;
+    match k.code {
+        KeyCode::Char('e') => Some(Command::ViewLog { editor: false }),
+        KeyCode::Char('E') => Some(Command::ViewLog { editor: true }),
+        _ => None,
+    }
+}
+
 fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    if let Some(cmd) = log_action(&k, LogScope::Session, false) {
+        return Some(cmd);
+    }
     match k.code {
         KeyCode::Up | KeyCode::Char('k') => app.menu.up(),
         KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => app.menu.down(),
@@ -460,6 +492,9 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
 
 fn run_key(app: &mut App, k: KeyEvent) -> Option<Command> {
     let running = app.job_running();
+    if let Some(cmd) = log_action(&k, LogScope::Job, running) {
+        return Some(cmd);
+    }
     let r = app.run_state()?;
     let len = r.log.len();
     match k.code {
@@ -478,6 +513,9 @@ fn run_key(app: &mut App, k: KeyEvent) -> Option<Command> {
 }
 
 fn log_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    if let Some(cmd) = log_action(&k, LogScope::Session, false) {
+        return Some(cmd);
+    }
     let Screen::Log(st, _) = &mut app.screen else { return None };
     let len = st.log.len();
     match k.code {
@@ -942,6 +980,26 @@ pub mod tests {
         assert!(matches!(a.screen, Screen::Summary(_)));
         update(&mut a, key(KeyCode::Enter));
         assert!(matches!(a.screen, Screen::Menu));
+    }
+
+    fn shift(c: char) -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT))
+    }
+
+    #[test]
+    fn e_opens_pager_or_editor_except_while_a_job_runs() {
+        let mut a = app(80, 24);
+        assert!(matches!(update(&mut a, key(KeyCode::Char('e'))), Some(Command::ViewLog { editor: false })));
+        assert!(matches!(update(&mut a, shift('E')), Some(Command::ViewLog { editor: true })));
+        assert!(update(&mut a, ctrl('e')).is_none());
+        let mut a = running_auto(80, 24);
+        assert!(update(&mut a, key(KeyCode::Char('e'))).is_none());
+        assert!(update(&mut a, shift('E')).is_none());
+        job(&mut a, JobMsg::Done(Ok(Outcome::Finished { message: "Done".into(), issues: vec![] })));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('e'))), Some(Command::ViewLog { editor: false })));
+        // A failed launch comes back as an error toast
+        update(&mut a, Event::Loaded(Loaded::LogIo(crate::logio::Report::err("No pager found"))));
+        assert_eq!(a.toast.as_ref().map(|t| (t.kind, t.text.as_str())), Some((ToastKind::Error, "No pager found")));
     }
 
     #[test]

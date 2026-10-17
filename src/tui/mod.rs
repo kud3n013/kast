@@ -24,6 +24,7 @@ use ratatui::crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen, d
 use ratatui::crossterm::{cursor, execute};
 
 use crate::ctx::{self, ctx};
+use crate::logio::{self, Report};
 use crate::report;
 use app::{App, Command, Header, update, view};
 use event::Event;
@@ -110,21 +111,59 @@ fn spawn_input(tx: Sender<Event>) {
     });
 }
 
+/// Set while a program kast handed the terminal to runs: Ctrl+C then reaches kast too (raw mode
+/// is off), and it is meant for that program.
+static SUSPENDED: AtomicBool = AtomicBool::new(false);
+
+pub fn suspended() -> bool {
+    SUSPENDED.load(Ordering::SeqCst)
+}
+
 /// Leave the full-screen UI, run `f` on the real terminal, then come back with a full redraw.
-/// For programs that must own the terminal themselves (e.g. an interactive `howdy add`).
-/// Nothing needs it today: every action runs inside the app.
-#[allow(dead_code)]
+/// For programs that must own the terminal themselves (the log in a pager or editor).
 fn suspend<T>(term: &mut Term, f: impl FnOnce() -> T) -> T {
     INPUT_PAUSED.store(true, Ordering::SeqCst);
     while !INPUT_IDLE.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(5));
     }
+    SUSPENDED.store(true, Ordering::SeqCst);
     restore_terminal();
     let out = f();
+    // Keys typed for the program that it never read must not reach the app
+    let _ = nix::sys::termios::tcflush(io::stdin(), nix::sys::termios::FlushArg::TCIFLUSH);
     let _ = enter_terminal();
+    while ct::poll(Duration::ZERO).unwrap_or(false) {
+        if ct::read().is_err() {
+            break;
+        }
+    }
+    SUSPENDED.store(false, Ordering::SeqCst);
     let _ = term.clear();
     INPUT_PAUSED.store(false, Ordering::SeqCst);
     out
+}
+
+/// Drop keys, clicks and pastes queued before or during a suspend; keep everything else.
+fn drop_queued_input(rx: &Receiver<Event>, tx: &Sender<Event>) {
+    let keep: Vec<Event> = rx.try_iter().filter(|e| !matches!(e, Event::Key(_) | Event::Mouse(_) | Event::Paste(_))).collect();
+    for e in keep {
+        let _ = tx.send(e);
+    }
+}
+
+/// `e` / `E`: the log in a pager or editor. Nothing to report when it ran fine.
+fn view_log(term: &mut Term, editor: bool) -> Option<Report> {
+    let argv = match logio::viewer(editor, &ctx().log_file, &logio::os::env, &logio::os::have) {
+        Ok(a) => a,
+        Err(e) => return Some(Report::err(e)),
+    };
+    // kast runs as root: no shell escapes or editor launching from less
+    let status = suspend(term, || std::process::Command::new(&argv[0]).args(&argv[1..]).env("LESSSECURE", "1").status());
+    match status {
+        Ok(s) if s.success() || s.code().is_none() => None,
+        Ok(s) => Some(Report::err(format!("{} exited with status {}", argv[0], s.code().unwrap_or_default()))),
+        Err(e) => Some(Report::err(format!("Could not run {}: {e}", argv[0]))),
+    }
 }
 
 // --- Runtime -------------------------------------------------------------------------------
@@ -177,8 +216,19 @@ pub fn run(start: Start) -> Result<()> {
         term.draw(|f| view(&app, f))?;
         let Some(ev) = next_event(&rx, app.animating()) else { break };
         app.now_ms = started.elapsed().as_millis() as u64;
-        if let Some(cmd) = update(&mut app, ev) {
-            execute_command(cmd, &tx, &replies);
+        match update(&mut app, ev) {
+            Some(Command::ViewLog { editor }) => {
+                let report = view_log(&mut term, editor);
+                drop_queued_input(&rx, &tx);
+                if let Ok(size) = term.size() {
+                    let _ = tx.send(Event::Resize(size.width, size.height));
+                }
+                if let Some(r) = report {
+                    let _ = tx.send(Event::Loaded(event::Loaded::LogIo(r)));
+                }
+            }
+            Some(cmd) => execute_command(cmd, &tx, &replies),
+            None => {}
         }
         if app.quit {
             break;
@@ -274,5 +324,7 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>) {
         Command::OpenLog => {
             let _ = tx.send(Event::Loaded(event::Loaded::Log(read_log_tail())));
         }
+        // Needs the terminal: handled in the event loop
+        Command::ViewLog { .. } => {}
     }
 }
