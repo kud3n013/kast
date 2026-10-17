@@ -179,8 +179,10 @@ impl Checklist {
         }
     }
 
+    /// `a` / `n`: every item, including ones that can't be picked right now (an add-on whose
+    /// app was unchecked comes back checked when the app is).
     pub fn set_all(&mut self, on: bool) {
-        self.items_mut().filter(|i| i.enabled).for_each(|i| i.checked = on);
+        self.items_mut().for_each(|i| i.checked = on);
     }
 
     pub fn invert(&mut self) {

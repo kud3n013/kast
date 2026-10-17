@@ -37,11 +37,12 @@ pub const ITEMS: [Item; 10] = [
         action: Action::Auto,
         key: '1',
         label: "Run automatic setup",
-        about: "Upgrades the system (pacman -Syuu), adds kud3n's repository, installs every package, then sets up services. \
-                Steps 3 to 5 in one go, with an overall progress bar and a summary at the end.",
+        about: "Choose the steps first (upgrade, repository, packages, services; optionally export before and import after), \
+                then the apps, the backup to restore and where to back up. A review shows it all; then it runs unattended, \
+                with an overall progress bar and a summary at the end.",
         changes: "/etc/pacman.conf, installed packages, /etc/pam.d files (backups kept), Howdy config, systemd services",
         root: true,
-        auto: "This is the automatic run (no data partition, no import).",
+        auto: "This is the automatic run.",
     },
     Item {
         action: Action::Partition,
@@ -51,7 +52,7 @@ pub const ITEMS: [Item; 10] = [
                 Music, Pictures, Public, Templates, Videos and Projects onto it, leaving symlinks in your home.",
         changes: "/etc/fstab (backup kept), your home folders, ~/.config/user-dirs.dirs",
         root: true,
-        auto: "Optional: not part of the automatic run.",
+        auto: "Optional step of the automatic run (off by default).",
     },
     Item {
         action: Action::Repo,
@@ -60,7 +61,7 @@ pub const ITEMS: [Item; 10] = [
         about: "Adds the [archrepo] repository to /etc/pacman.conf (or updates its server URL), then syncs and upgrades with pacman -Syyu.",
         changes: "/etc/pacman.conf, upgraded packages",
         root: true,
-        auto: "Part of the automatic run (step 2).",
+        auto: "A step of the automatic run (on by default).",
     },
     Item {
         action: Action::Packages,
@@ -70,7 +71,7 @@ pub const ITEMS: [Item; 10] = [
                 copy), shown first. Anything pacman can't install is retried with yay as your user.",
         changes: "Installed packages; a temporary sudoers rule for yay, removed right after",
         root: true,
-        auto: "Part of the automatic run (step 3).",
+        auto: "A step of the automatic run (on by default; pick the apps there too).",
     },
     Item {
         action: Action::Services,
@@ -80,7 +81,7 @@ pub const ITEMS: [Item; 10] = [
                 then enables valkey and searxng.",
         changes: "/etc/pam.d files (backups kept), Howdy config, sleep hook, systemd services",
         root: true,
-        auto: "Part of the automatic run (step 4).",
+        auto: "A step of the automatic run (on by default).",
     },
     Item {
         action: Action::Import,
@@ -90,7 +91,7 @@ pub const ITEMS: [Item; 10] = [
                 and you pick exactly what to restore.",
         changes: "App folders in ~/.config, KDE / Hyprland settings, /etc/howdy/models (a safety snapshot is kept)",
         root: true,
-        auto: "Optional: not part of the automatic run.",
+        auto: "Optional step of the automatic run (off by default; runs last).",
     },
     Item {
         action: Action::Export,
@@ -99,7 +100,7 @@ pub const ITEMS: [Item; 10] = [
         about: "Backs up app data, KDE Plasma or Hyprland settings, or your Howdy face model into a .zip archive (or a .dat).",
         changes: "Only the new backup file",
         root: false,
-        auto: "Not part of the automatic run.",
+        auto: "Optional step of the automatic run (off by default; runs before the upgrade).",
     },
     Item {
         action: Action::Status,

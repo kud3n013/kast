@@ -3,12 +3,12 @@ source: src/tui/screens/import.rs
 expression: "render(&loaded(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
-╭ Backups & face models (newest first) ────────────────────────────────────────╮
+╭ Backups in /media/data/backups (newest first) ───────────────────────────────╮
 │  Name                                                 Type             Size  │
 │❯ all_backup_2026-10-16_210400.zip                     Full System      1.2G  │
 │  kde_backup_2026-10-01_090000.zip                     KDE Plasma       48M   │
 │  p3ter_face_model_2026-09-30.dat                      Howdy Face Model 8.0K  │
-│  Custom path…                                                                │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -25,4 +25,4 @@ expression: "render(&loaded(80, 24))"
 │Media     true                                                                │
 │Size      1.2G                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- ↑/↓ move  Enter choose  / filter  c custom path  Esc back  ? help
+ ↑/↓ move  Enter choose  / filter  Esc folder  ? help

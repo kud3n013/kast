@@ -223,6 +223,22 @@ pub fn builtin() -> Parsed {
 }
 
 impl Parsed {
+    /// `kast packages --only a,b` / `--skip a,b`: the names to install (None = all). A name
+    /// matches with or without its repo prefix; one that isn't in the list is an error.
+    pub fn select(&self, only: &[String], skip: &[String]) -> Result<Option<Vec<String>>, String> {
+        if only.is_empty() && skip.is_empty() {
+            return Ok(None);
+        }
+        let find = |n: &String| self.packages().find(|p| p.name == *n || p.bare() == n).map(|p| p.name.clone());
+        let unknown: Vec<&str> = only.iter().chain(skip).filter(|n| find(n).is_none()).map(String::as_str).collect();
+        if !unknown.is_empty() {
+            return Err(format!("not in the package list: {} (see kast packages --list)", unknown.join(", ")));
+        }
+        let only: Vec<String> = only.iter().filter_map(find).collect();
+        let skip: Vec<String> = skip.iter().filter_map(find).collect();
+        Ok(Some(self.packages().filter(|p| (only.is_empty() || only.contains(&p.name)) && !skip.contains(&p.name)).map(|p| p.name.clone()).collect()))
+    }
+
     /// Whether the yay fallback may build `name` from the AUR. Only for packages the
     /// built-in list names (as a package or a fallback): a pushed edit to the online list
     /// can choose among repo packages, but can't get arbitrary AUR code built.
@@ -822,5 +838,17 @@ mod tests {
         assert_eq!(j["warnings"][0], "skipped unknown group \"games\" (1 packages)");
         assert_eq!(j["groups"][0]["packages"][16]["description"], "Image editor");
         assert!(j["groups"][0]["packages"][0].get("installed").is_none());
+    }
+
+    #[test]
+    fn only_and_skip_pick_names_in_list_order() {
+        let b = builtin();
+        let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(b.select(&[], &[]), Ok(None));
+        assert_eq!(b.select(&v(&["sine", "zotero"]), &[]), Ok(Some(v(&["zotero", "archrepo/sine"]))));
+        let skipped = b.select(&[], &v(&["steam", "archrepo/sine"])).unwrap().unwrap();
+        assert_eq!(skipped.len(), 34);
+        assert!(!skipped.contains(&"steam".to_string()));
+        assert_eq!(b.select(&v(&["nope", "zotero"]), &[]), Err("not in the package list: nope (see kast packages --list)".into()));
     }
 }

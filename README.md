@@ -151,9 +151,31 @@ and `l` opens the log (`/var/log/kast.log`). Below 60×20 it asks for a bigger w
 | Progress | `PgUp/PgDn` `↑/↓` scroll (pauses following) · `g`/`G` oldest / follow · `Esc`/`q` cancel the job (asks first) · when done: `Enter` back, `l` full log |
 | Questions | `y`/`n` · `←/→` `Tab` choose · `Enter` the highlighted button · `Esc` always answers No |
 | Summary | `Enter` back to menu · `l` full log |
-| Import / Inspect | `↑/↓` move · `Enter` choose · `/` filter · `c` type a path (`Tab` completes, paste works) · `Esc` back |
-| Restore options | `↑/↓` move · `Space` select / toggle · `Enter` choose · `s` start · `Esc` back |
-| Export | `↑/↓` move · `Space`/`Enter` select, toggle or edit the path · `s` start · `Esc` back |
+| Checklists (steps, apps) | `↑/↓` `j/k` move (skips greyed items) · `Home/End` `g/G` `PgUp/PgDn` · `Space` toggle (on a group header: the group) · `a` all · `n` none · `i` invert · click toggles · `Enter` continue · `Esc` back (choices are kept) |
+| Install packages (4) | the checklist · `r` download the list again after a fallback · `Enter` asks, then installs what's checked |
+| Review (automatic run) | `←/→` `Tab` Start / Back · `Enter` the highlighted button · `s` start · `Esc` back |
+| Import / Inspect | source: `Enter` Local folder (Proton Drive: not available yet) · folder: type it, `Tab` completes, `Enter` lists it · files: `↑/↓` move, `Enter` choose, `/` filter · `Esc` back one stage |
+| Restore options | `↑/↓` move · `Space` select / toggle · `Enter` choose · `s` start (automatic run: use this) · `Esc` back |
+| Export | source and folder as for import (a missing folder is created as you, after asking) · then `↑/↓` move · `Space`/`Enter` select, toggle or edit the file name · `s` start (automatic run: use this) · `Esc` back |
+
+### Automatic run, step by step
+
+Menu option 1 first shows the steps of a full setup, in the order they run:
+
+1. Data partition (off by default): first, since backups usually live on `/media/data`
+2. Export data (off by default): before anything below changes your apps
+3. System upgrade · 4. kud3n's repository · 5. Install packages · 6. Services (all on by default)
+7. Import data (off by default): last, once the apps are installed and `/media/data` is mounted
+
+The defaults are `kast auto`'s run. `Enter` then goes through a stage for each checked step
+that needs choices: the apps to install (all checked; an add-on can only be picked while its
+app is checked or already installed), the backup to restore and its options, what to back up
+and where. A review lists everything; `Start` runs it unattended. The overall progress bar
+counts only the chosen steps, and the summary marks the others "skipped".
+
+Menu option 4 uses the same app picker, then asks before installing. On the command line,
+`kast packages --only a,b` / `--skip a,b` do the same; `kast auto` and `kast packages` without
+them install everything, as before.
 | Status | `r` refresh · `↑/↓` scroll · `Esc` back |
 | Log | `PgUp/PgDn` `↑/↓` scroll · `g`/`G` top / end · `Esc` back |
 | Log file (menu, log, summary, progress when done) | `e` pager · `E` editor · `o` open with the default app · `f` show in the file manager · `y` copy the log · `Y` copy its path (`y`/`Y` also while a job runs) |

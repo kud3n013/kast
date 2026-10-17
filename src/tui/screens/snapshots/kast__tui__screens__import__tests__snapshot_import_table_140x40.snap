@@ -3,12 +3,12 @@ source: src/tui/screens/import.rs
 expression: "render(&loaded(140, 40))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
-╭ Backups & face models (newest first) ─────────────────────────────────────────╮╭ Details ────────────────────────────────────────────────╮
+╭ Backups in /media/data/backups (newest first) ────────────────────────────────╮╭ Details ────────────────────────────────────────────────╮
 │  Name                                 Type             Size   Modified        ││Path:                                                    │
 │❯ all_backup_2026-10-16_210400.zip     Full System      1.2G   2026-10-16 21:04││/media/data/backups/all_backup_2026-10-16_210400.zip     │
 │  kde_backup_2026-10-01_090000.zip     KDE Plasma       48M    2026-10-16 21:04││Size: 1.2G   modified 2026-10-16 21:04                   │
 │  p3ter_face_model_2026-09-30.dat      Howdy Face Model 8.0K   2026-10-16 21:04││                                                         │
-│  Custom path…                                                                 ││Created   2026-10-16T21:04:00+02:00                      │
+│                                                                               ││Created   2026-10-16T21:04:00+02:00                      │
 │                                                                               ││Source    archbox (p3ter)                                │
 │                                                                               ││Target    all                                            │
 │                                                                               ││Media     true                                           │
@@ -41,4 +41,4 @@ expression: "render(&loaded(140, 40))"
 │                                                                               ││                                                         │
 │                                                                               ││                                                         │
 ╰───────────────────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────────────╯
- ↑/↓ move  Enter choose  / filter  c custom path  Esc back  ? help
+ ↑/↓ move  Enter choose  / filter  Esc folder  ? help

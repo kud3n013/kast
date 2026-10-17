@@ -333,11 +333,22 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
             report::request_cancel();
             replies.decline_all();
         }
-        Command::LoadCandidates { zips_only } => {
+        Command::LoadCandidates { dir, user, zips_only } => {
             let tx = tx.clone();
             std::thread::spawn(move || {
-                let _ = tx.send(Event::Loaded(event::Loaded::Candidates(screens::import::load_candidates(zips_only))));
+                let _ = tx.send(Event::Loaded(event::Loaded::Candidates(screens::import::load_candidates(&dir, &user, zips_only))));
             });
+        }
+        Command::LoadInstalled(names) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let set = names.into_iter().filter(|n| crate::setup::pkg_installed(n)).collect();
+                let _ = tx.send(Event::Loaded(event::Loaded::Installed(set)));
+            });
+        }
+        Command::MkdirUser(path) => {
+            let result = crate::ctx::mkdir_user(&path).map_err(|e| format!("Could not create {}: {e}", path.display()));
+            let _ = tx.send(Event::Loaded(event::Loaded::DirCreated { path, result }));
         }
         Command::Inspect { path, pick } => {
             let result = screens::import::inspect(&path);
@@ -351,8 +362,8 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
             let tx = tx.clone();
             std::thread::spawn(move || {
                 let targets = screens::export::load_targets();
-                let (dir, ts) = screens::export::default_destination();
-                let _ = tx.send(Event::Loaded(event::Loaded::ExportTargets { targets, dir, ts }));
+                let ts = screens::export::timestamp();
+                let _ = tx.send(Event::Loaded(event::Loaded::ExportTargets { targets, ts }));
             });
         }
         Command::FetchPackages => {

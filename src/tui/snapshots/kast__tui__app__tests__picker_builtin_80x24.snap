@@ -1,28 +1,28 @@
 ---
 source: src/tui/app.rs
-expression: "render(&packages_app(80, 24, pl()))"
+expression: "render(&picker_app(80, 24, pl()))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Package list ────────────────────────────────────────────────────────────────╮
-│⚠ Built-in · kast 0.0.0 · 36 packages · offline: could not reach raw.github…  │
+│⚠ Built-in · kast 0.0.0 · 36 packages · offline: could not reach raw.githubus…│
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭ Automatic setup · 36 packages ───────────────────────────────────────────────╮
-│Official repositories (23)                                                    │
-│  zen-browser-bin                                                             │
-│  zotero                                                                      │
-│  proton-vpn-cli                                                              │
-│  inkscape                                                                    │
-│  chromium                                                                    │
-│  obsidian                                                                    │
-│  fcitx5                                                                      │
-│  fcitx5-configtool                                                           │
-│  fcitx5-gtk                                                                  │
+╭ Install packages · 36 of 36 selected ────────────────────────────────────────╮
+│❯ [x] Official repositories  23/23                                            │
+│    [x] zen-browser-bin                                                       │
+│    [x] zotero  installed                                                     │
+│    [x] proton-vpn-cli                                                        │
+│    [x] inkscape                                                              │
+│    [x] chromium                                                              │
+│    [x] obsidian                                                              │
+│    [x] fcitx5  installed                                                     │
+│    [x] fcitx5-configtool                                                     │
+│    [x] fcitx5-gtk                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Details ─────────────────────────────────────────────────────────────────────╮
-│The automatic run upgrades the system, adds kud3n's repository, installs these│
-│packages, then sets up services.                                              │
+│Official repositories                                                         │
+│Space checks or unchecks the whole group.                                     │
 │                                                                              │
 │The list built into this kast, because:                                       │
 │  offline: could not reach raw.githubusercontent.com (timeout)                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- Enter start  ↑/↓ scroll  ? help  Esc back  r retry download
+ Space toggle  Enter continue  Esc back  ? help  r retry download  a all

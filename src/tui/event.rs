@@ -39,8 +39,13 @@ pub enum Loaded {
     },
     ExportTargets {
         targets: Vec<TargetInfo>,
-        dir: PathBuf,
         ts: String,
+    },
+    /// The installed packages among those asked about
+    Installed(std::collections::HashSet<String>),
+    DirCreated {
+        path: PathBuf,
+        result: Result<(), String>,
     },
     Status(Box<crate::vault::status::StatusReport>),
     /// The package list for this session (downloaded, or the built-in one and why)

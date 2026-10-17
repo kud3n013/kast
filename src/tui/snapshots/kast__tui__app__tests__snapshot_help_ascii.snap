@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 953
 expression: render(&a)
 ---
  kast | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
@@ -17,13 +16,13 @@ expression: render(&a)
 │   q Qu│e / E          View in a pager ($KAST_PAGER) / editor         │       │
 └───────│o / f          Open with the default app / file manager       │───────┘
 ┌ Detail│y / Y          Copy this session's log / the log's path       │───────┐
-│Upgrade│tmux           For y: set -g set-clipboard on                 │very   │
-│package│?              This help                                      │       │
-│progres│q  Esc         Quit kast                                      │       │
-│Changes│Ctrl+C         Quit kast                                      │kups   │
-│kept), │                                                              │       │
-│Needs r│Press any key to close                                        │       │
-│Automat└──────────────────────────────────────────────────────────────┘       │
-│                                                                              │
+│Choose │tmux           For y: set -g set-clipboard on                 │ally   │
+│export │?              This help                                      │nd     │
+│where t│q  Esc         Quit kast                                      │an     │
+│overall│Ctrl+C         Quit kast                                      │       │
+│Changes│                                                              │kups   │
+│kept), │Press any key to close                                        │       │
+│Needs r└──────────────────────────────────────────────────────────────┘       │
+│Automatic:  This is the automatic run.                                        │
 └──────────────────────────────────────────────────────────────────────────────┘
  Up/Down move  Enter run  1-9 pick  l log  ? help  q quit  e view  y copy

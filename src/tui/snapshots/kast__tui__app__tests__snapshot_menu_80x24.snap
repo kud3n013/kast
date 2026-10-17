@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 931
 expression: "render(&app(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -17,13 +16,13 @@ expression: "render(&app(80, 24))"
 │   q Quit                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Details ─────────────────────────────────────────────────────────────────────╮
-│Upgrades the system (pacman -Syuu), adds kud3n's repository, installs every   │
-│package, then sets up services. Steps 3 to 5 in one go, with an overall       │
-│progress bar and a summary at the end.                                        │
+│Choose the steps first (upgrade, repository, packages, services; optionally   │
+│export before and import after), then the apps, the backup to restore and     │
+│where to back up. A review shows it all; then it runs unattended, with an     │
+│overall progress bar and a summary at the end.                                │
 │Changes:    /etc/pacman.conf, installed packages, /etc/pam.d files (backups   │
 │kept), Howdy config, systemd services                                         │
 │Needs root: yes (kast already runs as root)                                   │
-│Automatic:  This is the automatic run (no data partition, no import).         │
-│                                                                              │
+│Automatic:  This is the automatic run.                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit  e view  y copy

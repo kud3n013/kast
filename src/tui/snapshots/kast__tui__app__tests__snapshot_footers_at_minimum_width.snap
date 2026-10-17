@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1097
 expression: "format!(\"{menu}{}\", render(&a))"
 ---
  kast │ p3ter (1000:1000) │ archbox │ root
@@ -17,10 +16,10 @@ expression: "format!(\"{menu}{}\", render(&a))"
 │   q Quit                                                 │
 ╰──────────────────────────────────────────────────────────╯
 ╭ Details ─────────────────────────────────────────────────╮
-│Upgrades the system (pacman -Syuu), adds kud3n's          │
-│repository, installs every package, then sets up services.│
-│Steps 3 to 5 in one go, with an overall progress bar and a│
-│summary at the end.                                       │
+│Choose the steps first (upgrade, repository, packages,    │
+│services; optionally export before and import after), then│
+│the apps, the backup to restore and where to back up. A   │
+│review shows it all; then it runs unattended, with an     │
 ╰──────────────────────────────────────────────────────────╯
  ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit
  kast │ p3ter (1000:1000) │ archbox │ root

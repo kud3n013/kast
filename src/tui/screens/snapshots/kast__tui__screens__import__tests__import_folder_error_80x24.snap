@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/import.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Folder with your backups ────────────────────────────────────────────────────╮
+│/media/data/b                                                                 │
+│✗ /media/data/nothing-here doesn't exist                                      │
+│Tab completes, Enter lists the backups in this folder, Esc goes back          │
+│                                                                              │
+│  backups/                                                                    │
+│  books/                                                                      │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Tab complete  Enter list backups  Esc back

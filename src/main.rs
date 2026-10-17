@@ -164,6 +164,12 @@ struct PackagesArgs {
     /// With --list: print JSON
     #[arg(long, requires = "list")]
     json: bool,
+    /// Install only these packages (comma-separated, as --list names them)
+    #[arg(long, value_delimiter = ',', value_name = "PKGS", conflicts_with_all = ["skip", "list"])]
+    only: Vec<String>,
+    /// Install every package except these (comma-separated)
+    #[arg(long, value_delimiter = ',', value_name = "PKGS", conflicts_with = "list")]
+    skip: Vec<String>,
     #[command(flatten)]
     source: ListSource,
 }
@@ -312,7 +318,11 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         }
         Some(Cmd::Packages(a)) => {
             let pl = announce_list(&a.source.or(top))?;
-            setup::install_packages(&pl.list, false, 0, 1, 1);
+            let selection = pl.list.select(&a.only, &a.skip).map_err(|e| anyhow::anyhow!(e))?;
+            if let Some(s) = &selection {
+                println!("Selected: {} of {} packages", s.len(), pl.list.count());
+            }
+            setup::install_packages(&pl.list, selection.as_deref(), false, 0, 1, 1);
             // The dashboard drew over the line above
             println!("Package list: {}", pl.source_line());
             Ok(())

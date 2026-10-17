@@ -13,17 +13,19 @@ use super::event::{Event, JobMsg, Outcome};
 use crate::ctx::{self, Reported};
 use crate::pkglist::PkgList;
 use crate::report::{self, JobCanceled, Level, Progress, Prompt, Reporter};
-use crate::setup;
+use crate::setup::{self, AutoPlan};
 use crate::vault::backup::{BackupOpts, cmd_backup};
 use crate::vault::import::{ImportOpts, cmd_import};
 
 #[derive(Debug, Clone)]
 pub enum JobKind {
-    /// With the package list the user saw before starting
-    Auto(Arc<PkgList>),
+    /// The steps and choices made before starting, with the package list the user saw
+    /// (None when the plan installs no packages)
+    Auto(Option<Arc<PkgList>>, Box<AutoPlan>),
     Partition,
     Repo,
-    Packages(Arc<PkgList>),
+    /// The list and the chosen package names (None = all)
+    Packages(Arc<PkgList>, Option<Vec<String>>),
     Services,
     Import(ImportOpts),
     Export(BackupOpts),
@@ -47,10 +49,10 @@ pub enum FakeStep {
 impl JobKind {
     pub fn title(&self) -> String {
         match self {
-            JobKind::Auto(_) => "Automatic setup".into(),
+            JobKind::Auto(..) => "Automatic setup".into(),
             JobKind::Partition => "Set up data partition".into(),
             JobKind::Repo => "Add kud3n's repository".into(),
-            JobKind::Packages(_) => "Install packages".into(),
+            JobKind::Packages(..) => "Install packages".into(),
             JobKind::Services => "Set up services".into(),
             JobKind::Import(o) => format!("Restore {}", o.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             JobKind::Export(o) => format!("Back up {}", o.target),
@@ -61,13 +63,22 @@ impl JobKind {
     }
 
     pub fn is_auto(&self) -> bool {
-        matches!(self, JobKind::Auto(_))
+        matches!(self, JobKind::Auto(..))
+    }
+
+    /// The steps of an automatic run, in order.
+    pub fn steps(&self) -> Vec<&'static str> {
+        match self {
+            JobKind::Auto(_, plan) => plan.steps.iter().map(|s| s.label()).collect(),
+            _ => Vec::new(),
+        }
     }
 
     /// The package list the job installs, if it installs packages.
     pub fn packages(&self) -> Option<&PkgList> {
         match self {
-            JobKind::Auto(pl) | JobKind::Packages(pl) => Some(pl),
+            JobKind::Auto(Some(pl), plan) if plan.has(setup::Step::Packages) => Some(pl),
+            JobKind::Packages(pl, _) => Some(pl),
             _ => None,
         }
     }
@@ -179,10 +190,12 @@ fn run(kind: JobKind) -> Result<Outcome> {
         ctx::clear_issues();
     }
     Ok(match kind {
-        JobKind::Auto(list) => {
-            report::log(Level::Info, &format!("Package list: {}", list.source_line()));
-            let start = setup::run_automatic_steps(&list)?;
-            Outcome::Summary(setup::collect_summary(start, &list))
+        JobKind::Auto(list, plan) => {
+            if let Some(l) = list.as_deref().filter(|_| plan.has(setup::Step::Packages)) {
+                report::log(Level::Info, &format!("Package list: {}", l.source_line()));
+            }
+            let out = setup::run_plan(&plan, list.as_deref())?;
+            Outcome::Summary(setup::plan_summary(&plan, &out, list.as_deref()))
         }
         JobKind::Partition => {
             setup::setup_data_partition(false, 0, 1, 1)?;
@@ -192,9 +205,12 @@ fn run(kind: JobKind) -> Result<Outcome> {
             setup::add_kud3n_repo(false, 0, 1, 1)?;
             finished("Repository step finished")
         }
-        JobKind::Packages(list) => {
+        JobKind::Packages(list, selection) => {
             report::log(Level::Info, &format!("Package list: {}", list.source_line()));
-            setup::install_packages(&list.list, false, 0, 1, 1);
+            if let Some(s) = &selection {
+                report::log(Level::Info, &format!("Selected {} of {} packages", s.len(), list.list.count()));
+            }
+            setup::install_packages(&list.list, selection.as_deref(), false, 0, 1, 1);
             finished("Package installation finished")
         }
         JobKind::Services => {

@@ -55,6 +55,8 @@ pub struct Progress {
     pub auto: bool,
     pub o_step: i64,
     pub o_total: i64,
+    /// Weights of the run's steps (automatic run), for the overall percentage
+    pub weights: Vec<i64>,
     pub o_start: i64,
     pub title: String,
     pub s_start: i64,

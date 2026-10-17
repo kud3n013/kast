@@ -182,14 +182,33 @@ pub fn eta_countdown_at(now: i64, start: i64, current: i64, total: i64, baseline
     format_seconds(est)
 }
 
-pub fn calc_overall_progress(o_step: i64, s_step: i64, s_total: i64) -> i64 {
-    // Automatic run: upgrade, repo, packages, services
-    const WEIGHTS: [i64; 4] = [25, 5, 60, 10];
-    let idx = (o_step.max(1) - 1) as usize;
-    let cum: i64 = WEIGHTS.iter().take(idx).sum();
-    let cur = WEIGHTS.get(idx).copied().unwrap_or(10);
-    let sub = if s_total > 0 { s_step * cur / s_total } else { 0 };
-    (cum + sub).min(100)
+/// The default automatic run (`kast auto`): upgrade, repo, packages, services.
+pub const STANDARD_WEIGHTS: [i64; 4] = [25, 5, 60, 10];
+
+static STEP_WEIGHTS: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+
+/// The weights of the run that starts now (one per step); dashboards carry them.
+pub fn set_step_weights(w: Vec<i64>) {
+    if let Ok(mut g) = STEP_WEIGHTS.lock() {
+        *g = w;
+    }
+}
+
+fn step_weights() -> Vec<i64> {
+    STEP_WEIGHTS.lock().map(|g| g.clone()).unwrap_or_default()
+}
+
+/// Overall percentage of an automatic run: the finished steps' weights plus the current
+/// step's share, normalised over all of the run's steps. Reaches exactly 100 at the end.
+pub fn calc_overall_progress(weights: &[i64], o_step: i64, s_step: i64, s_total: i64) -> i64 {
+    let weights = if weights.is_empty() { &STANDARD_WEIGHTS[..] } else { weights };
+    let total: i64 = weights.iter().sum::<i64>().max(1);
+    let idx = ((o_step.max(1) - 1) as usize).min(weights.len());
+    let cum: i64 = weights.iter().take(idx).sum();
+    let cur = weights.get(idx).copied().unwrap_or(0);
+    let s_total = s_total.max(1);
+    let s_step = s_step.clamp(0, s_total);
+    ((cum * s_total + s_step * cur) * 100 / (total * s_total)).min(100)
 }
 
 /// Seconds left in the automatic run, from its overall percentage.
@@ -245,6 +264,7 @@ impl Dash {
             auto: self.auto,
             o_step: self.o_step,
             o_total: self.o_total,
+            weights: if self.auto { step_weights() } else { Vec::new() },
             o_start: self.o_start,
             title: self.title.clone(),
             s_start: self.s_start,
@@ -384,7 +404,7 @@ pub fn draw_dashboard(p: &Progress) {
 
     let mut buf = hline(box_w, BOX_TL, BOX_TR);
     if p.auto {
-        let o_pct = calc_overall_progress(p.o_step, s_step, s_total);
+        let o_pct = calc_overall_progress(&p.weights, p.o_step, s_step, s_total);
         let o_elapsed = (now - p.o_start).max(0);
         let o_eta = overall_eta(o_pct, o_elapsed);
         let heading = if inner < 56 { "◆ ARCH LINUX SETUP ◆" } else { "◆ ARCH LINUX / CACHYOS SETUP CONTROLLER ◆" };
@@ -488,9 +508,23 @@ mod tests {
 
     #[test]
     fn overall_progress_weights() {
-        assert_eq!(calc_overall_progress(1, 0, 2), 0);
-        assert_eq!(calc_overall_progress(3, 1, 2), 30 + 30);
-        assert_eq!(calc_overall_progress(4, 2, 2), 100);
+        let w = STANDARD_WEIGHTS;
+        assert_eq!(calc_overall_progress(&w, 1, 0, 2), 0);
+        assert_eq!(calc_overall_progress(&w, 3, 1, 2), 30 + 30);
+        assert_eq!(calc_overall_progress(&w, 4, 2, 2), 100);
+        assert_eq!(calc_overall_progress(&[], 3, 1, 2), 60, "no weights: the standard run");
+        // Any subset of steps: monotonic, and exactly 100 at the end of the last step
+        for w in [vec![25], vec![10, 15, 25, 5, 60, 10, 15], vec![15, 15], vec![60, 10], vec![10, 5]] {
+            let mut last = 0;
+            for o in 1..=w.len() as i64 {
+                for s in 0..=7 {
+                    let p = calc_overall_progress(&w, o, s, 7);
+                    assert!(p >= last && p <= 100, "{w:?} step {o} {s}/7 gave {p} after {last}");
+                    last = p;
+                }
+            }
+            assert_eq!(last, 100, "{w:?}");
+        }
     }
 
     #[test]

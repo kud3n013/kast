@@ -14,7 +14,7 @@ use super::archive::{extract_zip_archive, read_zip_manifest};
 use super::info::jq_str;
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ImportOpts {
     pub file: PathBuf,
     pub app: Option<String>,

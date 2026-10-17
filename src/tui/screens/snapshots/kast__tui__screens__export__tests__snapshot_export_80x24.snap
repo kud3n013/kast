@@ -3,7 +3,7 @@ source: src/tui/screens/export.rs
 expression: "render(&loaded(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
-╭ Back up ─────────────────────────────────────────────────────────────────────╮
+╭ Back up to /media/data/backups ──────────────────────────────────────────────╮
 │❯ (•) All detected apps & Howdy face model  ✓                                 │
 │  ( ) BeeperTexts (~/.config/BeeperTexts)  ✓ 2.1G                             │
 │  ( ) ZaloData (~/.config/ZaloData)  not found                                │
@@ -17,7 +17,7 @@ expression: "render(&loaded(80, 24))"
 │  ( ) Hyprland settings (~/.config/hypr)  not found                           │
 │  [x] Include large media (attachments, site data)                            │
 │  [x] Close running apps first                                                │
-│  Save to: /media/data/backups/all_backup_2026-10-17_101500.zip               │
+│  File name: all_backup_2026-10-17_101500.zip                                 │
 │  ▶ Start backup                                                              │
 │                                                                              │
 │                                                                              │
@@ -25,4 +25,4 @@ expression: "render(&loaded(80, 24))"
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- ↑/↓ move  Space select/toggle  s start  Esc back  ? help
+ ↑/↓ move  Space select/toggle  s start  Esc folder  ? help

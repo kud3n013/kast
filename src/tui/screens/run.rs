@@ -97,6 +97,8 @@ pub struct RunState {
     pub finished: Option<Finished>,
     /// Which package list the job installs (automatic run and option 4)
     pub packages: Option<Line<'static>>,
+    /// The automatic run's steps, in order (the checklist on the right)
+    pub steps: Vec<&'static str>,
 }
 
 pub const AUTO_STEPS: [&str; 4] = ["System upgrade", "kud3n's repository", "Packages", "Services"];
@@ -114,6 +116,7 @@ impl RunState {
             cancel_requested: false,
             finished: None,
             packages: None,
+            steps: AUTO_STEPS.to_vec(),
         }
     }
 
@@ -151,7 +154,11 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
     let p = st.progress.as_ref();
     let spinner = theme.sym.spinner[app.frame % theme.sym.spinner.len()];
 
-    let gauges_h = if st.auto { 6 } else { 3 };
+    let gauges_h = match (st.auto, wide) {
+        (true, true) => 6.max(st.steps.len() as u16 + 2).min(body.height / 2),
+        (true, false) => 6,
+        _ => 3,
+    };
     let status_h = 2
         + u16::from(st.packages.is_some())
         + st.finished.as_ref().map_or(1, |f| match f {
@@ -179,9 +186,9 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
     if st.auto {
         let [o, s] = Layout::vertical([Constraint::Length(3), Constraint::Length(3)]).areas(gauge_area);
         let o_step = p.map_or(1, |p| p.o_step);
-        let o_total = p.map_or(4, |p| p.o_total);
+        let o_total = p.map_or(st.steps.len() as i64, |p| p.o_total);
         let o_start = p.map_or(st.started, |p| p.o_start);
-        let o_pct = if st.running() { calc_overall_progress(o_step, s_step, s_total) } else { 100 };
+        let o_pct = if st.running() { calc_overall_progress(p.map_or(&[][..], |p| &p.weights), o_step, s_step, s_total) } else { 100 };
         let o_elapsed = (app.now - o_start).max(0);
         let label = format!("{o_pct}% · {} elapsed · ETA {}", format_seconds(o_elapsed), format_seconds(overall_eta(o_pct, o_elapsed)));
         let title = format!(" Overall: step {o_step}/{o_total} · {step_title} ");
@@ -195,7 +202,8 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
 
     if let Some(area) = steps_area {
         let o_step = p.map_or(1, |p| p.o_step) as usize;
-        let lines: Vec<Line> = AUTO_STEPS
+        let lines: Vec<Line> = st
+            .steps
             .iter()
             .enumerate()
             .map(|(i, name)| {
@@ -345,6 +353,7 @@ mod tests {
             auto: false,
             o_step: 0,
             o_total: 1,
+            weights: Vec::new(),
             o_start: 0,
             title: "t".into(),
             s_start: 0,

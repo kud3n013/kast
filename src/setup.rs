@@ -334,7 +334,7 @@ fn conflicts_with(si: &str, legacy: &str) -> bool {
         .any(|(_, v)| v.split_whitespace().any(|c| c.split(['<', '>', '=']).next() == Some(legacy)))
 }
 
-fn pkg_installed(pkg: &str) -> bool {
+pub fn pkg_installed(pkg: &str) -> bool {
     match pkg.split_once('/') {
         Some((repo, name)) => output("pacman", &["-Sl", repo]).is_some_and(|list| {
             list.lines().any(|l| {
@@ -346,11 +346,12 @@ fn pkg_installed(pkg: &str) -> bool {
     }
 }
 
-pub fn install_packages(list: &Parsed, auto: bool, o_start: i64, o_step: i64, o_total: i64) {
+/// Install the list's packages in order; `selection` (package names) narrows it, None = all.
+pub fn install_packages(list: &Parsed, selection: Option<&[String]>, auto: bool, o_start: i64, o_step: i64, o_total: i64) {
     let c = ctx();
     let d = Dash::new(auto, o_start, o_step, o_total, "Install Packages");
-    let all: Vec<&Pkg> = list.packages().collect();
-    let s_total = list.count() as i64;
+    let all: Vec<&Pkg> = list.packages().filter(|p| selection.is_none_or(|s| s.contains(&p.name))).collect();
+    let s_total = all.len() as i64;
     log("INFO", &format!("Starting installation of {s_total} packages..."));
 
     for (i, p) in all.iter().enumerate() {
@@ -581,8 +582,13 @@ pub struct Summary {
     pub partition: Option<String>,
     pub repo_configured: bool,
     pub log_file: String,
-    /// Where the package list came from (`PkgList::source_line`)
+    /// Where the package list came from (`PkgList::source_line`), or "skipped"
     pub packages: String,
+    /// Steps of the run left out (the app's step list); empty for `kast auto`
+    pub skipped: Vec<Step>,
+    /// How the import / export steps went, when they ran
+    pub import: Option<String>,
+    pub export: Option<String>,
     pub issues: Vec<String>,
     pub howdy_enrolled: bool,
 }
@@ -591,29 +597,196 @@ pub fn run_automatic(list: &PkgList) -> Result<()> {
     let o_start = run_automatic_steps(list)?;
     ui::restore_terminal_interactive();
     ui::clear_screen();
-    print_summary(&collect_summary(o_start, list));
+    print_summary(&collect_summary(o_start, Some(list)));
     ui::read_choice("Press Enter to return to master menu...");
     Ok(())
 }
 
-/// The four steps of the automatic run; returns its start time.
+/// A step the automatic run can include, in run order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    /// First: backups usually live on /media/data, and the other steps can use it
+    Partition,
+    /// Before anything below changes the apps or their settings
+    Export,
+    Upgrade,
+    Repo,
+    Packages,
+    Services,
+    /// Last: the apps are installed and /media/data is mounted by then
+    Import,
+}
+
+impl Step {
+    pub const ALL: [Step; 7] = [Step::Partition, Step::Export, Step::Upgrade, Step::Repo, Step::Packages, Step::Services, Step::Import];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Step::Partition => "Data partition",
+            Step::Export => "Export data",
+            Step::Upgrade => "System upgrade",
+            Step::Repo => "kud3n's repository",
+            Step::Packages => "Install packages",
+            Step::Services => "Services",
+            Step::Import => "Import data",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Step::Partition => "partition",
+            Step::Export => "export",
+            Step::Upgrade => "upgrade",
+            Step::Repo => "repo",
+            Step::Packages => "packages",
+            Step::Services => "services",
+            Step::Import => "import",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Step> {
+        Step::ALL.into_iter().find(|s| s.key() == key)
+    }
+
+    /// Share of the overall progress bar (normalised over the steps that run). Upgrade,
+    /// repo, packages and services keep the old 25 / 5 / 60 / 10.
+    pub fn weight(self) -> i64 {
+        match self {
+            Step::Partition => 10,
+            Step::Export => 15,
+            Step::Upgrade => 25,
+            Step::Repo => 5,
+            Step::Packages => 60,
+            Step::Services => 10,
+            Step::Import => 15,
+        }
+    }
+
+    /// Part of `kast auto` (the default plan)
+    pub fn standard(self) -> bool {
+        matches!(self, Step::Upgrade | Step::Repo | Step::Packages | Step::Services)
+    }
+}
+
+/// What an automatic run does, all decided before it starts.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AutoPlan {
+    /// In run order (`Step::ALL` order)
+    pub steps: Vec<Step>,
+    /// Package names to install; None = the whole list
+    pub packages: Option<Vec<String>>,
+    pub import: Option<crate::vault::import::ImportOpts>,
+    pub export: Option<crate::vault::backup::BackupOpts>,
+}
+
+impl AutoPlan {
+    /// `kast auto`: upgrade, repo, packages, services.
+    pub fn standard() -> Self {
+        AutoPlan { steps: Step::ALL.into_iter().filter(|s| s.standard()).collect(), packages: None, import: None, export: None }
+    }
+
+    pub fn has(&self, s: Step) -> bool {
+        self.steps.contains(&s)
+    }
+
+    /// Weights of the steps, for the overall progress bar.
+    pub fn weights(&self) -> Vec<i64> {
+        self.steps.iter().map(|s| s.weight()).collect()
+    }
+}
+
+/// How the import and export steps of a run went, for the summary.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PlanOutcome {
+    pub start: i64,
+    pub import: Option<String>,
+    pub export: Option<String>,
+}
+
+/// The automatic run's default steps; returns its start time.
 pub fn run_automatic_steps(list: &PkgList) -> Result<i64> {
-    let o_start = ui::now();
-    let o_total = 4;
+    Ok(run_plan(&AutoPlan::standard(), Some(list))?.start)
+}
+
+/// Run the plan's steps in order. A failing step records an issue and the run goes on,
+/// except where a step itself stops the run (the repository step, as before).
+pub fn run_plan(plan: &AutoPlan, list: Option<&PkgList>) -> Result<PlanOutcome> {
+    let mut out = PlanOutcome { start: ui::now(), ..Default::default() };
+    let o_start = out.start;
+    let o_total = plan.steps.len() as i64;
+    ui::set_step_weights(plan.weights());
     ctx::clear_issues();
     log("INFO", "==========================================");
     log("INFO", "Starting Full Automated Setup Sequence...");
     log("INFO", "==========================================");
 
-    system_upgrade(true, o_start, 1, o_total);
-    add_kud3n_repo(true, o_start, 2, o_total)?;
-    install_packages(&list.list, true, o_start, 3, o_total);
-    setup_services(true, o_start, 4, o_total)?;
-    Ok(o_start)
+    for (i, step) in plan.steps.iter().enumerate() {
+        let o_step = i as i64 + 1;
+        match step {
+            Step::Partition => setup_data_partition(true, o_start, o_step, o_total)?,
+            Step::Upgrade => system_upgrade(true, o_start, o_step, o_total),
+            Step::Repo => add_kud3n_repo(true, o_start, o_step, o_total)?,
+            Step::Packages => match list {
+                Some(l) => install_packages(&l.list, plan.packages.as_deref(), true, o_start, o_step, o_total),
+                None => add_issue("Packages step skipped: no package list"),
+            },
+            Step::Services => setup_services(true, o_start, o_step, o_total)?,
+            Step::Export => out.export = plan.export.clone().map(|o| run_export(o, o_start, o_step, o_total)),
+            Step::Import => out.import = plan.import.clone().map(|o| run_import(o, o_start, o_step, o_total)),
+        }
+    }
+    Ok(out)
+}
+
+/// The backup step of a run: what to show in the summary.
+fn run_export(o: crate::vault::backup::BackupOpts, o_start: i64, o_step: i64, o_total: i64) -> String {
+    let d = Dash::new(true, o_start, o_step, o_total, "Export Data");
+    let dest = o.output.clone().map(|p| p.display().to_string()).unwrap_or_default();
+    d.render(0, 1, &format!("Backing up {}", o.target), &format!("Backing up {} to {dest}", o.target), None);
+    let result = match crate::vault::backup::cmd_backup(o) {
+        Ok(()) if ctx::canceled() => "canceled, no backup was written".to_string(),
+        Ok(()) => format!("saved to {dest}"),
+        Err(e) => {
+            add_issue(format!("Backup failed: {e}"));
+            format!("failed: {e}")
+        }
+    };
+    // A declined "close the apps?" stops this step only
+    ctx::set_canceled(false);
+    d.render(1, 1, &result, &result, Some(if result.starts_with("saved") { "✔" } else { "✘" }));
+    result
+}
+
+/// The restore step of a run: what to show in the summary.
+fn run_import(o: crate::vault::import::ImportOpts, o_start: i64, o_step: i64, o_total: i64) -> String {
+    let d = Dash::new(true, o_start, o_step, o_total, "Import Data");
+    let file = o.file.display().to_string();
+    let what = o.app.clone().unwrap_or_else(|| "everything".into());
+    d.render(0, 1, &format!("Restoring {what}"), &format!("Restoring {what} from {file}"), None);
+    let result = match crate::vault::import::cmd_import(o) {
+        Ok(()) if ctx::canceled() => "canceled, nothing was restored".to_string(),
+        Ok(()) => format!("{what} restored from {file}"),
+        Err(e) => {
+            add_issue(format!("Restore failed: {e}"));
+            format!("failed: {e}")
+        }
+    };
+    ctx::set_canceled(false);
+    d.render(1, 1, &result, &result, Some(if result.contains("restored from") { "✔" } else { "✘" }));
+    result
+}
+
+/// The summary of a run the app planned: what was skipped and how import/export went.
+pub fn plan_summary(plan: &AutoPlan, out: &PlanOutcome, list: Option<&PkgList>) -> Summary {
+    let mut s = collect_summary(out.start, list.filter(|_| plan.has(Step::Packages)));
+    s.skipped = Step::ALL.into_iter().filter(|st| !plan.has(*st)).collect();
+    s.import = out.import.clone();
+    s.export = out.export.clone();
+    s
 }
 
 /// The state after the automatic run (takes the recorded issues).
-pub fn collect_summary(o_start: i64, list: &PkgList) -> Summary {
+pub fn collect_summary(o_start: i64, list: Option<&PkgList>) -> Summary {
     let c = ctx();
     let partition = is_mounted(MOUNT_POINT).then(|| {
         let mut p = format!("{MOUNT_POINT} mounted");
@@ -630,7 +803,10 @@ pub fn collect_summary(o_start: i64, list: &PkgList) -> Summary {
         partition,
         repo_configured: fs::read_to_string("/etc/pacman.conf").is_ok_and(|s| s.lines().any(|l| l.starts_with("[archrepo]"))),
         log_file: c.log_file.display().to_string(),
-        packages: list.source_line(),
+        packages: list.map_or_else(|| "skipped".to_string(), PkgList::source_line),
+        skipped: Vec::new(),
+        import: None,
+        export: None,
         issues: ctx::take_issues(),
         howdy_enrolled: Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file(),
     }
@@ -656,6 +832,14 @@ fn print_summary(s: &Summary) {
     println!("  • Kud3n Repo:         {repo}");
     println!("  • Log File:           {}", s.log_file);
     println!("  • Package List:       {}", s.packages);
+    for (name, r) in [("Backup:      ", &s.export), ("Restore:     ", &s.import)] {
+        if let Some(r) = r {
+            println!("  • {name}       {r}");
+        }
+    }
+    if !s.skipped.is_empty() {
+        println!("  • Skipped Steps:      {}", s.skipped.iter().map(|st| st.label()).collect::<Vec<_>>().join(", "));
+    }
     if !issues.is_empty() {
         println!("\n{C_YELLOW}{C_BOLD}Issues:{C_RESET}");
         for issue in issues {

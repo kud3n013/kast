@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/wizard.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Automatic setup: steps · 5 of 7 selected ────────────────────────────────────╮
+│❯ [x] Data partition (/media/data + home folder symlinks)                     │
+│  [ ] Export data (back up before anything changes)                           │
+│  [x] System upgrade (pacman -Syuu)                                           │
+│  [x] kud3n's repository                                                      │
+│  [x] Install packages (pick the apps next)                                   │
+│  [x] Services (VPN, IME, Howdy, Valkey/SearXNG)                              │
+│  [ ] Import data (restore a backup; runs last)                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Mounts the NTFS data partition at /media/data and moves your home folders onto│
+│it. Runs first: backups usually live there.                                   │
+│Changes:    /etc/fstab (backup kept), your home folders                       │
+│Needs root: yes (kast already runs as root)                                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help  a all  n none  i invert

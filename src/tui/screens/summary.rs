@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 
-use crate::setup::{HOWDY_RESTORE_HINT, PARTITION_HINT, Summary};
+use crate::setup::{HOWDY_RESTORE_HINT, PARTITION_HINT, Step, Summary};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::block;
 
@@ -20,12 +20,33 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
     lines.push(Line::raw(""));
     lines.push(field("Time elapsed", Span::raw(s.elapsed.clone())));
     lines.push(field("Target user", Span::raw(format!("{} (UID {}, GID {})", s.user, s.uid, s.gid))));
-    lines.push(field("Data partition", s.partition.clone().map_or_else(|| Span::styled(PARTITION_HINT, theme.dim()), Span::raw)));
-    let repo =
-        if s.repo_configured { Span::raw("configured in /etc/pacman.conf") } else { Span::styled(format!("{} not configured", theme.sym.warn), theme.warn()) };
+    let skipped = |st: Step| s.skipped.contains(&st);
+    let partition = match &s.partition {
+        Some(p) => Span::raw(p.clone()),
+        None if skipped(Step::Partition) => Span::styled("skipped (menu option 2 or `sudo kast partition`)", theme.dim()),
+        None => Span::styled(PARTITION_HINT, theme.dim()),
+    };
+    lines.push(field("Data partition", partition));
+    let repo = if s.repo_configured {
+        Span::raw("configured in /etc/pacman.conf")
+    } else if skipped(Step::Repo) {
+        Span::styled("skipped", theme.dim())
+    } else {
+        Span::styled(format!("{} not configured", theme.sym.warn), theme.warn())
+    };
     lines.push(field("kud3n repository", repo));
     lines.push(field("Log file", Span::raw(s.log_file.clone())));
     lines.push(field("Package list", Span::raw(crate::tui::screens::packages::sep(theme, &s.packages))));
+    for (name, result) in [("Backup", &s.export), ("Restore", &s.import)] {
+        if let Some(r) = result {
+            let style = if r.starts_with("failed") { theme.error() } else { ratatui::style::Style::new() };
+            lines.push(field(name, Span::styled(r.clone(), style)));
+        }
+    }
+    let left_out: Vec<&str> = s.skipped.iter().map(|st| st.label()).collect();
+    if !left_out.is_empty() {
+        lines.push(field("Skipped steps", Span::styled(left_out.join(", "), theme.dim())));
+    }
     if s.howdy_enrolled {
         lines.push(field("Howdy face model", Span::styled(format!("{} enrolled for {}", theme.sym.ok, s.user), theme.ok())));
     }

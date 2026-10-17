@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 938
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -13,7 +12,7 @@ expression: render(&a)
 │   6 Import data                      ││                                                                                                  │
 │   7 Export data                      ││Changes:    /etc/fstab (backup kept), your home folders, ~/.config/user-dirs.dirs                 │
 │   8 App status                       ││Needs root: yes (kast already runs as root)                                                       │
-│   9 Inspect a backup                 ││Automatic:  Optional: not part of the automatic run.                                              │
+│   9 Inspect a backup                 ││Automatic:  Optional step of the automatic run (off by default).                                  │
 │   q Quit                             ││                                                                                                  │
 │                                      ││                                                                                                  │
 │                                      ││                                                                                                  │

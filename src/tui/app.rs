@@ -14,10 +14,11 @@ use super::screens::help;
 use super::screens::import::{self, ImportState};
 use super::screens::log::{self, LogState};
 use super::screens::menu::{self, Action, ITEMS, MenuState};
-use super::screens::packages::{self, PackagesState, PkgState};
+use super::screens::packages::{self, Installed, PackagesState, PkgState};
 use super::screens::run::{self, Finished, RunState};
 use super::screens::status::{self, StatusState};
 use super::screens::summary;
+use super::screens::wizard::{self, Wizard};
 use super::theme::Theme;
 use super::widgets::{self, Dialog, MIN_H, MIN_W};
 use crate::setup::Summary;
@@ -57,8 +58,10 @@ pub enum Screen {
     Import(Box<ImportState>),
     Export(Box<ExportState>),
     Status(Box<StatusState>),
-    /// What the packages step will install, before the automatic run or option 4 starts
+    /// Option 4: the app picker
     Packages(Box<PackagesState>),
+    /// Option 1: the steps, a stage for each that needs choices, a review
+    Auto(Box<Wizard>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -70,6 +73,8 @@ pub enum ModalKind {
     CancelJob,
     /// Start this job on Yes
     Confirm(Box<JobKind>),
+    /// Automatic run with no app checked: Yes drops the packages step
+    SkipPackages,
 }
 
 /// A yes/no dialog over the current screen. Esc always answers No.
@@ -96,7 +101,11 @@ pub enum Command {
     /// Read the log file (answered with `Loaded::Log`)
     OpenLog,
     /// Find backups (answered with `Loaded::Candidates`)
-    LoadCandidates { zips_only: bool },
+    LoadCandidates { dir: std::path::PathBuf, user: String, zips_only: bool },
+    /// Which of these packages are installed (answered with `Loaded::Installed`)
+    LoadInstalled(Vec<String>),
+    /// Create a folder as the target user (answered with `Loaded::DirCreated`)
+    MkdirUser(std::path::PathBuf),
     /// Look at a backup file (answered with `Loaded::Inspected`)
     Inspect { path: std::path::PathBuf, pick: bool },
     /// Tab completion of a typed path (answered with `Loaded::Completion`)
@@ -146,6 +155,11 @@ pub struct App {
     pub toast: Option<Toast>,
     /// The package list, fetched in the background when the app opens
     pub packages: PkgState,
+    pub installed: Installed,
+    /// The automatic run's choices, kept while the menu shows
+    pub wizard: Option<Box<Wizard>>,
+    /// Folder check for the default folders (tests replace it)
+    pub dir_exists: fn(&std::path::Path) -> bool,
     pub quit: bool,
     last_click: Option<(usize, u64)>,
 }
@@ -172,6 +186,9 @@ impl App {
             modal: None,
             toast: None,
             packages: PkgState::Fetching,
+            installed: Installed::Unknown,
+            wizard: None,
+            dir_exists: |p| p.is_dir(),
             quit: false,
             last_click: None,
         }
@@ -191,7 +208,13 @@ impl App {
             Screen::Status(s) => s.loading,
             Screen::Import(s) => s.loading,
             Screen::Export(s) => s.loading,
-            Screen::Packages(_) => matches!(self.packages, PkgState::Fetching),
+            Screen::Packages(_) => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
+            Screen::Auto(w) => match w.stage {
+                wizard::Stage::Apps => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
+                wizard::Stage::Import => w.import.as_ref().is_some_and(|s| s.loading),
+                wizard::Stage::Export => w.export.as_ref().is_some_and(|s| s.loading),
+                _ => false,
+            },
             _ => false,
         };
         self.toast.is_some() || self.job_running() || loading
@@ -216,7 +239,8 @@ impl App {
             Screen::Status(_) => ("App status", &status::HELP),
             Screen::Export(_) => ("Back up", &export::HELP),
             Screen::Log(..) => ("Log", &log::HELP),
-            Screen::Packages(_) => ("Package list", &packages::HELP),
+            Screen::Packages(_) => ("Install packages", &packages::HELP),
+            Screen::Auto(w) => wizard::help(w),
         }
     }
 
@@ -264,6 +288,15 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         }
         Event::Loaded(Loaded::PackageList(pl)) => {
             app.packages = PkgState::Ready(std::sync::Arc::new(*pl));
+            app.installed = Installed::Unknown;
+            packages::sync(app)
+        }
+        Event::Loaded(Loaded::Installed(set)) => {
+            app.installed = Installed::Known(set);
+            packages::sync(app)
+        }
+        Event::Loaded(Loaded::DirCreated { path, result }) => {
+            export::on_dir_created(app, path, result);
             None
         }
         Event::Loaded(Loaded::Log(lines)) => {
@@ -274,7 +307,7 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::Candidates(list)) => import::on_candidates(app, list),
         Event::Loaded(Loaded::Inspected { path, pick, result }) => import::on_inspected(app, path, pick, result),
         Event::Loaded(Loaded::Completion { value, matches }) => {
-            export::on_completion(app, value.clone());
+            export::on_completion(app, value.clone(), matches.clone());
             import::on_completion(app, value, matches);
             None
         }
@@ -282,8 +315,8 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
             status::on_report(app, r);
             None
         }
-        Event::Loaded(Loaded::ExportTargets { targets, dir, ts }) => {
-            export::on_targets(app, targets, dir, ts);
+        Event::Loaded(Loaded::ExportTargets { targets, ts }) => {
+            export::on_targets(app, targets, ts);
             None
         }
     }
@@ -376,6 +409,10 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.quit = true;
                 None
             }
+            Screen::Auto(_) => {
+                wizard::leave(app);
+                None
+            }
             Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) => {
                 app.screen = Screen::Menu;
                 None
@@ -419,12 +456,13 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         Screen::Export(_) => export::key(app, k),
         Screen::Status(_) => status::key(app, k),
         Screen::Packages(_) => packages::key(app, k),
+        Screen::Auto(_) => wizard::key(app, k),
     }
 }
 
 /// A text field has the keyboard (letters must reach it, not shortcuts).
 fn text_field_open(app: &App) -> bool {
-    matches!(&app.screen, Screen::Import(s) if s.path.is_some() || s.filtering) || export::editing(app)
+    import::state_ref(app).is_some_and(ImportState::typing) || export::editing(app)
 }
 
 fn modal_key(app: &mut App, k: KeyEvent) -> Option<Command> {
@@ -464,6 +502,8 @@ fn answer(app: &mut App, yes: bool) -> Option<Command> {
         ModalKind::CancelJob => None,
         ModalKind::Confirm(kind) if yes => Some(start_job(app, *kind)),
         ModalKind::Confirm(_) => None,
+        ModalKind::SkipPackages if yes => wizard::skip_packages(app),
+        ModalKind::SkipPackages => None,
     }
 }
 
@@ -578,20 +618,22 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             app.quit = true;
             return None;
         }
-        // Both show the package list and where it came from first
-        Action::Auto | Action::Packages => {
-            app.screen = Screen::Packages(Box::new(PackagesState { auto: action == Action::Auto, scroll: 0 }));
-            return None;
+        Action::Auto => return wizard::open(app),
+        Action::Packages => {
+            app.screen = Screen::Packages(Box::new(PackagesState::new(false)));
+            return packages::sync(app);
         }
         Action::Partition => JobKind::Partition,
         Action::Repo => JobKind::Repo,
         Action::Services => JobKind::Services,
         Action::Import => {
-            app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Restore)));
-            return Some(Command::LoadCandidates { zips_only: false });
+            let dir = import::default_dir(&app.header.home, app.dir_exists);
+            app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Restore, false, dir)));
+            return None;
         }
         Action::Export => {
-            app.screen = Screen::Export(Box::new(ExportState::new(&app.header.user)));
+            let dir = export::default_dir(&app.header.home, app.dir_exists);
+            app.screen = Screen::Export(Box::new(ExportState::new(&app.header.user, false, dir)));
             return Some(Command::LoadExportTargets);
         }
         Action::Status => {
@@ -599,8 +641,9 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             return Some(Command::LoadStatus);
         }
         Action::Info => {
-            app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Inspect)));
-            return Some(Command::LoadCandidates { zips_only: true });
+            let dir = import::default_dir(&app.header.home, app.dir_exists);
+            app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Inspect, false, dir)));
+            return None;
         }
     };
     Some(start_job(app, kind))
@@ -609,6 +652,9 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
 pub fn start_job(app: &mut App, kind: JobKind) -> Command {
     app.toast = None;
     let mut run = RunState::new(kind.title(), kind.is_auto(), app.now);
+    if kind.is_auto() {
+        run.steps = kind.steps();
+    }
     run.packages = kind.packages().map(|pl| packages::source_text(&app.theme, pl));
     app.screen = Screen::Run(Box::new(run));
     Command::Start(kind)
@@ -655,11 +701,8 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => st.scroll.down(3),
             _ => {}
         },
-        Screen::Packages(st) => match m.kind {
-            MouseEventKind::ScrollUp => st.scroll = st.scroll.saturating_sub(3),
-            MouseEventKind::ScrollDown => st.scroll += 3,
-            _ => {}
-        },
+        Screen::Packages(_) => return packages::mouse(app, m),
+        Screen::Auto(_) => return wizard::mouse(app, m),
         Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) => {}
     }
     None
@@ -701,6 +744,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Status(st) => {
             status::view(f, body, app, st);
             &status::HINTS
+        }
+        Screen::Auto(w) => {
+            wizard::view(f, body, app, w);
+            wizard::hints(app, w)
         }
         Screen::Packages(st) => {
             packages::view(f, body, app, st);
@@ -752,7 +799,10 @@ pub mod tests {
     }
 
     pub fn app(w: u16, h: u16) -> App {
-        App::new(header(), Theme::new(true, false), (w, h))
+        let mut a = App::new(header(), Theme::new(true, false), (w, h));
+        // Default folders as on a machine with the data partition, whatever this one has
+        a.dir_exists = |p| p == std::path::Path::new("/media/data/backups") || p == std::path::Path::new("/media/data");
+        a
     }
 
     pub fn key(code: KeyCode) -> Event {
@@ -784,6 +834,7 @@ pub mod tests {
             auto: true,
             o_step,
             o_total: 4,
+            weights: Vec::new(),
             o_start: 1000,
             title: "Install Packages".into(),
             s_start: 1100,
@@ -823,25 +874,48 @@ pub mod tests {
         assert!(matches!(a.screen, Screen::Run(_)));
         assert_eq!(a.menu.selected, 2);
         let mut a = app(80, 24);
-        // The automatic run shows the package list first
+        // The automatic run starts with its step list, not the job
         assert!(update(&mut a, key(KeyCode::Enter)).is_none());
-        assert!(matches!(&a.screen, Screen::Packages(st) if st.auto));
+        assert!(matches!(&a.screen, Screen::Auto(w) if w.stage == wizard::Stage::Steps));
         assert!(!a.quit);
     }
 
-    fn online_list() -> PkgList {
+    pub fn online_list() -> PkgList {
         let edited = crate::pkglist::BUILTIN_TEXT
             .replace("  { name = \"steam\" },\n", "")
             .replace("  { name = \"haruna\" },", "  { name = \"haruna\" },\n  { name = \"gimp\" },");
         PkgList { source: Source::Online { fetched: "04:39".into() }, list: crate::pkglist::parse(&edited).unwrap() }
     }
 
-    fn loaded(a: &mut App, pl: PkgList) {
-        update(a, Event::Loaded(Loaded::PackageList(Box::new(pl))));
+    pub fn loaded(a: &mut App, pl: PkgList) -> Option<Command> {
+        update(a, Event::Loaded(Loaded::PackageList(Box::new(pl))))
+    }
+
+    pub fn installed(a: &mut App, names: &[&str]) {
+        update(a, Event::Loaded(Loaded::Installed(names.iter().map(|n| n.to_string()).collect())));
+    }
+
+    fn picker(a: &App) -> &super::super::screens::checklist::Checklist {
+        match &a.screen {
+            Screen::Packages(st) => st.picker.as_ref().unwrap(),
+            Screen::Auto(w) => w.apps.picker.as_ref().unwrap(),
+            _ => panic!("no picker"),
+        }
+    }
+
+    /// Put the cursor on the package `name` and press Space.
+    fn toggle_pkg(a: &mut App, name: &str) {
+        let i = picker(a).rows.iter().position(|r| matches!(r, super::super::screens::checklist::Row::Item(it) if it.key == name)).unwrap();
+        match &mut a.screen {
+            Screen::Packages(st) => st.picker.as_mut().unwrap().cursor = i,
+            Screen::Auto(w) => w.apps.picker.as_mut().unwrap().cursor = i,
+            _ => {}
+        }
+        update(a, key(KeyCode::Char(' ')));
     }
 
     #[test]
-    fn packages_screen_waits_for_the_list_then_starts_with_it() {
+    fn app_picker_selects_and_follows_the_add_on_rule() {
         let mut a = app(80, 24);
         assert!(update(&mut a, key(KeyCode::Char('4'))).is_none());
         assert!(matches!(&a.screen, Screen::Packages(st) if !st.auto));
@@ -851,19 +925,53 @@ pub mod tests {
         assert!(a.toast.as_ref().is_some_and(|t| t.text.starts_with("Still fetching")));
         assert!(update(&mut a, key(KeyCode::Char('r'))).is_none(), "no retry while fetching");
 
-        loaded(&mut a, online_list());
-        assert!(!a.animating() || a.toast.is_some());
-        update(&mut a, key(KeyCode::PageDown));
-        let Some(Command::Start(JobKind::Packages(pl))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a start") };
+        // The list arrives: everything checked, the installed check starts off the UI thread
+        let Some(Command::LoadInstalled(names)) = loaded(&mut a, online_list()) else { panic!("expected the installed check") };
+        assert_eq!(names.len(), 36);
+        assert_eq!(a.installed, Installed::Loading);
+        assert_eq!(picker(&a).count(), (36, 36));
+        let headers: Vec<String> =
+            picker(&a).rows.iter().filter_map(|r| if let super::super::screens::checklist::Row::Header(h) = r { Some(h.clone()) } else { None }).collect();
+        assert_eq!(headers, ["Official repositories", "kud3n's repository", "Add-ons"]);
+        installed(&mut a, &["steam", "obsidian"]);
+        assert_eq!(picker(&a).item("obsidian").unwrap().tag.as_deref(), Some("installed"));
+
+        // Unchecking zotero (not installed) greys out its six add-ons
+        toggle_pkg(&mut a, "zotero");
+        assert_eq!(picker(&a).count(), (29, 36));
+        let ocr = picker(&a).item("zotero-ocr").unwrap();
+        assert!(!ocr.enabled && ocr.checked && ocr.note.as_deref() == Some("needs zotero"));
+        // The same with zotero installed: its add-ons stay pickable
+        installed(&mut a, &["zotero"]);
+        assert_eq!(picker(&a).count(), (35, 36));
+        toggle_pkg(&mut a, "gimp");
+
+        update(&mut a, key(KeyCode::Enter));
+        let m = a.modal.as_ref().expect("a confirmation first");
+        assert_eq!(m.text, "Install 34 of 36 packages?");
+        assert!(m.details.iter().any(|d| d == "Left out: zotero, gimp"));
+        let Some(Command::Start(JobKind::Packages(pl, Some(sel)))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a start") };
         assert!(pl.list.contains("gimp"));
+        assert_eq!(sel.len(), 34);
+        assert!(!sel.contains(&"zotero".to_string()) && sel.contains(&"zotero-ocr".to_string()));
+        assert_eq!(sel.first().map(String::as_str), Some("zen-browser-bin"), "list order");
         let Screen::Run(r) = &a.screen else { panic!("run screen") };
         assert!(r.packages.as_ref().is_some_and(|l| l.to_string().contains("Online · kud3n013/kast@main · fetched 04:39 · 36 packages")));
-        assert!(render(&a).contains("✓ Online · kud3n013/kast@main · fetched 04:39"));
 
-        // Esc goes back without installing anything
+        // All checked: no selection, the same as the CLI
         let mut a = app(80, 24);
-        update(&mut a, key(KeyCode::Char('1')));
-        assert!(update(&mut a, key(KeyCode::Esc)).is_none());
+        update(&mut a, key(KeyCode::Char('4')));
+        loaded(&mut a, online_list());
+        update(&mut a, key(KeyCode::Enter));
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Start(JobKind::Packages(_, None)))));
+        // None checked: no confirmation
+        let mut a = app(80, 24);
+        update(&mut a, key(KeyCode::Char('4')));
+        loaded(&mut a, online_list());
+        update(&mut a, key(KeyCode::Char('n')));
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        assert!(a.modal.is_none() && a.toast.as_ref().unwrap().kind == ToastKind::Error);
+        update(&mut a, key(KeyCode::Esc));
         assert!(matches!(a.screen, Screen::Menu));
     }
 
@@ -880,32 +988,39 @@ pub mod tests {
         assert!(update(&mut a, key(KeyCode::Char('r'))).is_none());
     }
 
-    fn packages_app(w: u16, h: u16, list: Option<PkgList>) -> App {
+    fn picker_app(w: u16, h: u16, list: Option<PkgList>) -> App {
         let mut a = app(w, h);
-        update(&mut a, key(KeyCode::Char('1')));
+        update(&mut a, key(KeyCode::Char('4')));
         if let Some(pl) = list {
             loaded(&mut a, pl);
+            installed(&mut a, &["zotero", "steam", "fcitx5", "beeper"]);
         }
         a
     }
 
     #[test]
-    fn snapshot_packages_online() {
-        insta::assert_snapshot!("packages_online_80x24", render(&packages_app(80, 24, Some(online_list()))));
-        insta::assert_snapshot!("packages_online_140x40", render(&packages_app(140, 40, Some(online_list()))));
+    fn snapshot_app_picker_online() {
+        let mut a = picker_app(80, 24, Some(online_list()));
+        toggle_pkg(&mut a, "archrepo/freedownloadmanager");
+        toggle_pkg(&mut a, "zotero");
+        insta::assert_snapshot!("picker_online_80x24", render(&a));
+        let mut a = picker_app(140, 40, Some(online_list()));
+        toggle_pkg(&mut a, "archrepo/freedownloadmanager");
+        update(&mut a, key(KeyCode::End));
+        insta::assert_snapshot!("picker_online_140x40", render(&a));
     }
 
     #[test]
-    fn snapshot_packages_builtin_with_reason() {
+    fn snapshot_app_picker_builtin_with_reason() {
         let pl = || Some(PkgList::builtin(Reason::Network("timeout".into())));
-        insta::assert_snapshot!("packages_builtin_80x24", render(&packages_app(80, 24, pl())));
-        insta::assert_snapshot!("packages_builtin_140x40", render(&packages_app(140, 40, pl())));
+        insta::assert_snapshot!("picker_builtin_80x24", render(&picker_app(80, 24, pl())));
+        insta::assert_snapshot!("picker_builtin_140x40", render(&picker_app(140, 40, pl())));
     }
 
     #[test]
-    fn snapshot_packages_fetching() {
-        insta::assert_snapshot!("packages_fetching_80x24", render(&packages_app(80, 24, None)));
-        insta::assert_snapshot!("packages_fetching_140x40", render(&packages_app(140, 40, None)));
+    fn snapshot_app_picker_fetching() {
+        insta::assert_snapshot!("picker_fetching_80x24", render(&picker_app(80, 24, None)));
+        insta::assert_snapshot!("picker_fetching_140x40", render(&picker_app(140, 40, None)));
     }
 
     #[test]
@@ -950,7 +1065,10 @@ pub mod tests {
         a.now = 1000;
         update(&mut a, key(KeyCode::Char('1')));
         loaded(&mut a, online_list());
+        // Steps → apps → review → start
         update(&mut a, key(KeyCode::Enter));
+        update(&mut a, key(KeyCode::Enter));
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Start(JobKind::Auto(..)))));
         a.now = 1300;
         job(&mut a, JobMsg::Progress(progress(3, 12, 41, "Installing obsidian (pacman)", None)));
         job(&mut a, JobMsg::Log { level: Level::Info, line: "Package zotero already installed.".into() });
@@ -1095,6 +1213,9 @@ pub mod tests {
             repo_configured: true,
             log_file: "/var/log/kast.log".into(),
             packages: "Online · kud3n013/kast@main · fetched 04:39 · 36 packages".into(),
+            skipped: Vec::new(),
+            import: None,
+            export: None,
             issues,
             howdy_enrolled: howdy,
         }
@@ -1171,16 +1292,17 @@ pub mod tests {
         let mut a = running_auto(80, 24);
         job(&mut a, JobMsg::Ask { id: 4, prompt: Prompt::yes_no("q", false) });
         assert!(matches!(update(&mut a, key(KeyCode::Char('y'))), Some(Command::Answer { id: 4, yes: true })));
-        // A typed path takes the letters
+        // A typed folder takes the letters, ? and q included
         let mut a = app(80, 24);
-        let mut st = ImportState::new(import::Mode::Restore);
-        st.path = Some(widgets::Input::new("/tmp/"));
+        let mut st = ImportState::new(import::Mode::Restore, false, "/tmp/".into());
+        st.stage = import::Stage::Folder;
         a.screen = Screen::Import(Box::new(st));
-        for c in "eofyY".chars() {
+        for c in "eofyY?q".chars() {
             assert!(update(&mut a, key(KeyCode::Char(c))).is_none());
         }
+        assert!(!a.help && !a.quit);
         let Screen::Import(st) = &a.screen else { panic!() };
-        assert_eq!(st.path.as_ref().unwrap().value, "/tmp/eofyY");
+        assert_eq!(st.folder.value, "/tmp/eofyY?q");
     }
 
     #[test]

@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/import.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore from ────────────────────────────────────────────────────────────────╮
+│❯ Local folder                                                                │
+│  Proton Drive  Not available yet                                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Backups in a folder on this computer: the data partition, your Downloads, a   │
+│USB drive. Next: choose the folder.                                           │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter choose  Esc back  ? help

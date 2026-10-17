@@ -1,0 +1,44 @@
+---
+source: src/tui/app.rs
+expression: "render(&picker_app(140, 40, pl()))"
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Package list ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│⚠ Built-in · kast 0.0.0 · 36 packages · offline: could not reach raw.githubusercontent.com (timeout)                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Install packages · 36 of 36 selected ────────────────────────────────────────────────────╮╭ Details ─────────────────────────────────────╮
+│❯ [x] Official repositories  23/23                                                        ││Official repositories                         │
+│    [x] zen-browser-bin                                                                   ││Space checks or unchecks the whole group.     │
+│    [x] zotero  installed                                                                 ││                                              │
+│    [x] proton-vpn-cli                                                                    ││The list built into this kast, because:       │
+│    [x] inkscape                                                                          ││  offline: could not reach                    │
+│    [x] chromium                                                                          ││raw.githubusercontent.com (timeout)           │
+│    [x] obsidian                                                                          ││                                              │
+│    [x] fcitx5  installed                                                                 ││                                              │
+│    [x] fcitx5-configtool                                                                 ││                                              │
+│    [x] fcitx5-gtk                                                                        ││                                              │
+│    [x] fcitx5-qt                                                                         ││                                              │
+│    [x] fcitx5-unikey                                                                     ││                                              │
+│    [x] vesktop-bin                                                                       ││                                              │
+│    [x] valkey                                                                            ││                                              │
+│    [x] kdenlive                                                                          ││                                              │
+│    [x] steam  installed                                                                  ││                                              │
+│    [x] zed-globalmenu                                                                    ││                                              │
+│    [x] wine                                                                              ││                                              │
+│    [x] wine-gecko                                                                        ││                                              │
+│    [x] wine-mono                                                                         ││                                              │
+│    [x] gwenview                                                                          ││                                              │
+│    [x] haruna                                                                            ││                                              │
+│    [x] libreoffice-fresh                                                                 ││                                              │
+│    [x] libreoffice-fresh-vi                                                              ││                                              │
+│  [x] kud3n's repository  6/6                                                             ││                                              │
+│    [x] beeper  installed                                                                 ││                                              │
+│    [x] howdy-next                                                                        ││                                              │
+│    [x] gdlauncher-carbon                                                                 ││                                              │
+│    [x] searxng                                                                           ││                                              │
+│    [x] freedownloadmanager                                                               ││                                              │
+│    [x] sine                                                                              ││                                              │
+│  [x] Add-ons  7/7                                                                        ││                                              │
+│    [x] freedownloadmanager-elephant                                                      ││                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help  r retry download  a all  n none  i invert

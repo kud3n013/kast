@@ -3,7 +3,7 @@ source: src/tui/screens/export.rs
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
-╭ Back up ──────────────────────────────────────────────────────────────────╮╭ Details ────────────────────────────────────────────────────╮
+╭ Back up to /media/data/backups ───────────────────────────────────────────╮╭ Details ────────────────────────────────────────────────────╮
 │  ( ) All detected apps & Howdy face model  ✓                              ││BeeperTexts (~/.config/BeeperTexts)                          │
 │❯ (•) BeeperTexts (~/.config/BeeperTexts)  ✓ 2.1G                          ││                                                             │
 │  ( ) ZaloData (~/.config/ZaloData)  not found                             ││Found:   /home/p3ter/.config/beeper                          │
@@ -17,7 +17,7 @@ expression: render(&a)
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
 │  [x] Include large media (attachments, site data)                         ││                                                             │
 │  [x] Close running apps first                                             ││                                                             │
-│  Save to: /media/data/backups/beeper_backup_2026-10-17_101500.zip         ││                                                             │
+│  File name: beeper_backup_2026-10-17_101500.zip                           ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
@@ -41,4 +41,4 @@ expression: render(&a)
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 ╰───────────────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────────────────╯
- ↑/↓ move  Space select/toggle  s start  Esc back  ? help
+ ↑/↓ move  Space select/toggle  s start  Esc folder  ? help

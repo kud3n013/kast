@@ -8,3 +8,4 @@ pub mod packages;
 pub mod run;
 pub mod status;
 pub mod summary;
+pub mod wizard;

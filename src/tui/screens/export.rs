@@ -1,5 +1,7 @@
-//! Back up: pick what (with what kast detects and how big it is), the options that apply to
-//! it and where the file goes, then confirm.
+//! Back up: where to (a local folder; Proton Drive later), which folder (created as you if
+//! needed), then what (with what kast detects and how big it is), the options that apply to
+//! it and the file name, then confirm. In the automatic run the last button is "Use this",
+//! which records the backup for the run.
 
 use std::path::{Path, PathBuf};
 
@@ -9,7 +11,8 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 
-use crate::tui::app::{App, Command, Modal, ModalKind, Screen};
+use super::import::{PROTON_SOON, Source, check_dir, expand, folder_box, source_rows};
+use crate::tui::app::{App, Command, Modal, ModalKind, Screen, ToastKind};
 use crate::tui::job::JobKind;
 use crate::tui::widgets::{Input, block, popup};
 use crate::vault::backup::BackupOpts;
@@ -65,18 +68,37 @@ pub fn load_targets() -> Vec<TargetInfo> {
     out
 }
 
-/// Where backups go by default, and the timestamp for the file name.
-pub fn default_destination() -> (PathBuf, String) {
-    let dir = if Path::new("/media/data").is_dir() {
-        PathBuf::from("/media/data/backups")
-    } else {
-        crate::ctx::ctx().target_home.join(".local/share/app-vault-sync/backups")
-    };
-    (dir, crate::ctx::now_str("%Y-%m-%d_%H%M%S"))
+/// Where backups go by default: the data partition when it's there.
+pub fn default_dir(home: &str, exists: fn(&Path) -> bool) -> String {
+    if exists(Path::new("/media/data")) { "/media/data/backups".to_string() } else { format!("{home}/.local/share/app-vault-sync/backups") }
+}
+
+/// The timestamp for the file name.
+pub fn timestamp() -> String {
+    crate::ctx::now_str("%Y-%m-%d_%H%M%S")
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// Local folder or Proton Drive
+    Source,
+    /// The folder the backup goes to
+    Folder,
+    /// What to back up, the options and the file name
+    What,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExportState {
+    pub stage: Stage,
+    /// A stage of the automatic run: the last button records the backup instead
+    pub auto: bool,
+    pub source: usize,
+    pub folder: Input,
+    pub folder_error: Option<String>,
+    /// The typed folder doesn't exist: the next Enter creates it
+    pub create_offer: Option<PathBuf>,
+    pub completions: Vec<String>,
     pub targets: Vec<TargetInfo>,
     pub loading: bool,
     pub target: usize,
@@ -84,6 +106,7 @@ pub struct ExportState {
     pub include_media: bool,
     pub dat: bool,
     pub kill: bool,
+    /// The file name inside `dir` (an absolute path typed here wins)
     pub dest: Input,
     pub dest_edited: bool,
     pub editing: bool,
@@ -103,8 +126,15 @@ enum Row {
 }
 
 impl ExportState {
-    pub fn new(user: &str) -> Self {
+    pub fn new(user: &str, auto: bool, folder: String) -> Self {
         ExportState {
+            stage: Stage::Source,
+            auto,
+            source: 0,
+            folder: Input::new(folder),
+            folder_error: None,
+            create_offer: None,
+            completions: Vec::new(),
             targets: Vec::new(),
             loading: true,
             target: 0,
@@ -142,24 +172,25 @@ impl ExportState {
     }
 
     /// File name for the current choice (`kast export` used the same names).
-    fn default_path(&self) -> PathBuf {
-        if self.key() == "howdy" && self.dat {
-            self.dir.join(format!("{}_face_model_{}.dat", self.user, self.ts))
-        } else {
-            self.dir.join(format!("{}_backup_{}.zip", self.key(), self.ts))
-        }
+    fn default_name(&self) -> String {
+        if self.key() == "howdy" && self.dat { format!("{}_face_model_{}.dat", self.user, self.ts) } else { format!("{}_backup_{}.zip", self.key(), self.ts) }
     }
 
     fn refresh_dest(&mut self) {
         if !self.dest_edited {
-            self.dest.set(self.default_path().display().to_string());
+            self.dest.set(self.default_name());
         }
+    }
+
+    /// Where the file goes: the name inside the chosen folder.
+    pub fn output(&self) -> PathBuf {
+        self.dir.join(self.dest.value.trim())
     }
 
     pub fn opts(&self) -> BackupOpts {
         BackupOpts {
             target: self.key().to_string(),
-            output: Some(PathBuf::from(self.dest.value.trim())),
+            output: Some(self.output()),
             include_media: self.include_media || !self.media_applies(),
             kill: self.kill,
             force: false,
@@ -171,35 +202,149 @@ impl ExportState {
 fn state(app: &mut App) -> Option<&mut ExportState> {
     match &mut app.screen {
         Screen::Export(s) => Some(s),
+        Screen::Auto(w) => w.export_mut(),
         _ => None,
     }
 }
 
-pub fn on_targets(app: &mut App, targets: Vec<TargetInfo>, dir: PathBuf, ts: String) {
+fn state_ref(app: &App) -> Option<&ExportState> {
+    match &app.screen {
+        Screen::Export(s) => Some(s),
+        Screen::Auto(w) => w.export_ref(),
+        _ => None,
+    }
+}
+
+/// Targets found, plus the timestamp for the file names.
+pub fn on_targets(app: &mut App, targets: Vec<TargetInfo>, ts: String) {
     if let Some(st) = state(app) {
         st.targets = targets;
         st.loading = false;
-        st.dir = dir;
         st.ts = ts;
         st.refresh_dest();
     }
 }
 
-pub fn on_paste(app: &mut App, text: &str) {
-    if let Some(st) = state(app)
-        && st.editing
-    {
-        st.dest.insert(text.trim());
-        st.dest_edited = true;
+/// The folder was created (or not) after the user said so.
+pub fn on_dir_created(app: &mut App, dir: PathBuf, result: Result<(), String>) {
+    if let Some(st) = state(app) {
+        match result {
+            Ok(()) => {
+                st.dir = dir;
+                st.stage = Stage::What;
+                st.refresh_dest();
+            }
+            Err(e) => st.folder_error = Some(e),
+        }
     }
 }
 
+pub fn on_paste(app: &mut App, text: &str) {
+    if let Some(st) = state(app) {
+        if st.stage == Stage::Folder {
+            st.folder.insert(text.trim());
+            st.folder_error = None;
+            st.create_offer = None;
+        } else if st.editing {
+            st.dest.insert(text.trim());
+            st.dest_edited = true;
+        }
+    }
+}
+
+/// A text field has the keyboard.
 pub fn editing(app: &App) -> bool {
-    matches!(&app.screen, Screen::Export(s) if s.editing)
+    state_ref(app).is_some_and(|s| s.editing || s.stage == Stage::Folder)
+}
+
+fn leave(app: &mut App, auto: bool) {
+    if auto {
+        super::wizard::back(app);
+    } else {
+        app.screen = Screen::Menu;
+    }
+}
+
+/// Enter in the folder field: on to "what" when it's a folder; when it doesn't exist, say
+/// so and create it (as the user) on a second Enter.
+fn accept_folder(app: &mut App) -> Option<Command> {
+    let home = app.header.home.clone();
+    let user = app.header.user.clone();
+    let st = state(app)?;
+    let path = expand(&st.folder.value, &home);
+    if st.create_offer.as_ref() == Some(&path) {
+        st.create_offer = None;
+        if st.auto {
+            // The backup step creates it, after the partition step has mounted /media/data
+            st.dir = path;
+            st.stage = Stage::What;
+            st.refresh_dest();
+            return None;
+        }
+        return Some(Command::MkdirUser(path));
+    }
+    if st.folder.value.trim().is_empty() {
+        st.folder_error = Some("Type a folder".into());
+    } else if !path.exists() {
+        st.folder_error = Some(format!("{} doesn't exist. Press Enter again to create it (as {user}).", path.display()));
+        st.create_offer = Some(path);
+    } else {
+        match check_dir(&st.folder.value, &home) {
+            Ok(dir) => {
+                st.folder_error = None;
+                st.completions.clear();
+                st.dir = dir;
+                st.stage = Stage::What;
+                st.refresh_dest();
+            }
+            Err(e) => st.folder_error = Some(e),
+        }
+    }
+    None
 }
 
 pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
     let st = state(app)?;
+    let auto = st.auto;
+    match st.stage {
+        Stage::Source => {
+            match k.code {
+                KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => st.source = 1 - st.source.min(1),
+                KeyCode::Enter | KeyCode::Char(' ') => {
+                    if Source::ALL[st.source.min(1)].available() {
+                        st.stage = Stage::Folder;
+                    } else {
+                        app.toast(ToastKind::Info, PROTON_SOON);
+                    }
+                }
+                KeyCode::Esc | KeyCode::Char('q') => leave(app, auto),
+                _ => {}
+            }
+            return None;
+        }
+        Stage::Folder => {
+            return match k.code {
+                KeyCode::Esc => {
+                    st.stage = Stage::Source;
+                    st.folder_error = None;
+                    st.create_offer = None;
+                    st.completions.clear();
+                    None
+                }
+                KeyCode::Tab => Some(Command::Complete(st.folder.value.clone())),
+                KeyCode::Enter => accept_folder(app),
+                _ => {
+                    if st.folder.key(&k) {
+                        st.folder_error = None;
+                        st.create_offer = None;
+                        st.completions.clear();
+                    }
+                    None
+                }
+            };
+        }
+        Stage::What => {}
+    }
     if st.editing {
         match k.code {
             KeyCode::Enter | KeyCode::Esc => st.editing = false,
@@ -214,7 +359,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
     }
     if st.loading {
         if matches!(k.code, KeyCode::Esc | KeyCode::Char('q')) {
-            app.screen = Screen::Menu;
+            st.stage = Stage::Folder;
         }
         return None;
     }
@@ -226,7 +371,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => st.focus = (st.focus + 1) % n,
         KeyCode::Home | KeyCode::Char('g') => st.focus = 0,
         KeyCode::End | KeyCode::Char('G') => st.focus = n - 1,
-        KeyCode::Esc | KeyCode::Char('q') => app.screen = Screen::Menu,
+        KeyCode::Esc | KeyCode::Char('q') => st.stage = Stage::Folder,
         KeyCode::Char('s') => return confirm(app),
         KeyCode::Char(' ') | KeyCode::Enter => match rows[st.focus] {
             Row::Target(i) => {
@@ -247,24 +392,30 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
     None
 }
 
-pub fn on_completion(app: &mut App, value: String) {
-    if let Some(st) = state(app)
-        && st.editing
-    {
-        st.dest.set(value);
-        st.dest_edited = true;
+pub fn on_completion(app: &mut App, value: String, matches: Vec<String>) {
+    if let Some(st) = state(app) {
+        if st.stage == Stage::Folder {
+            st.folder.set(value);
+            st.completions = matches;
+        } else if st.editing {
+            st.dest.set(value);
+            st.dest_edited = true;
+        }
     }
 }
 
 fn confirm(app: &mut App) -> Option<Command> {
     let st = state(app)?;
     let opts = st.opts();
-    let dest = st.dest.value.trim().to_string();
-    if dest.is_empty() {
+    if st.dest.value.trim().is_empty() {
         st.focus = st.rows().iter().position(|r| *r == Row::Dest).unwrap_or(0);
         st.editing = true;
         return None;
     }
+    if st.auto {
+        return super::wizard::export_done(app, opts);
+    }
+    let dest = st.output().display().to_string();
     let mut details = vec![format!("What:        {}", TARGETS[st.target].1), format!("Destination: {dest}")];
     if st.media_applies() {
         details.push(format!("Media:       {}", if st.include_media { "included" } else { "left out (smaller archive)" }));
@@ -291,6 +442,9 @@ fn confirm(app: &mut App) -> Option<Command> {
 
 pub fn mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
     let st = state(app)?;
+    if st.stage != Stage::What {
+        return None;
+    }
     let n = st.rows().len();
     match m.kind {
         MouseEventKind::ScrollUp => st.focus = st.focus.saturating_sub(1),
@@ -302,6 +456,35 @@ pub fn mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
 
 pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
     let theme = &app.theme;
+    match st.stage {
+        Stage::Source => {
+            let [list_area, details] = Layout::vertical([Constraint::Length(Source::ALL.len() as u16 + 2), Constraint::Min(3)]).areas(body);
+            let (list, mut ls) = source_rows(theme, st.source);
+            f.render_stateful_widget(list.block(block(theme, " Back up to ")), list_area, &mut ls);
+            let text = if Source::ALL[st.source.min(1)].available() {
+                "A folder on this computer: the data partition, a USB drive. Next: choose the folder."
+            } else {
+                PROTON_SOON
+            };
+            f.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }).block(block(theme, " Details ")), details);
+            return;
+        }
+        Stage::Folder => {
+            let h = 5 + st.completions.len().min(8) as u16 + u16::from(!st.completions.is_empty()) + u16::from(st.folder_error.is_some());
+            let [area, _] = Layout::vertical([Constraint::Length(h.min(body.height)), Constraint::Min(0)]).areas(body);
+            let help = "Tab completes, Enter uses this folder (created if missing), Esc goes back";
+            let d = super::import::Folder {
+                title: "Folder for the backup",
+                input: &st.folder,
+                error: st.folder_error.as_deref(),
+                completions: &st.completions,
+                help,
+            };
+            folder_box(f, area, theme, &d);
+            return;
+        }
+        Stage::What => {}
+    }
     let wide = body.width >= 100;
     let (list_area, panel) = if wide {
         let [l, p] = Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)]).areas(body);
@@ -331,12 +514,19 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
             Row::Kill => ListItem::new(format!("{} Close running apps first", check(st.kill))),
             Row::Dest => {
                 let style = if st.dest_edited { theme.bold() } else { ratatui::style::Style::new() };
-                ListItem::new(Line::from(vec![Span::raw("Save to: "), Span::styled(st.dest.value.clone(), style)]))
+                ListItem::new(Line::from(vec![Span::raw("File name: "), Span::styled(st.dest.value.clone(), style)]))
             }
-            Row::Start => ListItem::new(Line::styled(format!("{} Start backup", theme.sym.start), theme.ok())),
+            Row::Start => {
+                let label = if st.auto { "Use this backup" } else { "Start backup" };
+                ListItem::new(Line::styled(format!("{} {label}", theme.sym.start), theme.ok()))
+            }
         })
         .collect();
-    let list = List::new(items).block(block(theme, " Back up ")).highlight_style(theme.selected()).highlight_symbol(format!("{} ", theme.sym.pointer));
+    let title = format!(
+        " Back up to {} ",
+        crate::tui::widgets::ellipsize(&st.dir.display().to_string(), list_area.width.saturating_sub(16) as usize, theme.sym.ellipsis)
+    );
+    let list = List::new(items).block(block(theme, title)).highlight_style(theme.selected()).highlight_symbol(format!("{} ", theme.sym.pointer));
     let mut ls = ListState::default().with_selected(Some(st.focus));
     f.render_stateful_widget(list, list_area, &mut ls);
 
@@ -365,7 +555,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
 
     if st.editing {
         let r = popup(f, body, body.width.saturating_sub(8).min(100), 4);
-        let blk = block(theme, " Save the backup to ");
+        let blk = block(theme, format!(" File name in {} ", st.dir.display()));
         let inner = blk.inner(r);
         f.render_widget(blk, r);
         let [field, hint] = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(inner);
@@ -375,19 +565,23 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
 }
 
 pub fn hints(st: &ExportState) -> &'static [(&'static str, &'static str)] {
-    if st.editing {
-        &[("Tab", "complete"), ("Enter", "done")]
-    } else {
-        &[("↑/↓", "move"), ("Space", "select/toggle"), ("s", "start"), ("Esc", "back"), ("?", "help")]
+    match st.stage {
+        Stage::Source => &[("↑/↓", "move"), ("Enter", "choose"), ("Esc", "back"), ("?", "help")],
+        Stage::Folder => &[("Tab", "complete"), ("Enter", "use folder"), ("Esc", "back")],
+        Stage::What if st.editing => &[("Tab", "complete"), ("Enter", "done")],
+        Stage::What if st.auto => &[("↑/↓", "move"), ("Space", "select/toggle"), ("s", "use this"), ("Esc", "folder"), ("?", "help")],
+        Stage::What => &[("↑/↓", "move"), ("Space", "select/toggle"), ("s", "start"), ("Esc", "folder"), ("?", "help")],
     }
 }
 
-pub const HELP: [(&str, &str); 6] = [
+pub const HELP: [(&str, &str); 8] = [
     ("↑/↓  j/k", "Move"),
-    ("Space  Enter", "Select a target, toggle an option, edit the path"),
-    ("s", "Start the backup (asks first)"),
-    ("Tab", "Path field: complete"),
-    ("Esc  q", "Back to the menu"),
+    ("Enter", "Choose the destination, the folder"),
+    ("Proton Drive", "Not available yet"),
+    ("Tab", "Folder / file name: complete (paste and ~ work)"),
+    ("Space  Enter", "Select a target, toggle an option, edit the file name"),
+    ("s", "Start the backup, asks first (automatic run: use this)"),
+    ("Esc  q", "Back one stage"),
     ("?", "This help"),
 ];
 
@@ -401,6 +595,11 @@ mod tests {
     fn loaded(w: u16, h: u16) -> App {
         let mut a = app(w, h);
         assert!(matches!(update(&mut a, key(KeyCode::Char('7'))), Some(Command::LoadExportTargets)));
+        update(&mut a, key(KeyCode::Enter));
+        assert_eq!(st(&a).folder.value, "/media/data/backups");
+        let s = state(&mut a).unwrap();
+        s.dir = PathBuf::from("/media/data/backups");
+        s.stage = Stage::What;
         let mut targets: Vec<TargetInfo> =
             TARGETS.iter().map(|(k, _)| TargetInfo { key: k, detected: false, size: String::new(), location: String::new() }).collect();
         for (i, size) in [(0, ""), (1, "2.1G"), (4, "512M"), (8, "8.0K"), (9, "96M")] {
@@ -408,7 +607,7 @@ mod tests {
             targets[i].size = size.into();
             targets[i].location = format!("/home/p3ter/.config/{}", targets[i].key);
         }
-        update(&mut a, Event::Loaded(Loaded::ExportTargets { targets, dir: "/media/data/backups".into(), ts: "2026-10-17_101500".into() }));
+        update(&mut a, Event::Loaded(Loaded::ExportTargets { targets, ts: "2026-10-17_101500".into() }));
         a
     }
 
@@ -422,13 +621,13 @@ mod tests {
     #[test]
     fn destination_follows_target_until_edited() {
         let mut a = loaded(80, 24);
-        assert_eq!(st(&a).dest.value, "/media/data/backups/all_backup_2026-10-17_101500.zip");
+        assert_eq!(st(&a).dest.value, "all_backup_2026-10-17_101500.zip");
         // howdy: .dat by default, no media option
         for _ in 0..8 {
             update(&mut a, key(KeyCode::Down));
         }
         update(&mut a, key(KeyCode::Char(' ')));
-        assert_eq!(st(&a).dest.value, "/media/data/backups/p3ter_face_model_2026-10-17_101500.dat");
+        assert_eq!(st(&a).dest.value, "p3ter_face_model_2026-10-17_101500.dat");
         assert!(!st(&a).rows().contains(&Row::Media));
         // Format row comes right after the targets
         update(&mut a, key(KeyCode::End));
@@ -436,7 +635,7 @@ mod tests {
         update(&mut a, key(KeyCode::Up));
         update(&mut a, key(KeyCode::Up));
         update(&mut a, key(KeyCode::Char(' ')));
-        assert_eq!(st(&a).dest.value, "/media/data/backups/howdy_backup_2026-10-17_101500.zip");
+        assert_eq!(st(&a).dest.value, "howdy_backup_2026-10-17_101500.zip");
         // Edit the path: later target changes keep it
         update(&mut a, key(KeyCode::End));
         update(&mut a, key(KeyCode::Up));
@@ -449,14 +648,46 @@ mod tests {
         update(&mut a, key(KeyCode::Enter));
         update(&mut a, key(KeyCode::Home));
         update(&mut a, key(KeyCode::Char(' ')));
-        assert_eq!(st(&a).dest.value, "/media/data/backups/howdy_backup_2026-10-17_101500.zip");
+        assert_eq!(st(&a).dest.value, "howdy_backup_2026-10-17_101500.zip");
         update(&mut a, key(KeyCode::Char('s')));
         let m = a.modal.as_ref().unwrap();
         assert!(m.yes_selected);
         let ModalKind::Confirm(k) = &m.kind else { panic!() };
         let JobKind::Export(o) = k.as_ref() else { panic!() };
         assert_eq!((o.target.as_str(), o.kill, o.force, o.include_media), ("all", true, false, true));
+        assert_eq!(o.output.as_deref(), Some(Path::new("/media/data/backups/howdy_backup_2026-10-17_101500.zip")));
         assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Start(JobKind::Export(_)))));
+    }
+
+    #[test]
+    fn folder_is_created_on_request() {
+        let t = tempfile::tempdir().unwrap();
+        let mut a = app(80, 24);
+        update(&mut a, key(KeyCode::Char('7')));
+        // Proton Drive can't be picked
+        update(&mut a, key(KeyCode::Down));
+        update(&mut a, key(KeyCode::Enter));
+        assert_eq!(st(&a).stage, Stage::Source);
+        assert_eq!(a.toast.as_ref().unwrap().text, PROTON_SOON);
+        update(&mut a, key(KeyCode::Up));
+        update(&mut a, key(KeyCode::Enter));
+        assert_eq!(st(&a).stage, Stage::Folder);
+        // A folder that exists: on to "what"
+        state(&mut a).unwrap().folder.set(t.path().display().to_string());
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        assert_eq!((st(&a).stage, st(&a).dir.as_path()), (Stage::What, t.path()));
+        // One that doesn't: say so, then create it (as the user) on a second Enter
+        update(&mut a, key(KeyCode::Esc));
+        let new = t.path().join("new/backups");
+        state(&mut a).unwrap().folder.set(new.display().to_string());
+        assert!(update(&mut a, key(KeyCode::Enter)).is_none());
+        assert!(st(&a).folder_error.as_deref().is_some_and(|e| e.contains("Press Enter again to create it (as p3ter)")));
+        let Some(Command::MkdirUser(p)) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected the folder to be created") };
+        assert_eq!(p, new);
+        update(&mut a, Event::Loaded(Loaded::DirCreated { path: p, result: Err("Could not create it: denied".into()) }));
+        assert_eq!((st(&a).stage, st(&a).folder_error.as_deref()), (Stage::Folder, Some("Could not create it: denied")));
+        update(&mut a, Event::Loaded(Loaded::DirCreated { path: new.clone(), result: Ok(()) }));
+        assert_eq!((st(&a).stage, st(&a).dir.clone()), (Stage::What, new));
     }
 
     #[test]
