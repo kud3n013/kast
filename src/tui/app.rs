@@ -288,7 +288,7 @@ impl App {
     pub fn animating(&self) -> bool {
         let loading = match &self.screen {
             Screen::Status(s) => s.loading,
-            Screen::Import(s) => s.loading,
+            Screen::Import(s) => s.busy(),
             Screen::Export(s) => s.loading,
             Screen::Packages(_) => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
             Screen::Undo(s) => s.loading(),
@@ -296,7 +296,7 @@ impl App {
             Screen::Auto(w) => match w.stage {
                 wizard::Stage::Upgrade => self.snapshots.is_none(),
                 wizard::Stage::Apps => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
-                wizard::Stage::Import => w.import.as_ref().is_some_and(|s| s.loading),
+                wizard::Stage::Import => w.import.as_ref().is_some_and(ImportState::busy),
                 wizard::Stage::Export => w.export.as_ref().is_some_and(|s| s.loading),
                 _ => false,
             },

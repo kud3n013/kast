@@ -53,7 +53,6 @@ pub enum RunningPolicy {
 /// Apps the last backup left out because they were running (`RunningPolicy::Skip`).
 static SKIPPED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
-#[allow(dead_code)] // read by the scheduled backup
 pub fn take_skipped() -> Vec<String> {
     std::mem::take(&mut *SKIPPED.lock().unwrap())
 }

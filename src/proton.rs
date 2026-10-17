@@ -108,13 +108,6 @@ pub enum Install {
 }
 
 impl Install {
-    pub fn path(&self) -> Option<&Path> {
-        match self {
-            Install::Found { path, .. } | Install::Broken { path, .. } => Some(path),
-            Install::Missing => None,
-        }
-    }
-
     /// Usable for Drive commands (an old version is not).
     pub fn usable(&self) -> bool {
         matches!(self, Install::Found { compat: Compat::Ok | Compat::NewerMajor, .. })
@@ -210,10 +203,6 @@ pub fn forget_status() {
     *STATUS.lock().unwrap() = None;
 }
 
-pub fn set_status(s: Status) {
-    *STATUS.lock().unwrap() = Some(s);
-}
-
 // --- What went wrong ------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -259,12 +248,7 @@ impl fmt::Display for Problem {
 
 impl std::error::Error for Problem {}
 
-impl Problem {
-    /// Not ready to transfer at all (`kast backup --upload proton` exits 3 on these).
-    pub fn not_ready(&self) -> bool {
-        matches!(self, Problem::NotInstalled | Problem::SignedOut | Problem::Keyring(_) | Problem::Offline(_) | Problem::NeedsBaseline)
-    }
-}
+impl Problem {}
 
 fn any(text: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| text.contains(n))
@@ -621,16 +605,6 @@ pub fn join(base: &str, parts: &[&str]) -> String {
     s
 }
 
-/// Parent and last component of a remote path.
-pub fn split(path: &str) -> (&str, &str) {
-    let p = path.trim_end_matches('/');
-    match p.rfind('/') {
-        Some(0) => ("/", &p[1..]),
-        Some(i) => (&p[..i], &p[i + 1..]),
-        None => ("/", p),
-    }
-}
-
 // --- Running it -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -697,10 +671,19 @@ impl Cli {
         Launch::as_user(self.root, &self.user, &extra, &argv)
     }
 
-    /// The process for `args`: stdin /dev/null, stdout and stderr piped, its own process group.
+    /// The process for `args`: stdin /dev/null, stdout and stderr piped, in its own session
+    /// (no controlling terminal: neither it nor sudo can touch ours; its process group id is
+    /// its pid, which `kill_group` uses).
     pub fn command(&self, args: &[String]) -> std::process::Command {
         let mut cmd = self.launch(args).command();
-        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).process_group(0);
+        cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        // SAFETY: setsid is async-signal-safe and touches no memory of ours
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
         cmd
     }
 
@@ -708,6 +691,17 @@ impl Cli {
     /// to `on_line`, which also gets None about once a second (for an elapsed-time display).
     /// On a TUI job thread the child is registered, so a cancel stops it.
     pub fn run(&self, args: &[String], timeout: Duration, on_line: &mut dyn FnMut(Option<&str>)) -> io::Result<Output> {
+        self.run_with(args, timeout, on_line, None)
+    }
+
+    /// `run`, also stopped when `cancel` is set (a download outside a job: Esc sets it).
+    fn run_with(
+        &self,
+        args: &[String],
+        timeout: Duration,
+        on_line: &mut dyn FnMut(Option<&str>),
+        cancel: Option<&std::sync::atomic::AtomicBool>,
+    ) -> io::Result<Output> {
         let mut child = self.command(args).spawn()?;
         let pgid = child.id() as i32;
         let tracked = crate::report::owns_terminal();
@@ -752,7 +746,7 @@ impl Cli {
                 on_line(None);
                 next_tick += Duration::from_secs(1);
             }
-            let canceled = (tracked && crate::report::cancel_requested()) || TRANSFER_CANCEL.load(std::sync::atomic::Ordering::SeqCst);
+            let canceled = (tracked && crate::report::cancel_requested()) || cancel.is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst));
             if canceled || Instant::now() >= deadline {
                 kill_group(pgid);
                 let _ = child.wait();
@@ -835,6 +829,14 @@ impl Cli {
 
     pub fn download(&self, remote: &[String], dir: &Path, on_line: &mut dyn FnMut(Option<&str>)) -> Result<Summary, Problem> {
         transfer(self.run(&args_download(remote, dir), NO_TIMEOUT, on_line))
+    }
+
+    /// A download that `cancel_transfer` can stop (the restore screen's, outside a job).
+    pub fn download_cancelable(&self, remote: &[String], dir: &Path, on_line: &mut dyn FnMut(Option<&str>)) -> Result<Summary, Problem> {
+        reset_transfer_cancel();
+        let r = transfer(self.run_with(&args_download(remote, dir), NO_TIMEOUT, on_line, Some(&TRANSFER_CANCEL)));
+        reset_transfer_cancel();
+        r
     }
 
     pub fn trash(&self, paths: &[String]) -> Result<(), Problem> {
@@ -1303,7 +1305,6 @@ pub mod tests {
         assert_eq!(classify(&Exit::TimedOut, "You need to login first"), Problem::TimedOut);
         assert_eq!(c(1, "Opening it\n  Something odd  \n    at foo (x.ts:1)\n"), Problem::Other("Something odd".into()));
         assert_eq!(c(2, ""), Problem::Other("proton-drive exited with code 2".into()));
-        assert!(Problem::SignedOut.not_ready() && !Problem::QuotaFull(String::new()).not_ready());
     }
 
     #[test]
@@ -1409,7 +1410,5 @@ pub mod tests {
     #[test]
     fn remote_paths() {
         assert_eq!(join("/my-files/kast-backups/", &["host", "/a.zip"]), "/my-files/kast-backups/host/a.zip");
-        assert_eq!(split("/my-files/kast-backups/host"), ("/my-files/kast-backups", "host"));
-        assert_eq!(split("/my-files"), ("/", "my-files"));
     }
 }

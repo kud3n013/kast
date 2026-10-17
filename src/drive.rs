@@ -57,7 +57,6 @@ pub fn installed_cli() -> Result<Cli, Problem> {
 }
 
 /// The CLI, signed in (checked now, not from a cache).
-#[allow(dead_code)] // used by the upload in the next commit
 pub fn ready_cli() -> Result<Cli, NotReady> {
     let cli = installed_cli().map_err(NotReady)?;
     proton::forget_status();
@@ -701,6 +700,15 @@ fn apply_retention(cli: &Cli, host_folder: &str, series: &Series, keep: u32, ok:
     }
     let archives: Vec<&String> = victims.iter().filter(|v| !v.ends_with(SIDECAR_EXT)).collect();
     let mut state = DriveState::load();
+    let can_ask = crate::report::owns_terminal() || std::io::IsTerminal::is_terminal(&std::io::stdin());
+    if !ok && !state.retention_confirmed && !can_ask {
+        // Nobody to agree: leave them, and ask the next time someone can answer
+        crate::vault::log_info(&format!(
+            "Retention would move {} older backups to Proton Drive's trash; not without asking (run it once in a terminal).",
+            archives.len()
+        ));
+        return Ok(Vec::new());
+    }
     if !ok && !state.retention_confirmed {
         let p = crate::report::Prompt::yes_no(
             format!("Keep the newest {keep} backups of this kind on Proton Drive and move {} older ones to its trash?", archives.len()),
@@ -871,7 +879,6 @@ pub fn verify(file: &std::path::Path, sha256: Option<&str>, size: Option<u64>) -
 /// Anything wrong: the folder is wiped and the reason returned.
 pub fn download_backup(b: &RemoteBackup) -> Result<std::path::PathBuf, String> {
     wipe_restore();
-    proton::reset_transfer_cancel();
     let cli = ready_cli().map_err(|e| e.to_string())?;
     let st = Staging::new("proton-restore").map_err(|e| e.to_string())?;
     let (file, st) = download_into(&cli, b, st)?;
@@ -881,7 +888,7 @@ pub fn download_backup(b: &RemoteBackup) -> Result<std::path::PathBuf, String> {
 
 /// Download `b` into `st` and verify it; on any failure `st` is dropped (wiped).
 pub fn download_into(cli: &Cli, b: &RemoteBackup, st: Staging) -> Result<(std::path::PathBuf, Staging), String> {
-    let summary = cli.download(std::slice::from_ref(&b.remote), &st.dir, &mut |l| {
+    let summary = cli.download_cancelable(std::slice::from_ref(&b.remote), &st.dir, &mut |l| {
         if let Some(line) = l {
             crate::report::current().output_line(line);
         }
@@ -1142,6 +1149,14 @@ mod tests {
         let d = st.dir.clone();
         assert!(download_into(&cli, &b, st).unwrap_err().starts_with("The download failed: IntegrityError"));
         assert!(!d.exists());
+        // Esc during a download stops only that download; the next calls work
+        std::fs::write(dir.path().join("mode"), "ok").unwrap();
+        b.sidecar = None;
+        proton::cancel_transfer();
+        assert!(cli.list("/my-files/kast-backups/h").is_ok(), "the flag only stops downloads");
+        let st = Staging::under(t.path()).unwrap();
+        assert!(download_into(&cli, &b, st).is_ok(), "a new download starts afresh");
+        assert_eq!(cli.status(), proton::Status::SignedIn);
         // No sidecar: only the CLI's word, and that's accepted
         proton::tests::set_mode(&dir, "ok");
         b.sidecar = None;

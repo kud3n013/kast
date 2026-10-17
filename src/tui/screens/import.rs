@@ -374,6 +374,11 @@ impl ImportState {
         }
     }
 
+    /// Something is loading or downloading (the spinner and timer should move).
+    pub fn busy(&self) -> bool {
+        self.loading || self.remote.as_ref().is_some_and(|r| r.loading_hosts || r.downloading.is_some())
+    }
+
     /// The folder's text field has the keyboard.
     pub fn typing(&self) -> bool {
         matches!(self.stage, Stage::Folder) || self.filtering
@@ -1033,6 +1038,13 @@ fn remote_lines<'a>(app: &App, st: &ImportState, r: &'a Remote, c: &Candidate) -
                 .into_iter()
                 .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content.into_owned(), s.style)).collect::<Vec<_>>())),
         );
+    } else if let Some((_, Ok(Some(ins)))) = st.preview.as_ref().filter(|(p, _)| p.file_name().is_some_and(|n| n.to_string_lossy() == c.name)) {
+        // Downloaded to look inside (Inspect, no sidecar)
+        lines.extend(
+            manifest_lines(theme, &ins.info)
+                .into_iter()
+                .map(|l| Line::from(l.spans.into_iter().map(|s| Span::styled(s.content.into_owned(), s.style)).collect::<Vec<_>>())),
+        );
     } else {
         lines.push(Line::styled("Contents unknown until downloaded (no sidecar).", theme.dim()));
     }
@@ -1482,6 +1494,7 @@ mod tests {
             let Some(Command::DriveDownload(b)) = update(&mut a, key(KeyCode::Enter)) else { panic!("no download") };
             assert_eq!(b.name, "zen_backup_2026-10-10_080000.zip");
             assert!(render(&a).contains("Downloading zen_backup_2026-10-10_080000.zip"));
+            assert!(a.animating(), "the download's timer moves");
             assert!(update(&mut a, key(KeyCode::Down)).is_none(), "keys wait while downloading");
             assert!(matches!(update(&mut a, key(KeyCode::Esc)), Some(Command::DriveCancelTransfer)));
             assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::DriveDownload(_))));

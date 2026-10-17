@@ -7,12 +7,9 @@ mod interactive;
 mod journal;
 mod logio;
 mod pkglist;
-#[allow(dead_code)] // wired up in the next commits
 mod proton;
-#[allow(dead_code)]
 mod qr;
 mod report;
-#[allow(dead_code)]
 mod schedule;
 mod settings;
 mod setup;

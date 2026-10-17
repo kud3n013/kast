@@ -30,12 +30,6 @@ pub fn half_blocks(text: &str) -> Option<Vec<String>> {
     Some(lines)
 }
 
-/// (columns, rows) the code of `text` takes.
-pub fn size(text: &str) -> Option<(u16, u16)> {
-    let l = half_blocks(text)?;
-    Some((l[0].chars().count() as u16, l.len() as u16))
-}
-
 /// For a plain terminal: black on bright white, reset at each line end.
 pub fn ansi(text: &str) -> Option<String> {
     let lines = half_blocks(text)?;
@@ -59,7 +53,7 @@ mod tests {
         assert!(lines.iter().all(|l| l.chars().take(4).all(|c| c == ' ')));
         // The top-left finder pattern starts right after it
         assert_eq!(lines[2].chars().nth(4), Some('█'));
-        assert_eq!(size("x").unwrap().0 as usize, 21 + 8);
+        assert_eq!(half_blocks("x").unwrap()[0].chars().count(), 21 + 8);
         assert!(ansi("x").unwrap().starts_with("\x1b[30;107m"));
     }
 }
