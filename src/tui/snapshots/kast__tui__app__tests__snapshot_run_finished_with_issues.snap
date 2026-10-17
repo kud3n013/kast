@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 1115
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -25,4 +26,4 @@ expression: render(&a)
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- Enter back to menu  PgUp/PgDn scroll  l full log  ? help
+ Enter back to menu  PgUp/PgDn scroll  l full log  e view  y copy  ? help

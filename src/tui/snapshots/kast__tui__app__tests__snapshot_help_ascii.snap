@@ -1,28 +1,29 @@
 ---
 source: src/tui/app.rs
+assertion_line: 953
 expression: render(&a)
 ---
  kast | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
 ┌ Arch Linux / CachyOS setup ──────────────────────────────────────────────────┐
-│>  1 Run automatic setup                                                      │
-│   2 Set up data partition                                                    │
-│   3 Add kud3n's repository                                                   │
-│   4 Install packages                                                         │
-│   5 Se┌ Help: Main menu ─────────────────────────────────────────────┐       │
-│   6 Im│Up/Down  j/k   Move the selection (wraps around)              │       │
-│   7 Ex│Home/End  g/G  First / last entry                             │       │
-│   8 Ap│Enter          Run the highlighted action                     │       │
-│   9 In│1-9            Run that action directly                       │       │
-│   q Qu│Mouse          Click selects, double-click runs, wheel moves  │       │
-└───────│l              Open the log file                              │───────┘
-┌ Detail│?              This help                                      │───────┐
-│Upgrade│q  Esc         Quit kast                                      │very   │
-│package│Ctrl+C         Quit kast                                      │       │
-│progres│                                                              │       │
-│Changes│Press any key to close                                        │kups   │
-│kept), └──────────────────────────────────────────────────────────────┘       │
-│Needs root: yes (kast already runs as root)                                   │
-│Automatic:  This is the automatic run (no data partition, no import).         │
-│                                                                              │
+│>  1 Ru┌ Help: Main menu ─────────────────────────────────────────────┐       │
+│   2 Se│Up/Down  j/k   Move the selection (wraps around)              │       │
+│   3 Ad│Home/End  g/G  First / last entry                             │       │
+│   4 In│Enter          Run the highlighted action                     │       │
+│   5 Se│1-9            Run that action directly                       │       │
+│   6 Im│Mouse          Click selects, double-click runs, wheel moves  │       │
+│   7 Ex│l              Open the log file                              │       │
+│   8 Ap│e / E          View the log in a pager / an editor            │       │
+│   9 In│o              Open the log with the default app              │       │
+│   q Qu│f              Show the log in the file manager               │       │
+└───────│y              Copy this session's log                        │───────┘
+┌ Detail│Y              Copy the log file's path                       │───────┐
+│Upgrade│$KAST_PAGER    Pager for e (else $PAGER, then less)           │very   │
+│package│tmux           For y: set -g set-clipboard on                 │       │
+│progres│?              This help                                      │       │
+│Changes│q  Esc         Quit kast                                      │kups   │
+│kept), │Ctrl+C         Quit kast                                      │       │
+│Needs r│                                                              │       │
+│Automat│Press any key to close                                        │       │
+│       └──────────────────────────────────────────────────────────────┘       │
 └──────────────────────────────────────────────────────────────────────────────┘
- Up/Down move  Enter run  1-9 pick  l log  ? help  q quit
+ Up/Down move  Enter run  1-9 pick  l log  e view  y copy  ? help  q quit

@@ -1,0 +1,28 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+ kast | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
+┌ Log - /var/log/kast.log (following) ─────────────────────────────────────────┐
+│INFO  [2026-10-17 10:00:00] [INFO] Adding archrepo                            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+ PgUp/PgDn scroll  g/G top/end  e view  y copy  o open  Esc back  ? help

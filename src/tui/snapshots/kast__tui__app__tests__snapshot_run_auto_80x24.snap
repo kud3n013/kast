@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 958
 expression: "render(&running_auto(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -25,4 +26,4 @@ expression: "render(&running_auto(80, 24))"
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- PgUp/PgDn scroll  G follow  Esc cancel  ? help
+ PgUp/PgDn scroll  G follow  Esc cancel  y copy  ? help

@@ -44,5 +44,16 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(block(theme, " Summary ")), body);
 }
 
-pub const HINTS: [(&str, &str); 3] = [("Enter", "back to menu"), ("l", "full log"), ("?", "help")];
-pub const HELP: [(&str, &str); 3] = [("Enter  Esc  q", "Back to the menu"), ("l", "Open the full log file"), ("?", "This help")];
+pub const HINTS: [(&str, &str); 6] = [("Enter", "back to menu"), ("l", "full log"), ("e", "view"), ("o", "open"), ("y", "copy"), ("?", "help")];
+pub const HELP: [(&str, &str); 10] = [
+    ("Enter  Esc  q", "Back to the menu"),
+    ("l", "Open the full log file"),
+    ("e / E", "View the log in a pager / an editor"),
+    ("o", "Open the log with the default app"),
+    ("f", "Show the log in the file manager"),
+    ("y", "Copy this run's log"),
+    ("Y", "Copy the log file's path"),
+    ("$KAST_PAGER", "Pager for e (else $PAGER, then less)"),
+    ("tmux", "For y: set -g set-clipboard on"),
+    ("?", "This help"),
+];

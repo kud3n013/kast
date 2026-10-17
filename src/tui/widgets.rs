@@ -72,10 +72,31 @@ pub fn toast(f: &mut Frame, area: Rect, app: &App) {
         ToastKind::Info => (theme.sym.pending, theme.info()),
     };
     let text = format!(" {sym} {} ", t.text);
-    let w = (text.chars().count() as u16 + 2).min(area.width);
-    let r = Rect { x: area.x + area.width.saturating_sub(w), y: area.y + area.height.saturating_sub(4), width: w, height: 3.min(area.height) };
+    let len = text.chars().count() as u16;
+    let w = (len + 2).min(area.width);
+    // Too wide for the screen: wrapped
+    let rows = wrapped_rows(&text, w.saturating_sub(2).max(1) as usize).min(4) as u16;
+    let h = (rows + 2).min(area.height);
+    let r = Rect { x: area.x + area.width.saturating_sub(w), y: area.y + area.height.saturating_sub(h + 1), width: w, height: h };
     f.render_widget(Clear, r);
-    f.render_widget(Paragraph::new(Line::styled(text, style)).block(block(theme, "")), r);
+    f.render_widget(Paragraph::new(Line::styled(text, style)).wrap(Wrap { trim: false }).block(block(theme, "")), r);
+}
+
+/// Rows `text` takes when word-wrapped at `width` columns.
+fn wrapped_rows(text: &str, width: usize) -> usize {
+    let (mut rows, mut col) = (1, 0);
+    for word in text.split(' ') {
+        let n = word.chars().count();
+        let need = if col == 0 { n } else { col + 1 + n };
+        if need <= width {
+            col = need;
+        } else {
+            // A new row unless the line is empty; a word longer than the width breaks further
+            rows += usize::from(col > 0) + n.saturating_sub(1) / width;
+            col = if n == 0 { 0 } else { (n - 1) % width + 1 };
+        }
+    }
+    rows
 }
 
 /// A Yes/No dialog; `yes_selected` is the highlighted button.
@@ -203,6 +224,14 @@ mod tests {
         assert_eq!(ellipsize("abc", 5, "…"), "abc");
         assert_eq!(ellipsize("abcdefgh", 5, "…"), "abcd…");
         assert_eq!(ellipsize("abcdefgh", 5, "..."), "ab...");
+    }
+
+    #[test]
+    fn wrapped_rows_counts_word_wrap() {
+        assert_eq!(wrapped_rows("short", 10), 1);
+        assert_eq!(wrapped_rows("aaaa bbbb cccc", 9), 2);
+        assert_eq!(wrapped_rows("aaaa bbbb cccc", 4), 3);
+        assert_eq!(wrapped_rows("aaaaaaaaaa", 4), 3);
     }
 
     #[test]

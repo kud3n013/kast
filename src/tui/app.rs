@@ -662,7 +662,7 @@ pub fn view(app: &App, f: &mut Frame) {
             &summary::HINTS
         }
         Screen::Log(st, _) => {
-            log::view(f, body, &app.theme, st);
+            log::view(f, body, &app.theme, st, &app.header.log_file);
             &log::HINTS
         }
         Screen::Import(st) => {
@@ -1078,6 +1078,22 @@ pub mod tests {
         let cmd = update(&mut a, Event::Loaded(Loaded::Osc52 { bytes: b"\x1b]52;c;eA==\x07".to_vec(), report }));
         assert!(matches!(cmd, Some(Command::Osc52(ref b)) if b.starts_with(b"\x1b]52")));
         assert_eq!(a.toast.as_ref().unwrap().kind, ToastKind::Info);
+    }
+
+    #[test]
+    fn snapshot_log_viewer_with_path_and_wrapped_toast() {
+        let mut a = app(80, 24);
+        update(&mut a, Event::Loaded(Loaded::Log(vec!["[2026-10-17 10:00:00] [INFO] Adding archrepo".into(), "resolving dependencies...".into()])));
+        let report = crate::logio::Report::ok(format!("Copied 412 lines via terminal (OSC 52); {}", crate::logio::OSC52_NOTE));
+        update(&mut a, Event::Loaded(Loaded::Osc52 { bytes: vec![], report }));
+        insta::assert_snapshot!(render(&a));
+    }
+
+    #[test]
+    fn snapshot_log_viewer_ascii() {
+        let mut a = App::new(header(), Theme::new(false, true), (80, 24));
+        update(&mut a, Event::Loaded(Loaded::Log(vec!["[2026-10-17 10:00:00] [INFO] Adding archrepo".into()])));
+        insta::assert_snapshot!(render(&a));
     }
 
     #[test]

@@ -244,7 +244,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
     }
     f.render_widget(Paragraph::new(Text::from(lines)).block(block(theme, " Status ")), status);
 
-    log_view(f, log_area, theme, &st.log, st.scroll);
+    log_view(f, log_area, theme, &st.log, st.scroll, "Log");
 }
 
 pub fn level_style(theme: &Theme, level: Level) -> (Style, &'static str) {
@@ -259,8 +259,8 @@ pub fn level_style(theme: &Theme, level: Level) -> (Style, &'static str) {
 }
 
 /// A log pane showing the lines that fit, ending `scroll.offset` lines above the tail.
-pub fn log_view(f: &mut Frame, area: Rect, theme: &Theme, log: &LogBuffer, scroll: Scroll) {
-    let title = if scroll.follow() { " Log (following) ".to_string() } else { format!(" Log (paused, {} newer line(s); G to follow) ", scroll.offset) };
+pub fn log_view(f: &mut Frame, area: Rect, theme: &Theme, log: &LogBuffer, scroll: Scroll, name: &str) {
+    let title = if scroll.follow() { format!(" {name} (following) ") } else { format!(" {name} (paused, {} newer line(s); G to follow) ", scroll.offset) };
     let blk = block(theme, title);
     let inner = blk.inner(area);
     let rows = inner.height as usize;
@@ -276,16 +276,23 @@ pub fn log_view(f: &mut Frame, area: Rect, theme: &Theme, log: &LogBuffer, scrol
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(blk), area);
 }
 
-pub const HINTS_RUNNING: [(&str, &str); 4] = [("PgUp/PgDn", "scroll"), ("G", "follow"), ("Esc", "cancel"), ("?", "help")];
-pub const HINTS_DONE: [(&str, &str); 4] = [("Enter", "back to menu"), ("PgUp/PgDn", "scroll"), ("l", "full log"), ("?", "help")];
+pub const HINTS_RUNNING: [(&str, &str); 5] = [("PgUp/PgDn", "scroll"), ("G", "follow"), ("Esc", "cancel"), ("y", "copy"), ("?", "help")];
+pub const HINTS_DONE: [(&str, &str); 6] = [("Enter", "back to menu"), ("PgUp/PgDn", "scroll"), ("l", "full log"), ("e", "view"), ("y", "copy"), ("?", "help")];
 
-pub const HELP: [(&str, &str); 7] = [
+pub const HELP: [(&str, &str); 14] = [
     ("PgUp/PgDn  ↑/↓", "Scroll the log (pauses following)"),
     ("g / G", "Oldest line / follow the newest"),
     ("Mouse wheel", "Scroll the log"),
     ("Esc  Ctrl+C  q", "Cancel the running job (asks first)"),
     ("Enter", "Back to the menu once the job is done"),
     ("l", "Open the full log file (when done)"),
+    ("e / E", "View the log in a pager / an editor (when done)"),
+    ("o", "Open the log with the default app (when done)"),
+    ("f", "Show the log in the file manager (when done)"),
+    ("y", "Copy this job's log"),
+    ("Y", "Copy the log file's path"),
+    ("$KAST_PAGER", "Pager for e (else $PAGER, then less)"),
+    ("tmux", "For y: set -g set-clipboard on"),
     ("?", "This help"),
 ];
 

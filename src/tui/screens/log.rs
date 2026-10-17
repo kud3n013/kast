@@ -35,12 +35,26 @@ impl LogState {
     }
 }
 
-pub fn view(f: &mut Frame, body: Rect, theme: &Theme, st: &LogState) {
-    log_view(f, body, theme, &st.log, st.scroll);
+/// `path` goes in the title, so the file can be found without these keys.
+pub fn view(f: &mut Frame, body: Rect, theme: &Theme, st: &LogState, path: &str) {
+    let sep = if theme.sym.ellipsis == "..." { "-" } else { "·" };
+    log_view(f, body, theme, &st.log, st.scroll, &format!("Log {sep} {path}"));
 }
 
-pub const HINTS: [(&str, &str); 4] = [("PgUp/PgDn", "scroll"), ("g/G", "top/end"), ("Esc", "back"), ("?", "help")];
-pub const HELP: [(&str, &str); 4] = [("PgUp/PgDn  ↑/↓", "Scroll"), ("g / G", "Oldest / newest line"), ("Mouse wheel", "Scroll"), ("Esc  q  Enter", "Back")];
+pub const HINTS: [(&str, &str); 7] = [("PgUp/PgDn", "scroll"), ("g/G", "top/end"), ("e", "view"), ("y", "copy"), ("o", "open"), ("Esc", "back"), ("?", "help")];
+pub const HELP: [(&str, &str); 11] = [
+    ("PgUp/PgDn  ↑/↓", "Scroll"),
+    ("g / G", "Oldest / newest line"),
+    ("Mouse wheel", "Scroll"),
+    ("e / E", "View the log in a pager / an editor"),
+    ("o", "Open the log with the default app"),
+    ("f", "Show the log in the file manager"),
+    ("y", "Copy this session's log"),
+    ("Y", "Copy the log file's path"),
+    ("$KAST_PAGER", "Pager for e (else $PAGER, then less)"),
+    ("tmux", "For y: set -g set-clipboard on"),
+    ("Esc  q  Enter", "Back"),
+];
 
 #[cfg(test)]
 mod tests {

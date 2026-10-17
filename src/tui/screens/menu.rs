@@ -193,15 +193,23 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true }).block(block(theme, " Details ")), desc_area);
 }
 
-pub const HINTS: [(&str, &str); 6] = [("↑/↓", "move"), ("Enter", "run"), ("1-9", "pick"), ("l", "log"), ("?", "help"), ("q", "quit")];
+pub const HINTS: [(&str, &str); 8] =
+    [("↑/↓", "move"), ("Enter", "run"), ("1-9", "pick"), ("l", "log"), ("e", "view"), ("y", "copy"), ("?", "help"), ("q", "quit")];
 
-pub const HELP: [(&str, &str); 9] = [
+pub const HELP: [(&str, &str); 16] = [
     ("↑/↓  j/k", "Move the selection (wraps around)"),
     ("Home/End  g/G", "First / last entry"),
     ("Enter", "Run the highlighted action"),
     ("1-9", "Run that action directly"),
     ("Mouse", "Click selects, double-click runs, wheel moves"),
     ("l", "Open the log file"),
+    ("e / E", "View the log in a pager / an editor"),
+    ("o", "Open the log with the default app"),
+    ("f", "Show the log in the file manager"),
+    ("y", "Copy this session's log"),
+    ("Y", "Copy the log file's path"),
+    ("$KAST_PAGER", "Pager for e (else $PAGER, then less)"),
+    ("tmux", "For y: set -g set-clipboard on"),
     ("?", "This help"),
     ("q  Esc", "Quit kast"),
     ("Ctrl+C", "Quit kast"),

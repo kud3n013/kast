@@ -1,5 +1,6 @@
 ---
 source: src/tui/app.rs
+assertion_line: 938
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -41,4 +42,4 @@ expression: render(&a)
 │                                      ││                                                                                                  │
 │                                      ││                                                                                                  │
 ╰──────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- ↑/↓ move  Enter run  1-9 pick  l log  ? help  q quit
+ ↑/↓ move  Enter run  1-9 pick  l log  e view  y copy  ? help  q quit
