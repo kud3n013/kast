@@ -1,0 +1,21 @@
+name: Package list
+
+# packages.toml on main reaches every user on their next run: check it on every change.
+on:
+  push:
+    paths: ["packages.toml", "src/pkglist.rs"]
+  pull_request:
+    paths: ["packages.toml", "src/pkglist.rs"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate packages.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked pkglist

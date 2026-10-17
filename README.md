@@ -60,6 +60,7 @@ kast export           # full-screen backup screen (also through sudo)
 kast auto             # upgrade, repo, packages, services (no partition, no import)
 kast partition        # optional: /media/data + home folder symlinks
 kast repo | packages | services
+kast packages --list  # what would be installed, and from which list (no root needed)
 kast status           # detected apps, Howdy, KDE, Hyprland
 kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
@@ -83,6 +84,43 @@ and their output stays plain text when piped (`kast status | cat`, `kast info x.
 line-based prompts.
 
 Backups made by the old `arch-setup.sh` can be restored, and the other way round.
+
+## The package list
+
+What `kast packages`, the automatic run and menu options 1 and 4 install is
+[`packages.toml`](packages.toml): groups (official, CachyOS, kud3n, add-ons) of packages,
+each with optional rules (`fallback`, `replaces`, `requires`, `description`).
+
+- **Online first.** Every run downloads the file from this repo's `main` branch (curl,
+  HTTPS only, 15 s at most). So an edit to `packages.toml` on `main` reaches every user on
+  their next run, with no release needed.
+- **Built-in fallback.** Each kast binary carries the file from the commit it was built
+  from. kast uses that copy, and says why, when curl is missing, the download fails or
+  times out, or the downloaded file doesn't parse or fails validation. The downloaded
+  file is treated as untrusted: names must be plain package names (no leading `-`, no
+  spaces or shell characters) and the only repo prefix allowed is `archrepo/`.
+- **Always shown first.** The app shows the source (online, built-in and why, or a local
+  file), the full list and what differs from the built-in list before anything is
+  installed. The CLI prints the source line before installing.
+- **AUR builds stay pinned.** When pacman can't install a package, kast retries it with
+  yay, but only for packages in the built-in list. A package that only the downloaded list
+  names is never built from the AUR.
+
+```sh
+kast packages --list                         # source line, groups, rules, what's installed
+kast packages --list --json                  # the same, for scripts
+kast packages --offline                      # use the built-in list (also: kast auto, kast)
+kast packages --list --packages-file ./packages.toml   # try an edit before pushing it
+```
+
+A fallback is a valid result: `kast packages --list` exits 0 and prints the reason.
+
+**Changing the format.** `schema = 1` at the top of the file is the format version. Add
+new optional fields freely: older kast versions ignore fields they don't know. Bump
+`schema` only for a breaking change, and only after a kast release that understands the
+new version is out. Older versions then use their built-in list and tell the user to
+update. `cargo test` validates the file, and CI runs that check on every push that
+touches it.
 
 ## Upgrading from kas
 
