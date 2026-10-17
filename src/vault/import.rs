@@ -381,7 +381,7 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
         rsync_dir(&[], &dest, &snap)?;
     }
     fs::create_dir_all(&dest)?;
-    rsync_dir(&["--chmod=go-w".into()], &src, &dest)?;
+    rsync_dir(&restore_opts(), &src, &dest)?;
     chmod(&dest, 0o700)?;
 
     if app == "zalo" {
@@ -398,6 +398,33 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
             let _ = user_cmd(&["hyprctl", "reload"]).stdout(Stdio::null()).stderr(Stdio::null()).status();
         }
         log_success("Hyprland configuration restored successfully!");
+    }
+    Ok(())
+}
+
+/// rsync options for writing restored files into the home: no group/other write, and owned
+/// by the user from the start when root, so an app restarted before `hand_back_ownership`
+/// (plasmashell) never finds its config root-owned.
+fn restore_opts() -> Vec<String> {
+    let c = ctx();
+    let mut opts = vec!["--chmod=go-w".to_string()];
+    if c.is_root && c.target_uid != 0 {
+        opts.push(format!("--chown={}:{}", c.target_uid, c.target_gid));
+    }
+    opts
+}
+
+/// Each entry of `src` into `dest`, leaving `dest` itself alone: `rsync -a src/ dest/` also
+/// gives `dest` the owner and mode of `src`, which for ~ or ~/.config is a root-owned
+/// staging folder.
+fn rsync_entries(opts: &[String], src: &Path, dest: &Path) -> Result<()> {
+    let mut args: Vec<&str> = vec!["-a"];
+    args.extend(opts.iter().map(String::as_str));
+    let dest = format!("{}/", dest.display());
+    let mut entries: Vec<PathBuf> = fs::read_dir(src)?.flatten().map(|e| e.path()).collect();
+    entries.sort();
+    for e in entries {
+        rsync(&args, &e, &dest)?;
     }
     Ok(())
 }
@@ -490,17 +517,17 @@ fn restore_kde(staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
         crate::ui::sleep_secs(1.0);
     }
 
-    let go_w = ["--chmod=go-w".to_string()];
+    let opts = restore_opts();
     if kde.join("config").is_dir() {
         ctx::mkdir_user(&c.config_home)?;
-        rsync_dir(&go_w, &kde.join("config"), &c.config_home)?;
+        rsync_entries(&opts, &kde.join("config"), &c.config_home)?;
     }
     if kde.join("share").is_dir() {
         ctx::mkdir_user(&c.data_home)?;
-        rsync_dir(&go_w, &kde.join("share"), &c.data_home)?;
+        rsync_entries(&opts, &kde.join("share"), &c.data_home)?;
     }
     if kde.join("home").is_dir() {
-        rsync_dir(&go_w, &kde.join("home"), &c.target_home)?;
+        rsync_entries(&opts, &kde.join("home"), &c.target_home)?;
     }
 
     if plasma_was_running {
@@ -525,14 +552,23 @@ pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>)
         bail!("the snapshot {} is gone", snapshot.display());
     }
     let intact = fingerprint.is_some() && crate::journal::fingerprint(snapshot).as_deref() == fingerprint;
-    let copy = |src: &Path, dest: &Path, delete: bool| -> Result<()> {
-        let (s, d) = (format!("{}/", src.display()), format!("{}/", dest.display()));
+    let rsync_back = |src: String, dest: String, delete: bool| -> Result<()> {
         let mut args = vec!["rsync", "-a"];
         if delete {
             args.push("--delete");
         }
-        args.extend([s.as_str(), d.as_str()]);
-        if user_cmd(&args).stdin(Stdio::null()).status().is_ok_and(|st| st.success()) { Ok(()) } else { bail!("copying {} back failed", src.display()) }
+        args.extend([src.as_str(), dest.as_str()]);
+        if user_cmd(&args).stdin(Stdio::null()).status().is_ok_and(|st| st.success()) { Ok(()) } else { bail!("copying {src} back failed") }
+    };
+    let copy = |src: &Path, dest: &Path, delete: bool| rsync_back(format!("{}/", src.display()), format!("{}/", dest.display()), delete);
+    // Entry by entry, so ~ and ~/.config keep their own mode (see rsync_entries)
+    let copy_entries = |src: &Path, dest: &Path| -> Result<()> {
+        let mut entries: Vec<PathBuf> = fs::read_dir(src)?.flatten().map(|e| e.path()).collect();
+        entries.sort();
+        for e in entries {
+            rsync_back(e.display().to_string(), format!("{}/", dest.display()), false)?;
+        }
+        Ok(())
     };
     for app in apps {
         match app.as_str() {
@@ -550,7 +586,7 @@ pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>)
             "kde" => {
                 for (sub, dest) in [("kde/config", &c.config_home), ("kde/share", &c.data_home), ("kde/home", &c.target_home)] {
                     if snapshot.join(sub).is_dir() {
-                        copy(&snapshot.join(sub), dest, false)?;
+                        copy_entries(&snapshot.join(sub), dest)?;
                     }
                 }
             }
@@ -628,5 +664,32 @@ fn hand_back_ownership(apps: &[String], rollback: &Path) {
             ctx::chown_r(&howdy, "root:root");
             let _ = ok("chmod", &["-R", "go-rwx", &howdy.to_string_lossy()]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn restoring_entries_leaves_the_destination_folder_alone() {
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return;
+        }
+        crate::ctx::init_for_tests();
+        let t = tempfile::tempdir().unwrap();
+        let (src, dest) = (t.path().join("src"), t.path().join("dest"));
+        fs::create_dir_all(src.join("plasma")).unwrap();
+        fs::write(src.join("plasmashellrc"), "[Updates]\n").unwrap();
+        fs::write(src.join("plasma/x"), "x").unwrap();
+        fs::create_dir(&dest).unwrap();
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o751)).unwrap();
+        rsync_entries(&["--chmod=go-w".into()], &src, &dest).unwrap();
+        assert_eq!(fs::read_to_string(dest.join("plasmashellrc")).unwrap(), "[Updates]\n");
+        assert!(dest.join("plasma/x").is_file());
+        assert_eq!(fs::metadata(&dest).unwrap().permissions().mode() & 0o777, 0o751, "dest keeps its own mode");
     }
 }
