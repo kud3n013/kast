@@ -344,8 +344,7 @@ const PKGS_OFFICIAL: &[&str] = &[
     "libreoffice-fresh",
     "libreoffice-fresh-vi",
 ];
-const PKGS_KUD3N: &[&str] =
-    &["zalo-for-linux", "beeper", "howdy-next", "antigravity", "gdlauncher-carbon", "searxng", "archrepo/freedownloadmanager", "archrepo/sine"];
+const PKGS_KUD3N: &[&str] = &["beeper", "howdy-next", "gdlauncher-carbon", "searxng", "archrepo/freedownloadmanager", "archrepo/sine"];
 const PKGS_ADDONS: &[&str] =
     &["freedownloadmanager-elephant", "zotero-better-bibtex", "zotmoov", "zotero-better-notes", "zotero-ocr", "zotero-pdf-translate", "zotero-mcp"];
 
