@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 
 use crate::ctx::{self, add_issue, ctx, have, log, ok, ok_logged, output, run_as_user};
+use crate::journal::{self, sys_path};
 use crate::pkglist::{Parsed, Pkg, PkgList};
 use crate::ui::{self, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW, Dash};
 
@@ -44,7 +45,10 @@ pub fn system_upgrade(auto: bool, o_start: i64, o_step: i64, o_total: i64) {
     let title = "Systemwide Upgrade (pacman -Syuu)";
     let d = Dash::new(auto, o_start, o_step, o_total, title);
     log("INFO", "Starting systemwide upgrade...");
+    let started = ctx::now_str("%Y-%m-%dT%H:%M:%S");
     let rc = d.exec_monitored(1, 2, "Refreshing databases & upgrading", pacman(&["-Syuu", "--noconfirm"]));
+    // Not undoable: recorded so the undo screen can say what ran when
+    journal::upgrade(&started, &ctx::now_str("%Y-%m-%dT%H:%M:%S"), serde_json::Value::Null);
     let finish = if rc != 0 {
         log("WARN", &format!("pacman -Syuu returned non-zero code ({rc}). Check {} for details.", ctx().log_file.display()));
         add_issue(format!("System upgrade (pacman -Syuu) failed with exit code {rc}"));
@@ -280,25 +284,32 @@ fn import_repo_key() -> Result<()> {
     Ok(())
 }
 
+/// Add or update [archrepo] in /etc/pacman.conf (recorded for undo). Whether it was there.
+fn configure_pacman_conf() -> Result<bool> {
+    let path = sys_path("/etc/pacman.conf");
+    let conf = fs::read_to_string(&path).context("reading /etc/pacman.conf")?;
+    let new = patch_pacman_conf(&conf);
+    if new != conf {
+        journal::write_file(&path, new.as_bytes(), None).context("writing /etc/pacman.conf")?;
+    }
+    Ok(conf.contains("[archrepo]"))
+}
+
 pub fn add_kud3n_repo(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Result<()> {
     let d = Dash::new(auto, o_start, o_step, o_total, "Add kud3n's Repository");
     let s_total = 3;
     d.step("Repo", 0, s_total, "Inspecting /etc/pacman.conf", "Reading repository definitions...");
 
     d.step("Repo", 1, s_total, "Updating pacman.conf", "Configuring [archrepo]...");
-    match import_repo_key() {
+    let key_present = ok("pacman-key", &["--list-keys", REPO_KEY_FPR]);
+    match journal::pacman_key(REPO_KEY_FPR, key_present, import_repo_key) {
         Ok(()) => log("INFO", &format!("Imported and locally signed the archrepo key {REPO_KEY_FPR}")),
         Err(e) => {
             log("WARN", &format!("Could not import the archrepo signing key: {e:#}"));
             add_issue("archrepo signing key could not be imported");
         }
     }
-    let conf = fs::read_to_string("/etc/pacman.conf").context("reading /etc/pacman.conf")?;
-    let had_repo = conf.contains("[archrepo]");
-    let new = patch_pacman_conf(&conf);
-    if new != conf {
-        ctx::write_atomic(Path::new("/etc/pacman.conf"), new.as_bytes()).context("writing /etc/pacman.conf")?;
-    }
+    let had_repo = configure_pacman_conf()?;
     if had_repo {
         log("INFO", "Updated existing [archrepo] in /etc/pacman.conf");
     } else {
@@ -337,6 +348,34 @@ fn conflicts_with(si: &str, legacy: &str) -> bool {
         .filter_map(|l| l.split_once(':'))
         .filter(|(k, _)| k.trim() == "Conflicts With")
         .any(|(_, v)| v.split_whitespace().any(|c| c.split(['<', '>', '=']).next() == Some(legacy)))
+}
+
+/// The installed package names (`pacman -Qq`).
+fn installed_names() -> Vec<String> {
+    output("pacman", &["-Qq"]).map(|o| o.lines().map(str::to_string).collect()).unwrap_or_default()
+}
+
+/// Version and repository of an installed package, for the journal.
+fn pkg_origin(name: &str) -> (String, String) {
+    let field = |out: Option<String>, key: &str| {
+        out.and_then(|o| o.lines().filter_map(|l| l.split_once(':')).find(|(k, _)| k.trim() == key).map(|(_, v)| v.trim().to_string()))
+    };
+    let qi = pacman(&["-Qi", name]).env("LC_ALL", "C").stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok();
+    let version = field(qi.filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).into_owned()), "Version").unwrap_or_default();
+    let repo = field(sync_info(name), "Repository").unwrap_or_else(|| "local".into());
+    (version, repo)
+}
+
+/// The installed set before a transaction, when the run is recorded.
+fn before_install() -> Option<Vec<String>> {
+    journal::current().map(|_| installed_names())
+}
+
+/// Record what a transaction installed that wasn't there before.
+fn record_installed(before: Option<Vec<String>>, targets: &[&str]) {
+    if let Some(before) = before {
+        journal::pkg_installs(&journal::new_packages(&before, &installed_names(), targets, pkg_origin));
+    }
 }
 
 pub fn pkg_installed(pkg: &str) -> bool {
@@ -392,6 +431,9 @@ pub fn install_packages(list: &Parsed, selection: Option<&[String]>, auto: bool,
 
         // --ask=4 answers yes to "remove the conflicting package?", which --noconfirm declines
         let args: &[&str] = if swap { &["-S", "--needed", "--noconfirm", "--ask=4", install] } else { &["-S", "--needed", "--noconfirm", install] };
+        let before = before_install();
+        let legacy_version =
+            p.replaces.as_deref().filter(|_| swap).and_then(|l| output("pacman", &["-Q", l])).and_then(|o| o.split_whitespace().nth(1).map(String::from));
         let mut rc = d.exec_monitored(idx - 1, s_total, &format!("Installing {install} (pacman)"), pacman(args));
         let (mut status, mut mark) = (format!("[SUCCESS] {install} installed"), "✔");
         if rc != 0 {
@@ -420,6 +462,13 @@ pub fn install_packages(list: &Parsed, selection: Option<&[String]>, auto: bool,
                 status = format!("[FAILED] {install} (see log)");
                 mark = "✘";
             }
+        }
+        // What this transaction (pacman, or yay) added, and the legacy package it swapped out
+        record_installed(before, &[install]);
+        if let (Some(legacy), Some(v)) = (p.replaces.as_deref(), legacy_version.as_deref())
+            && !ok("pacman", &["-Qq", legacy])
+        {
+            journal::pkg_replace(legacy, v, pkg);
         }
         d.render(idx, s_total, install, &status, Some(mark));
     }
@@ -451,22 +500,41 @@ pub fn patch_pam_content(content: &str) -> Option<String> {
     Some(res)
 }
 
+/// Add the Howdy rule to a PAM file (recorded for undo). A file only the distribution's
+/// `fallback` has is created from it.
 fn patch_pam(pfile: &str, fallback: Option<&str>) -> Result<()> {
-    let p = Path::new(pfile);
-    if let Some(fb) = fallback.filter(|fb| !p.is_file() && Path::new(fb).is_file()) {
-        fs::create_dir_all(p.parent().unwrap())?;
-        fs::copy(fb, p).with_context(|| format!("copying {fb}"))?;
-    }
-    if !p.is_file() {
-        return Ok(());
-    }
-    let content = fs::read_to_string(p).with_context(|| format!("reading {pfile}"))?;
+    let p = sys_path(pfile);
+    let content = match fs::read_to_string(&p) {
+        Ok(c) => Some(c),
+        Err(_) => fallback
+            .map(sys_path)
+            .filter(|fb| fb.is_file())
+            .map(|fb| fs::read_to_string(&fb).with_context(|| format!("reading {}", fb.display())))
+            .transpose()?,
+    };
+    let Some(content) = content else { return Ok(()) };
     if let Some(new) = patch_pam_content(&content) {
-        fs::copy(p, format!("{pfile}.bak.{}", ctx::now_str("%Y%m%d%H%M%S")))?;
-        ctx::write_atomic(p, new.as_bytes()).with_context(|| format!("writing {pfile}"))?;
+        if p.is_file() {
+            fs::copy(&p, format!("{}.bak.{}", p.display(), ctx::now_str("%Y%m%d%H%M%S")))?;
+        }
+        journal::write_file(&p, new.as_bytes(), Some(0o644)).with_context(|| format!("writing {pfile}"))?;
         log("INFO", &format!("Patched PAM file {pfile} for Howdy"));
     }
     Ok(())
+}
+
+/// The resume hook that reloads the IR camera after sleep (recorded for undo).
+fn write_hook(device: &str) -> Result<()> {
+    let hook = sys_path(HOWDY_HOOK);
+    journal::write_file(&hook, howdy_hook(device).as_bytes(), Some(0o755)).context("writing Howdy resume hook")?;
+    let mode = fs::metadata(&hook)?.permissions().mode() | 0o111;
+    fs::set_permissions(&hook, fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+/// `key = value` in an ini file (Howdy's config.ini), any section.
+pub fn ini_value(ini: &str, key: &str) -> Option<String> {
+    ini.lines().filter_map(|l| l.split_once('=')).find(|(k, _)| k.trim() == key).map(|(_, v)| v.trim().to_string())
 }
 
 pub fn howdy_hook(device: &str) -> String {
@@ -512,18 +580,20 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
 
     // ProtonVPN and Fcitx5: packages only, no env/autostart files
     d.step("Services", 1, s_total, "ProtonVPN", &format!("Installing ProtonVPN CLI package for {}...", c.target_user));
+    let before = before_install();
     d.exec_monitored(1, s_total, "Installing proton-vpn-cli", pacman(&["-S", "--needed", "--noconfirm", "proton-vpn-cli"]));
+    record_installed(before, &["proton-vpn-cli"]);
 
     d.step("Services", 2, s_total, "Vietnamese Typing (Fcitx5)", "Installing Fcitx5 packages (no environment file changes)...");
-    d.exec_monitored(
-        2,
-        s_total,
-        "Installing Fcitx5 typing packages",
-        pacman(&["-S", "--needed", "--noconfirm", "fcitx5", "fcitx5-configtool", "fcitx5-gtk", "fcitx5-qt", "fcitx5-unikey"]),
-    );
+    let fcitx = ["fcitx5", "fcitx5-configtool", "fcitx5-gtk", "fcitx5-qt", "fcitx5-unikey"];
+    let before = before_install();
+    d.exec_monitored(2, s_total, "Installing Fcitx5 typing packages", pacman(&[&["-S", "--needed", "--noconfirm"][..], &fcitx[..]].concat()));
+    record_installed(before, &fcitx);
 
     d.step("Services", 3, s_total, "Face Recognition (Howdy)", "Detecting sensor, models & PAM rules...");
+    let before = before_install();
     d.exec_monitored(3, s_total, "Installing v4l-utils for camera detection", pacman(&["-S", "--needed", "--noconfirm", "v4l-utils"]));
+    record_installed(before, &["v4l-utils"]);
 
     let device = find_ir_camera();
     log("INFO", &format!("Howdy device node resolved to {device}"));
@@ -537,9 +607,10 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
         dl.arg("download-models");
         d.exec_monitored(3, s_total, "Downloading Howdy AI face models", dl);
     }
-    if Path::new("/etc/howdy/config.ini").is_file() {
-        ok_logged("howdy", &["set", "device_path", &device]);
-        ok_logged("howdy", &["set", "detection_notice", "true"]);
+    if let Ok(ini) = fs::read_to_string("/etc/howdy/config.ini") {
+        for (key, value) in [("device_path", device.as_str()), ("detection_notice", "true")] {
+            journal::howdy_set(key, ini_value(&ini, key).as_deref(), value, || ok_logged("howdy", &["set", key, value]));
+        }
     }
 
     // Referencing a PAM module that does not exist breaks the whole auth stack
@@ -554,16 +625,13 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
         for name in ["polkit-1", "system-local-login", "plasmalogin", "sddm", "gdm-password", "hyprlock", "swaylock"] {
             patch_pam(&format!("/etc/pam.d/{name}"), Some(&format!("/usr/lib/pam.d/{name}")))?;
         }
-        let hook = Path::new(HOWDY_HOOK);
-        fs::create_dir_all(hook.parent().unwrap())?;
-        fs::write(hook, howdy_hook(&device)).context("writing Howdy resume hook")?;
-        let mode = fs::metadata(hook)?.permissions().mode() | 0o111;
-        fs::set_permissions(hook, fs::Permissions::from_mode(mode))?;
+        write_hook(&device)?;
     }
 
     d.step("Services", 4, s_total, "Search Services", "Enabling and starting valkey & searxng...");
     for svc in ["valkey", "searxng"] {
-        if !ok_logged("systemctl", &["enable", "--now", svc]) {
+        let (enabled, active) = (ok("systemctl", &["is-enabled", "--quiet", svc]), ok("systemctl", &["is-active", "--quiet", svc]));
+        if !journal::service_enable(svc, enabled, active, || ok_logged("systemctl", &["enable", "--now", svc])) {
             add_issue(format!("Could not enable/start {svc}"));
         }
     }
@@ -717,10 +785,16 @@ pub fn run_automatic_steps(list: &PkgList) -> Result<i64> {
 /// except where a step itself stops the run (the repository step, as before).
 pub fn run_plan(plan: &AutoPlan, list: Option<&PkgList>) -> Result<PlanOutcome> {
     let mut out = PlanOutcome { start: ui::now(), ..Default::default() };
-    let o_start = out.start;
-    let o_total = plan.steps.len() as i64;
     ui::set_step_weights(plan.weights());
     ctx::clear_issues();
+    let keys: Vec<&str> = plan.steps.iter().map(|s| s.key()).collect();
+    journal::recorded(&keys, false, || run_steps(plan, list, &mut out))?;
+    Ok(out)
+}
+
+fn run_steps(plan: &AutoPlan, list: Option<&PkgList>, out: &mut PlanOutcome) -> Result<()> {
+    let o_start = out.start;
+    let o_total = plan.steps.len() as i64;
     log("INFO", "==========================================");
     log("INFO", "Starting Full Automated Setup Sequence...");
     log("INFO", "==========================================");
@@ -740,7 +814,7 @@ pub fn run_plan(plan: &AutoPlan, list: Option<&PkgList>) -> Result<PlanOutcome> 
             Step::Import => out.import = plan.import.clone().map(|o| run_import(o, o_start, o_step, o_total)),
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// The backup step of a run: what to show in the summary.
@@ -970,5 +1044,52 @@ mod tests {
         assert_eq!(failed, vec![("Videos".to_string(), mount.join("Videos").display().to_string())]);
         assert!(!home.join("Videos").is_symlink());
         assert_eq!(fs::read_to_string(home.join("Videos/v.mkv")).unwrap(), "v");
+    }
+
+    #[test]
+    fn engine_steps_record_what_they_change() {
+        use crate::journal::{self, Status, state_dir, sys_path, with_root};
+        let t = tempfile::tempdir().unwrap();
+        with_root(t.path(), || {
+            fs::create_dir_all(sys_path("/etc/pam.d")).unwrap();
+            fs::create_dir_all(sys_path("/usr/lib/pam.d")).unwrap();
+            fs::write(sys_path("/etc/pacman.conf"), "[core]\nInclude = /etc/pacman.d/mirrorlist\n").unwrap();
+            fs::write(sys_path("/etc/pam.d/sudo"), "#%PAM-1.0\nauth include system-auth\n").unwrap();
+            fs::write(sys_path("/usr/lib/pam.d/sddm"), "#%PAM-1.0\nauth include system-login\n").unwrap();
+            journal::begin_run(&["repo", "services"], "p3ter").unwrap();
+            assert!(!configure_pacman_conf().unwrap());
+            assert!(configure_pacman_conf().unwrap(), "the second time nothing changes");
+            patch_pam("/etc/pam.d/sudo", None).unwrap();
+            patch_pam("/etc/pam.d/sddm", Some("/usr/lib/pam.d/sddm")).unwrap();
+            patch_pam("/etc/pam.d/missing", Some("/usr/lib/pam.d/missing")).unwrap();
+            write_hook("/dev/video2").unwrap();
+            journal::end_run();
+
+            let runs = journal::runs(&journal::load(&state_dir()).unwrap().entries);
+            let r = &runs[0];
+            let changes: Vec<(String, String)> = r.changes.iter().map(|c| (c.kind.clone(), c.data["path"].as_str().unwrap_or_default().to_string())).collect();
+            let p = |s: &str| sys_path(s).display().to_string();
+            assert_eq!(
+                changes,
+                [
+                    ("file_write".into(), p("/etc/pacman.conf")),
+                    ("file_write".into(), p("/etc/pam.d/sudo")),
+                    ("file_create".into(), p("/etc/pam.d/sddm")),
+                    ("file_create".into(), p(HOWDY_HOOK)),
+                ]
+            );
+            assert!(r.changes.iter().all(|c| c.status == Status::Done));
+            assert!(fs::read_to_string(sys_path("/etc/pacman.conf")).unwrap().contains("[archrepo]"));
+            assert!(fs::read_to_string(sys_path("/etc/pam.d/sddm")).unwrap().contains("pam_howdy.so"));
+            assert_eq!(fs::metadata(sys_path(HOWDY_HOOK)).unwrap().permissions().mode() & 0o111, 0o111);
+        });
+    }
+
+    #[test]
+    fn howdy_values_are_read_for_the_journal() {
+        let ini = "[core]\ndetection_notice = false\n[video]\ndevice_path = /dev/video0\n";
+        assert_eq!(ini_value(ini, "device_path").as_deref(), Some("/dev/video0"));
+        assert_eq!(ini_value(ini, "detection_notice").as_deref(), Some("false"));
+        assert_eq!(ini_value(ini, "nope"), None);
     }
 }

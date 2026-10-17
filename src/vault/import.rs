@@ -140,12 +140,14 @@ fn import_dat(o: &ImportOpts) -> Result<()> {
     }
 
     let dest_s = dest_file.to_string_lossy().into_owned();
+    let mut snapshot = None;
     if o.safety_backup && (dest_file.is_file() || (!c.is_root && have("sudo") && ok("sudo", &["-n", "test", "-f", &dest_s]))) {
         let rollback = safety_backup_dir().join(format!("safety_rollback_{}", ctx::now_str("%Y-%m-%d_%H%M%S")));
         let models = rollback.join("howdy/models");
         ctx::mkdir_user(&models)?;
         ok_priv("cp", &["-p", &dest_s, &format!("{}/", models.display())]);
         log_info(&format!("Safety snapshot of existing model saved to: {}", rollback.display()));
+        snapshot = Some(rollback);
     }
 
     let src = o.file.to_string_lossy();
@@ -164,6 +166,9 @@ fn import_dat(o: &ImportOpts) -> Result<()> {
         }
     }
     log_success(&format!("Imported Howdy face model for '{user}' from: {}", o.file.display()));
+    // Without a snapshot (none taken, or there was no model before) undo removes the model
+    let fp = snapshot.as_deref().and_then(crate::journal::fingerprint);
+    crate::journal::import(&o.file, &["howdy".to_string()], snapshot.as_deref(), fp);
     howdy_list();
     Ok(())
 }
@@ -317,6 +322,8 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
     ctx::cleanup_vault_staging();
     report::blank();
     log_success("Restore process finished successfully!");
+    let snapshot = (o.safety_backup && rollback.is_dir()).then_some(rollback.as_path());
+    crate::journal::import(&o.file, &apps, snapshot, snapshot.and_then(crate::journal::fingerprint));
     if o.safety_backup && rollback.is_dir() {
         log_info(&format!("Safety rollback snapshot created at: {}", rollback.display()));
     }

@@ -291,6 +291,25 @@ fn needs_root(cmd: &Option<Cmd>) -> bool {
     }
 }
 
+/// Runs as your own user can't write the root-only journal: say so instead.
+fn unrecorded_note(dry_run: bool) {
+    if !dry_run && !ctx::ctx().is_root {
+        println!("Note: not recorded for undo (run with sudo to record it).");
+    }
+}
+
+fn recorded_import(o: vault::import::ImportOpts) -> Result<()> {
+    unrecorded_note(o.dry_run);
+    let dry = o.dry_run;
+    journal::recorded(&["import"], dry, || cmd_import(o))
+}
+
+fn recorded_backup(o: vault::backup::BackupOpts) -> Result<()> {
+    unrecorded_note(o.dry_run);
+    let dry = o.dry_run;
+    journal::recorded(&["export"], dry, || cmd_backup(o))
+}
+
 /// Load the list and say which one it is, before anything is installed.
 fn announce_list(source: &ListSource) -> Result<pkglist::PkgList> {
     let pl = source.load()?;
@@ -306,7 +325,7 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         None => tui::run(tui::Start::Menu, top.known()?),
         Some(Cmd::Auto(s)) => setup::run_automatic(&announce_list(&s.or(top))?),
         Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
-        Some(Cmd::Repo) => setup::add_kud3n_repo(false, 0, 1, 1),
+        Some(Cmd::Repo) => journal::recorded(&["repo"], false, || setup::add_kud3n_repo(false, 0, 1, 1)),
         Some(Cmd::Packages(a)) if a.list => {
             // A fallback is a valid answer: it's shown with its reason, and the exit status is 0
             let pl = a.source.or(top).load()?;
@@ -324,18 +343,18 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             if let Some(s) = &selection {
                 println!("Selected: {} of {} packages", s.len(), pl.list.count());
             }
-            setup::install_packages(&pl.list, selection.as_deref(), false, 0, 1, 1);
+            journal::recorded(&["packages"], false, || setup::install_packages(&pl.list, selection.as_deref(), false, 0, 1, 1));
             // The dashboard drew over the line above
             println!("Package list: {}", pl.source_line());
             Ok(())
         }
-        Some(Cmd::Services) => setup::setup_services(false, 0, 1, 1),
+        Some(Cmd::Services) => journal::recorded(&["services"], false, || setup::setup_services(false, 0, 1, 1)),
         Some(Cmd::Import(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Import, top.known()?),
-        Some(Cmd::Import(a)) if a.is_empty() => interactive::import_data(),
-        Some(Cmd::Import(a)) => cmd_import(a.into_opts()?),
+        Some(Cmd::Import(a)) if a.is_empty() => journal::recorded(&["import"], false, interactive::import_data),
+        Some(Cmd::Import(a)) => recorded_import(a.into_opts()?),
         Some(Cmd::Export(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Export, top.known()?),
-        Some(Cmd::Export(a)) if a.is_empty() => interactive::export_data(),
-        Some(Cmd::Export(a)) => cmd_backup(a.into_opts()),
+        Some(Cmd::Export(a)) if a.is_empty() => journal::recorded(&["export"], false, interactive::export_data),
+        Some(Cmd::Export(a)) => recorded_backup(a.into_opts()),
         Some(Cmd::Status) | Some(Cmd::Vault { cmd: VaultCmd::Status }) => {
             vault::status::cmd_status();
             Ok(())
@@ -344,8 +363,8 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             vault::require_vault_tools()?;
             vault::info::cmd_info(file.as_deref())
         }
-        Some(Cmd::Vault { cmd: VaultCmd::Backup(a) }) => cmd_backup(a.into_opts()),
-        Some(Cmd::Vault { cmd: VaultCmd::Import(a) }) => cmd_import(a.into_opts()?),
+        Some(Cmd::Vault { cmd: VaultCmd::Backup(a) }) => recorded_backup(a.into_opts()),
+        Some(Cmd::Vault { cmd: VaultCmd::Import(a) }) => recorded_import(a.into_opts()?),
         Some(Cmd::Log(a)) => logio::os::cmd_log(a.tail, a.open, a.copy),
         Some(Cmd::Test) => Ok(()),
     }

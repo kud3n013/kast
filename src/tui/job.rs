@@ -185,7 +185,20 @@ fn finished(message: &str) -> Outcome {
     Outcome::Finished { message: message.into(), issues: ctx::take_issues() }
 }
 
+/// The changes of a job are recorded for undo (the automatic run records its own).
 fn run(kind: JobKind) -> Result<Outcome> {
+    let (step, dry) = match &kind {
+        JobKind::Packages(..) => ("packages", false),
+        JobKind::Repo => ("repo", false),
+        JobKind::Services => ("services", false),
+        JobKind::Import(o) => ("import", o.dry_run),
+        JobKind::Export(o) => ("export", o.dry_run),
+        _ => return run_job(kind),
+    };
+    crate::journal::recorded(&[step], dry, || run_job(kind))
+}
+
+fn run_job(kind: JobKind) -> Result<Outcome> {
     if !kind.is_auto() {
         ctx::clear_issues();
     }

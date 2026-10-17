@@ -121,6 +121,7 @@ fn export_howdy_dat(output: &Path, dry_run: bool) -> Result<()> {
     }
     chown_to_invoker(output);
     log_success(&format!("Exported Howdy face model for '{}' to: {}", c.target_user, output.display()));
+    crate::journal::export(&output);
     Ok(())
 }
 
@@ -278,6 +279,7 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
 
     report::blank();
     log_success("Backup completed successfully!");
+    crate::journal::export(&output);
     log_info(&format!("Archive:    {}", output.display()));
     log_info(&format!("Total Size: {}", format_bytes(&output)));
     Ok(())
