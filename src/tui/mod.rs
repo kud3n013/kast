@@ -326,5 +326,14 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>) {
         }
         // Needs the terminal: handled in the event loop
         Command::ViewLog { .. } => {}
+        Command::OpenLogFile | Command::ShowLogFile => {
+            let tx = tx.clone();
+            let show = matches!(cmd, Command::ShowLogFile);
+            std::thread::spawn(move || {
+                let path = &ctx().log_file;
+                let r = if show { logio::os::show_in_folder(path, logio::TUI_HINT) } else { logio::os::open_file(path, logio::TUI_HINT) };
+                let _ = tx.send(Event::Loaded(event::Loaded::LogIo(r)));
+            });
+        }
     }
 }

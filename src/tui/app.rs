@@ -104,6 +104,10 @@ pub enum Command {
     LoadStatus,
     /// Show the log file in a pager (or an editor) on the real terminal, the app suspended
     ViewLog { editor: bool },
+    /// Open the log file with the desktop's default app (answered with `Loaded::LogIo`)
+    OpenLogFile,
+    /// Show the log file in the file manager (answered with `Loaded::LogIo`)
+    ShowLogFile,
 }
 
 /// Which part of the log `y` copies.
@@ -464,6 +468,8 @@ fn log_action(k: &KeyEvent, scope: LogScope, running: bool) -> Option<Command> {
     match k.code {
         KeyCode::Char('e') => Some(Command::ViewLog { editor: false }),
         KeyCode::Char('E') => Some(Command::ViewLog { editor: true }),
+        KeyCode::Char('o') => Some(Command::OpenLogFile),
+        KeyCode::Char('f') => Some(Command::ShowLogFile),
         _ => None,
     }
 }
@@ -987,7 +993,7 @@ pub mod tests {
     }
 
     #[test]
-    fn e_opens_pager_or_editor_except_while_a_job_runs() {
+    fn e_o_f_work_except_while_a_job_runs() {
         let mut a = app(80, 24);
         assert!(matches!(update(&mut a, key(KeyCode::Char('e'))), Some(Command::ViewLog { editor: false })));
         assert!(matches!(update(&mut a, shift('E')), Some(Command::ViewLog { editor: true })));
@@ -995,8 +1001,12 @@ pub mod tests {
         let mut a = running_auto(80, 24);
         assert!(update(&mut a, key(KeyCode::Char('e'))).is_none());
         assert!(update(&mut a, shift('E')).is_none());
+        assert!(update(&mut a, key(KeyCode::Char('o'))).is_none());
+        assert!(update(&mut a, key(KeyCode::Char('f'))).is_none());
         job(&mut a, JobMsg::Done(Ok(Outcome::Finished { message: "Done".into(), issues: vec![] })));
         assert!(matches!(update(&mut a, key(KeyCode::Char('e'))), Some(Command::ViewLog { editor: false })));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('o'))), Some(Command::OpenLogFile)));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('f'))), Some(Command::ShowLogFile)));
         // A failed launch comes back as an error toast
         update(&mut a, Event::Loaded(Loaded::LogIo(crate::logio::Report::err("No pager found"))));
         assert_eq!(a.toast.as_ref().map(|t| (t.kind, t.text.as_str())), Some((ToastKind::Error, "No pager found")));
