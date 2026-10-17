@@ -411,6 +411,20 @@ fn record_installed(before: Option<Vec<String>>, targets: &[&str]) {
     }
 }
 
+/// Install one package with pacman (recorded for undo like any package install).
+pub fn install_one(pkg: &str, title: &str) -> Result<()> {
+    let d = Dash::new(false, 0, 1, 1, title);
+    d.step("Install", 1, 1, pkg, &format!("Installing {pkg}..."));
+    let before = before_install();
+    let rc = d.exec_monitored(1, 1, &format!("Installing {pkg} (pacman)"), pacman(&["-S", "--needed", "--noconfirm", pkg]));
+    record_installed(before, &[pkg]);
+    if rc != 0 {
+        anyhow::bail!("pacman could not install {pkg} (exit {rc})");
+    }
+    log("SUCCESS", &format!("{pkg} installed"));
+    Ok(())
+}
+
 pub fn pkg_installed(pkg: &str) -> bool {
     match pkg.split_once('/') {
         Some((repo, name)) => output("pacman", &["-Sl", repo]).is_some_and(|list| {

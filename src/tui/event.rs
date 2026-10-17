@@ -59,6 +59,13 @@ pub enum Loaded {
     Status(Box<crate::vault::status::StatusReport>),
     /// The package list for this session (downloaded, or the built-in one and why)
     PackageList(Box<crate::pkglist::PkgList>),
+    Drive(Box<crate::tui::screens::drive::DriveInfo>),
+    /// The sign-in address (prints as hidden)
+    SignInUrl(crate::proton::SignInUrl),
+    /// The sign-in process ended (the error scrubbed)
+    SignInDone(Result<(), String>),
+    DriveLoggedOut(Result<(), String>),
+    DriveStore(Result<(), String>),
     /// How a log action went (shown as a toast)
     LogIo(crate::logio::Report),
     /// No clipboard program worked: copy through the terminal with these bytes

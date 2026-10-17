@@ -33,6 +33,8 @@ pub enum JobKind {
     Undo(Vec<crate::undo::Item>),
     /// Remove these packages
     Uninstall(Vec<crate::undo::Item>),
+    /// Install proton-drive from kud3n's repository
+    InstallProton,
     /// Remove /var/lib/pacman/db.lck after a canceled pacman left it behind
     RemovePacmanLock,
     /// Scripted messages, for tests of the run screen and prompts
@@ -58,6 +60,7 @@ impl JobKind {
             JobKind::Repo => "Add kud3n's repository".into(),
             JobKind::Packages(..) => "Install packages".into(),
             JobKind::Services => "Set up services".into(),
+            JobKind::InstallProton => "Install proton-drive".into(),
             JobKind::Import(o) => format!("Restore {}", o.file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
             JobKind::Export(o) => format!("Back up {}", o.target),
             JobKind::RemovePacmanLock => "Remove the pacman lock".into(),
@@ -197,6 +200,7 @@ fn run(kind: JobKind) -> Result<Outcome> {
         JobKind::Packages(..) => ("packages", false),
         JobKind::Repo => ("repo", false),
         JobKind::Services => ("services", false),
+        JobKind::InstallProton => ("packages", false),
         JobKind::Import(o) => ("import", o.dry_run),
         JobKind::Export(o) => ("export", o.dry_run),
         _ => return run_job(kind),
@@ -235,6 +239,11 @@ fn run_job(kind: JobKind) -> Result<Outcome> {
         JobKind::Services => {
             setup::setup_services(false, 0, 1, 1)?;
             finished("Services step finished")
+        }
+        JobKind::InstallProton => {
+            setup::install_one(crate::proton::PROTON_PKG, "Install proton-drive")?;
+            crate::proton::forget_status();
+            finished("proton-drive installed: open Import or Export again to use Proton Drive")
         }
         JobKind::Import(o) => {
             let dat = crate::vault::is_dat(&o.file);

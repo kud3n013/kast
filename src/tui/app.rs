@@ -9,6 +9,7 @@ use ratatui::text::Line;
 pub use super::event::Event;
 use super::event::{JobMsg, Loaded, Outcome};
 use super::job::JobKind;
+use super::screens::drive;
 use super::screens::export::{self, ExportState};
 use super::screens::help;
 use super::screens::import::{self, ImportState};
@@ -80,6 +81,13 @@ pub enum ModalKind {
     SkipPackages,
     /// Delete these runs' file copies
     Prune(Vec<String>),
+    /// Install proton-drive from the repository
+    DriveInstall,
+    /// Information about Proton Drive; Yes checks again
+    DriveRecheck,
+    /// Keyring locked: Yes keeps the session in pass from now on
+    DriveUsePass,
+    DriveSignOut,
 }
 
 /// A yes/no dialog over the current screen. Esc always answers No.
@@ -100,17 +108,27 @@ pub enum Command {
     /// Start a job thread (the run screen is already showing)
     Start(JobKind),
     /// Reply to an engine question
-    Answer { id: u64, yes: bool },
+    Answer {
+        id: u64,
+        yes: bool,
+    },
     /// Stop the running job
     Cancel,
     /// Read the log file (answered with `Loaded::Log`)
     OpenLog,
     /// Find backups (answered with `Loaded::Candidates`)
-    LoadCandidates { dir: std::path::PathBuf, user: String, zips_only: bool },
+    LoadCandidates {
+        dir: std::path::PathBuf,
+        user: String,
+        zips_only: bool,
+    },
     /// Which of these packages are installed (answered with `Loaded::Installed`)
     LoadInstalled(Vec<String>),
     /// Measure what a restore's snapshot would copy (answered with `Loaded::SnapshotSize`)
-    SnapshotSize { file: std::path::PathBuf, apps: Vec<String> },
+    SnapshotSize {
+        file: std::path::PathBuf,
+        apps: Vec<String>,
+    },
     /// Look for btrfs and snapshot tools (answered with `Loaded::Snapshots`)
     DetectSnapshots,
     /// Read the journal (answered with `Loaded::Undo`)
@@ -122,7 +140,10 @@ pub enum Command {
     /// Create a folder as the target user (answered with `Loaded::DirCreated`)
     MkdirUser(std::path::PathBuf),
     /// Look at a backup file (answered with `Loaded::Inspected`)
-    Inspect { path: std::path::PathBuf, pick: bool },
+    Inspect {
+        path: std::path::PathBuf,
+        pick: bool,
+    },
     /// Tab completion of a typed path (answered with `Loaded::Completion`)
     Complete(String),
     /// Detect what can be backed up (answered with `Loaded::ExportTargets`)
@@ -130,7 +151,9 @@ pub enum Command {
     /// Collect the app status (answered with `Loaded::Status`)
     LoadStatus,
     /// Show the log file in a pager (or an editor) on the real terminal, the app suspended
-    ViewLog { editor: bool },
+    ViewLog {
+        editor: bool,
+    },
     /// Open the log file with the desktop's default app (answered with `Loaded::LogIo`)
     OpenLogFile,
     /// Show the log file in the file manager (answered with `Loaded::LogIo`)
@@ -143,6 +166,22 @@ pub enum Command {
     Osc52(Vec<u8>),
     /// Download the package list again (answered with `Loaded::PackageList`)
     FetchPackages,
+    /// Several of these, in order
+    Many(Vec<Command>),
+    /// Find proton-drive and check the sign-in (answered with `Loaded::Drive`)
+    DriveCheck {
+        refresh: bool,
+    },
+    /// Start `proton-drive auth login` (answered with `Loaded::SignInUrl`, then `SignInDone`)
+    DriveLogin,
+    /// Stop the sign-in process
+    DriveLoginCancel,
+    /// `proton-drive auth logout` (answered with `Loaded::DriveLoggedOut`)
+    DriveLogout,
+    /// Save the credential store setting (answered with `Loaded::DriveStore`)
+    DriveSetStore(String),
+    CopySignIn(crate::proton::SignInUrl),
+    OpenSignIn(crate::proton::SignInUrl),
 }
 
 /// Which part of the log `y` copies.
@@ -175,6 +214,11 @@ pub struct App {
     pub wizard: Option<Box<Wizard>>,
     /// What the machine has for snapshots (looked at once, when the automatic run opens)
     pub snapshots: Option<crate::snapshot::Detected>,
+    /// Proton Drive as last checked, and whether a check is running
+    pub drive: Option<Box<super::screens::drive::DriveInfo>>,
+    pub drive_checking: bool,
+    /// The sign-in window
+    pub signin: Option<super::screens::drive::SignIn>,
     /// Folder check for the default folders (tests replace it)
     pub dir_exists: fn(&std::path::Path) -> bool,
     pub quit: bool,
@@ -206,6 +250,9 @@ impl App {
             installed: Installed::Unknown,
             wizard: None,
             snapshots: None,
+            drive: None,
+            drive_checking: false,
+            signin: None,
             dir_exists: |p| p.is_dir(),
             quit: false,
             last_click: None,
@@ -237,7 +284,7 @@ impl App {
             },
             _ => false,
         };
-        self.toast.is_some() || self.job_running() || loading
+        self.toast.is_some() || self.job_running() || loading || self.signin.is_some() || self.drive_checking
     }
 
     fn too_small(&self) -> bool {
@@ -333,6 +380,14 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
             app.toast(ToastKind::Ok, format!("Pruned: {} freed", crate::undo::human(freed)));
             Some(Command::LoadUndo)
         }
+        Event::Loaded(Loaded::Drive(info)) => {
+            drive::on_info(app, *info);
+            None
+        }
+        Event::Loaded(Loaded::SignInUrl(url)) => drive::on_url(app, url),
+        Event::Loaded(Loaded::SignInDone(r)) => drive::on_done(app, r),
+        Event::Loaded(Loaded::DriveLoggedOut(r)) => drive::on_logged_out(app, r),
+        Event::Loaded(Loaded::DriveStore(r)) => drive::on_store_set(app, r),
         Event::Loaded(Loaded::Installed(set)) => {
             app.installed = Installed::Known(set);
             packages::sync(app)
@@ -437,6 +492,9 @@ fn on_job(app: &mut App, m: JobMsg) -> Option<Command> {
 }
 
 fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
+    if app.signin.is_some() {
+        return drive::signin_key(app, k);
+    }
     if app.modal.is_some() {
         return modal_key(app, k);
     }
@@ -520,6 +578,7 @@ fn modal_key(app: &mut App, k: KeyEvent) -> Option<Command> {
     }
     match k.code {
         KeyCode::Char('y' | 'Y') => answer(app, true),
+        KeyCode::Char('r') if matches!(m.kind, ModalKind::DriveRecheck) => answer(app, true),
         KeyCode::Char('n' | 'N') | KeyCode::Esc => answer(app, false),
         KeyCode::Enter => {
             let yes = m.yes_selected;
@@ -549,6 +608,11 @@ fn answer(app: &mut App, yes: bool) -> Option<Command> {
         ModalKind::SkipPackages => None,
         ModalKind::Prune(ids) if yes => Some(Command::PruneUndo(ids)),
         ModalKind::Prune(_) => None,
+        ModalKind::DriveInstall if yes => Some(start_job(app, JobKind::InstallProton)),
+        ModalKind::DriveRecheck if yes => Some(drive::check(app, true)),
+        ModalKind::DriveUsePass if yes => Some(Command::DriveSetStore("pass".into())),
+        ModalKind::DriveSignOut if yes => Some(Command::DriveLogout),
+        ModalKind::DriveInstall | ModalKind::DriveRecheck | ModalKind::DriveUsePass | ModalKind::DriveSignOut => None,
     }
 }
 
@@ -682,12 +746,15 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
         Action::Import => {
             let dir = import::default_dir(&app.header.home, app.dir_exists);
             app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Restore, false, dir)));
-            return None;
+            return drive::check_if_unknown(app);
         }
         Action::Export => {
             let dir = export::default_dir(&app.header.home, app.dir_exists);
             app.screen = Screen::Export(Box::new(ExportState::new(&app.header.user, false, dir)));
-            return Some(Command::LoadExportTargets);
+            return Some(match drive::check_if_unknown(app) {
+                Some(check) => Command::Many(vec![Command::LoadExportTargets, check]),
+                None => Command::LoadExportTargets,
+            });
         }
         Action::Status => {
             app.screen = Screen::Status(Box::new(StatusState { loading: true, ..Default::default() }));
@@ -704,7 +771,7 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
         Action::Info => {
             let dir = import::default_dir(&app.header.home, app.dir_exists);
             app.screen = Screen::Import(Box::new(ImportState::new(import::Mode::Inspect, false, dir)));
-            return None;
+            return drive::check_if_unknown(app);
         }
     };
     Some(start_job(app, kind))
@@ -722,7 +789,7 @@ pub fn start_job(app: &mut App, kind: JobKind) -> Command {
 }
 
 fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
-    if app.help || app.modal.is_some() || app.too_small() {
+    if app.help || app.modal.is_some() || app.signin.is_some() || app.too_small() {
         return None;
     }
     if matches!(app.screen, Screen::Import(_)) {
@@ -824,10 +891,19 @@ pub fn view(app: &App, f: &mut Frame) {
             packages::hints(app)
         }
     };
-    let hints: &[(&str, &str)] = if app.modal.is_some() { &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")] } else { hints };
+    let hints: &[(&str, &str)] = if let Some(s) = &app.signin {
+        drive::signin_hints(s)
+    } else if app.modal.is_some() {
+        &[("y/n", "answer"), ("←/→", "choose"), ("Enter", "confirm"), ("Esc", "no")]
+    } else {
+        hints
+    };
     widgets::footer(f, bottom, hints, &app.theme);
     if let Some(m) = &app.modal {
         modal_view(f, body, app, m);
+    }
+    if let Some(s) = &app.signin {
+        drive::signin_view(f, body, app, s);
     }
     if app.help {
         let (title, keys) = app.help_keys();
@@ -872,6 +948,8 @@ pub mod tests {
         let mut a = App::new(header(), Theme::new(true, false), (w, h));
         // Default folders as on a machine with the data partition, whatever this one has
         a.dir_exists = |p| p == std::path::Path::new("/media/data/backups") || p == std::path::Path::new("/media/data");
+        // As on a machine without proton-drive (no check is started)
+        a.drive = Some(Box::new(super::super::screens::drive::tests::missing(false)));
         a
     }
 

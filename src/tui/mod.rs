@@ -70,7 +70,7 @@ fn install_panic_hook() {
         }
         restore_terminal();
         prev(info);
-        ctx::cleanup_temp_state();
+        ctx::cleanup_on_exit();
     }));
 }
 
@@ -300,6 +300,34 @@ fn copied(tx: &Sender<Event>, c: logio::os::Copied) {
     let _ = tx.send(Event::Loaded(ev));
 }
 
+/// The sign-in process, on its own thread: the address first, then how it ended.
+fn sign_in(tx: &Sender<Event>) {
+    let done = |r: Result<(), String>| {
+        let _ = tx.send(Event::Loaded(event::Loaded::SignInDone(r)));
+    };
+    let cli = match crate::drive::installed_cli() {
+        Ok(c) => c,
+        Err(p) => return done(Err(p.to_string())),
+    };
+    crate::proton::kill_login();
+    let mut login = match cli.start_login() {
+        Ok(l) => l,
+        Err(p) => return done(Err(p.to_string())),
+    };
+    match login.url(std::time::Duration::from_secs(60)) {
+        Ok(url) => {
+            let _ = tx.send(Event::Loaded(event::Loaded::SignInUrl(url)));
+        }
+        Err(p) => return done(Err(p.to_string())),
+    }
+    let r = login.finish(crate::proton::LOGIN_TIMEOUT + std::time::Duration::from_secs(30));
+    crate::proton::forget_status();
+    done(r.map_err(|p| match p {
+        crate::proton::Problem::TimedOut => "Sign-in timed out (10 minutes)".to_string(),
+        p => p.to_string(),
+    }));
+}
+
 /// Reply channels of engine questions that wait for an answer, by question id.
 #[derive(Default)]
 pub struct Replies(Mutex<HashMap<u64, Sender<bool>>>);
@@ -394,6 +422,47 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
                 let targets = screens::export::load_targets();
                 let ts = screens::export::timestamp();
                 let _ = tx.send(Event::Loaded(event::Loaded::ExportTargets { targets, ts }));
+            });
+        }
+        Command::Many(cmds) => {
+            for c in cmds {
+                execute_command(c, tx, replies, marks);
+            }
+        }
+        Command::DriveCheck { refresh } => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Drive(Box::new(screens::drive::load(refresh)))));
+            });
+        }
+        Command::DriveLogin => {
+            let tx = tx.clone();
+            std::thread::spawn(move || sign_in(&tx));
+        }
+        Command::DriveLoginCancel => {
+            std::thread::spawn(crate::proton::kill_login);
+        }
+        Command::DriveLogout => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let r = crate::drive::installed_cli().and_then(|cli| cli.logout()).map_err(|p| p.to_string());
+                crate::proton::forget_status();
+                let _ = tx.send(Event::Loaded(event::Loaded::DriveLoggedOut(r)));
+            });
+        }
+        Command::DriveSetStore(store) => {
+            let r = crate::settings::update(&["proton", "credentials_store"], Some(store.into())).map_err(|e| format!("Could not save the setting: {e}"));
+            crate::proton::forget_status();
+            let _ = tx.send(Event::Loaded(event::Loaded::DriveStore(r)));
+        }
+        Command::CopySignIn(url) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || copied(&tx, logio::os::copy(url.reveal(), "the sign-in link", "open it with o, or scan the code")));
+        }
+        Command::OpenSignIn(url) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::LogIo(logio::os::open_url(url.reveal(), "copy it with y, or scan the code"))));
             });
         }
         Command::FetchPackages => {

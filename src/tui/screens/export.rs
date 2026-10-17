@@ -11,7 +11,8 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 
-use super::import::{PROTON_SOON, Source, check_dir, expand, folder_box, source_rows};
+use super::drive;
+use super::import::{Source, check_dir, expand, folder_box, proton_gate, source_rows};
 use crate::tui::app::{App, Command, Modal, ModalKind, Screen, ToastKind};
 use crate::tui::job::JobKind;
 use crate::tui::widgets::{Input, block, popup};
@@ -308,13 +309,21 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
     let auto = st.auto;
     match st.stage {
         Stage::Source => {
+            if Source::ALL[st.source.min(1)] == Source::ProtonDrive
+                && let Some(cmd) = drive::row_key(app, &k)
+            {
+                return cmd;
+            }
+            let st = state(app)?;
             match k.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => st.source = 1 - st.source.min(1),
                 KeyCode::Enter | KeyCode::Char(' ') => {
-                    if Source::ALL[st.source.min(1)].available() {
+                    if Source::ALL[st.source.min(1)] == Source::Local {
                         st.stage = Stage::Folder;
+                    } else if let Err(cmd) = proton_gate(app) {
+                        return cmd;
                     } else {
-                        app.toast(ToastKind::Info, PROTON_SOON);
+                        app.toast(ToastKind::Info, "Signed in to Proton Drive");
                     }
                 }
                 KeyCode::Esc | KeyCode::Char('q') => leave(app, auto),
@@ -459,12 +468,12 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
     match st.stage {
         Stage::Source => {
             let [list_area, details] = Layout::vertical([Constraint::Length(Source::ALL.len() as u16 + 2), Constraint::Min(3)]).areas(body);
-            let (list, mut ls) = source_rows(theme, st.source);
+            let (list, mut ls) = source_rows(app, st.source);
             f.render_stateful_widget(list.block(block(theme, " Back up to ")), list_area, &mut ls);
-            let text = if Source::ALL[st.source.min(1)].available() {
-                "A folder on this computer: the data partition, a USB drive. Next: choose the folder."
+            let text = if Source::ALL[st.source.min(1)] == Source::Local {
+                Text::raw("A folder on this computer: the data partition, a USB drive. Next: choose the folder.")
             } else {
-                PROTON_SOON
+                Text::from(drive::details(app, true))
             };
             f.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }).block(block(theme, " Details ")), details);
             return;
@@ -664,11 +673,13 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let mut a = app(80, 24);
         update(&mut a, key(KeyCode::Char('7')));
-        // Proton Drive can't be picked
+        // Proton Drive without proton-drive: Enter explains how to install it
         update(&mut a, key(KeyCode::Down));
         update(&mut a, key(KeyCode::Enter));
         assert_eq!(st(&a).stage, Stage::Source);
-        assert_eq!(a.toast.as_ref().unwrap().text, PROTON_SOON);
+        assert!(matches!(a.modal.as_ref().unwrap().kind, ModalKind::DriveRecheck));
+        assert!(matches!(update(&mut a, key(KeyCode::Char('r'))), Some(Command::DriveCheck { refresh: true })));
+        assert!(render(&a).contains("Proton Drive · checking…"));
         update(&mut a, key(KeyCode::Up));
         update(&mut a, key(KeyCode::Enter));
         assert_eq!(st(&a).stage, Stage::Folder);

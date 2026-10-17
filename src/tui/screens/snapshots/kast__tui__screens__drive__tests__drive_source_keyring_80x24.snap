@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/drive.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore from ────────────────────────────────────────────────────────────────╮
+│  Local folder                                                                │
+│❯ Proton Drive · keyring locked — see details                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Restores backups from /my-files/kast-backups on Proton Drive, this machine's  │
+│or another's.                                                                 │
+│                                                                              │
+│proton-drive 0.9.0 (/home/p3ter/.local/bin/proton-drive)                      │
+│Status: keyring locked                                                        │
+│proton-drive keeps its session in your desktop keyring (KWallet or GNOME      │
+│Keyring), and it can't be reached: it may be locked, or this is a TTY or SSH  │
+│session without one.                                                          │
+│proton-drive said: Failed to load session from secrets: Cannot autolaunch     │
+│D-Bus without X11 $DISPLAY                                                    │
+│Log in to your desktop (which unlocks the keyring) and re-check.              │
+│Or keep the session in pass (your password store is set up): switching means  │
+│signing in again.                                                             │
+│                                                                              │
+│Keeps 5 backups per type and machine · session in the desktop keyring         │
+│r re-check                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter choose  Esc back  ? help

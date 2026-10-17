@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/drive.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore from ────────────────────────────────────────────────────────────────╮
+│  Local folder                                                                │
+│❯ Proton Drive · not installed — Enter to install                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Restores backups from /my-files/kast-backups on Proton Drive, this machine's  │
+│or ╭ Install proton-drive ─────────────────────────────────────────────────╮  │
+│   │proton-drive isn't installed. To install it:                           │  │
+│pro│                                                                       │  │
+│Ent│  1. Download it from https://proton.me/download/drive/cli/index.html  │  │
+│lin│     Pick linux/x64-baseline (this CPU lacks AVX2)                     │  │
+│   │  2. chmod +x proton-drive                                             │  │
+│Kee│  3. Move it to ~/.local/bin                                           │  │
+│r r│  Then press r to re-check.                                            │  │
+│   │                                                                       │  │
+│   │                        Re-check (r)     Close                         │  │
+│   ╰───────────────────────────────────────────────────────────────────────╯  │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ y/n answer  ←/→ choose  Enter confirm  Esc no

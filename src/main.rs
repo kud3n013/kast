@@ -2,12 +2,15 @@
 //! (backup/restore of app data, KDE Plasma, Hyprland and Howdy face models).
 
 mod ctx;
+mod drive;
 mod interactive;
 mod journal;
 mod logio;
 mod pkglist;
 #[allow(dead_code)] // wired up in the next commits
 mod proton;
+#[allow(dead_code)]
+mod qr;
 mod report;
 #[allow(dead_code)]
 mod settings;
@@ -85,6 +88,13 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Proton Drive: sign in or out, and whether it's ready (no root needed)
+    #[command(after_help = "Uses Proton's own proton-drive CLI, run as you. Exit status 3: Proton Drive isn't ready\n\
+                      (not installed, not signed in, keyring locked, offline).")]
+    Drive {
+        #[command(subcommand)]
+        cmd: DriveCmd,
+    },
     /// Show detected applications & Howdy status, paths & sizes
     Status,
     /// Inspect a backup archive's manifest
@@ -108,6 +118,24 @@ enum Cmd {
     /// Do nothing (for checking that the tool runs)
     #[command(alias = "noop", hide = true)]
     Test,
+}
+
+#[derive(Subcommand)]
+enum DriveCmd {
+    /// Sign in through the browser (prints a link and a QR code; any device works)
+    Login,
+    /// Sign out and clear proton-drive's session and caches on this computer
+    Logout,
+    /// Whether proton-drive is installed and signed in (exit 3 if not)
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Where proton-drive keeps its session: the desktop keyring, or pass (sign in again after)
+    Store {
+        #[arg(value_parser = ["keychain", "pass"])]
+        store: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -429,6 +457,12 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         Some(Cmd::Export(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Export, top.known()?),
         Some(Cmd::Export(a)) if a.is_empty() => journal::recorded(&["export"], false, interactive::export_data),
         Some(Cmd::Export(a)) => recorded_backup(a.into_opts()),
+        Some(Cmd::Drive { cmd }) => match cmd {
+            DriveCmd::Login => drive::cmd_login(),
+            DriveCmd::Logout => drive::cmd_logout(),
+            DriveCmd::Status { json } => drive::cmd_status(json),
+            DriveCmd::Store { store } => drive::cmd_store(&store),
+        },
         Some(Cmd::Status) | Some(Cmd::Vault { cmd: VaultCmd::Status }) => {
             vault::status::cmd_status();
             Ok(())
@@ -471,7 +505,7 @@ fn install_signal_handlers() {
             }
             let interrupted = ctx::pacman_interrupted();
             report::kill_child(std::time::Duration::from_secs(2));
-            ctx::cleanup_temp_state();
+            ctx::cleanup_on_exit();
             tui::restore_terminal();
             if ctx::stale_pacman_lock(interrupted, std::time::Duration::from_secs(2)) {
                 eprintln!("pacman was stopped mid-run and left {0} behind. No pacman is running; remove it with: sudo rm {0}", ctx::PACMAN_LOCK);
@@ -544,10 +578,14 @@ fn main() -> ExitCode {
     install_signal_handlers();
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| dispatch(cli.cmd, cli.list)));
-    ctx::cleanup_temp_state();
+    ctx::cleanup_on_exit();
     tui::restore_terminal();
     match result {
         Ok(Ok(())) => ExitCode::SUCCESS,
+        Ok(Err(e)) if e.is::<drive::NotReady>() => {
+            eprintln!("{C_RED}[ERROR]{C_RESET} {e}");
+            ExitCode::from(drive::EXIT_NOT_READY)
+        }
         Ok(Err(e)) => {
             if !e.is::<Reported>() {
                 eprintln!("{C_RED}[ERROR]{C_RESET} {e:#}");

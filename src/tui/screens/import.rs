@@ -11,6 +11,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Cell, List, ListItem, ListState, Paragraph, Row, Table, TableState, Wrap};
 
+use super::drive;
 use crate::tui::app::{App, Command, Modal, ModalKind, Screen, ToastKind};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{Input, block, ellipsize};
@@ -234,7 +235,7 @@ impl Options {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
     Local,
-    /// Not available yet: shown, but can't be picked
+    /// Through proton-drive, once it's installed and signed in
     ProtonDrive,
 }
 
@@ -247,13 +248,13 @@ impl Source {
             Source::ProtonDrive => "Proton Drive",
         }
     }
-
-    pub fn available(self) -> bool {
-        self == Source::Local
-    }
 }
 
-pub const PROTON_SOON: &str = "Proton Drive support is coming in a future version";
+/// Enter on the source list's Proton Drive row: None when it's ready to use (signed in),
+/// else whatever the row needs (install, sign in, explain) as the command.
+pub fn proton_gate(app: &mut App) -> Result<(), Option<Command>> {
+    if drive::row(app).1 { Ok(()) } else { Err(drive::enter(app)) }
+}
 
 #[derive(Debug, Clone)]
 pub enum Stage {
@@ -460,6 +461,12 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
     let auto = st.auto;
     match st.stage {
         Stage::Source => {
+            if Source::ALL[st.source.min(1)] == Source::ProtonDrive
+                && let Some(cmd) = drive::row_key(app, &k)
+            {
+                return cmd;
+            }
+            let st = state(app)?;
             match k.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => st.source = 1 - st.source.min(1),
                 KeyCode::Enter | KeyCode::Char(' ') => return pick_source(app),
@@ -540,14 +547,18 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
     }
 }
 
-/// Enter on the source list: Local goes on to the folder; Proton Drive isn't there yet.
+/// Enter on the source list: Local goes on to the folder, Proton Drive to its hosts (once
+/// it's installed and signed in).
 fn pick_source(app: &mut App) -> Option<Command> {
     let st = state(app)?;
-    if Source::ALL[st.source.min(1)].available() {
+    if Source::ALL[st.source.min(1)] == Source::Local {
         st.stage = Stage::Folder;
-    } else {
-        app.toast(ToastKind::Info, PROTON_SOON);
+        return None;
     }
+    if let Err(cmd) = proton_gate(app) {
+        return cmd;
+    }
+    app.toast(ToastKind::Info, "Signed in to Proton Drive");
     None
 }
 
@@ -725,7 +736,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ImportState) {
     let theme = &app.theme;
     match &st.stage {
         Stage::Options(o) => return options_view(f, body, theme, o, st.auto),
-        Stage::Source => return source_view(f, body, theme, st),
+        Stage::Source => return source_view(f, body, app, st),
         Stage::Folder => return folder_view(f, body, theme, st),
         Stage::Pick => {}
     }
@@ -796,31 +807,26 @@ fn source_layout(body: Rect) -> (Rect, Rect) {
     (l, r)
 }
 
-/// The source list: Local folder, and Proton Drive greyed out.
-pub fn source_rows<'a>(theme: &Theme, selected: usize) -> (List<'a>, ListState) {
-    let items: Vec<ListItem> = Source::ALL
-        .iter()
-        .map(|s| {
-            if s.available() {
-                ListItem::new(s.label())
-            } else {
-                ListItem::new(Line::from(vec![Span::styled(s.label(), theme.dim()), Span::styled("  Not available yet", theme.dim())]))
-            }
-        })
-        .collect();
+/// The source list: Local folder, and Proton Drive with its state (dim until it's usable).
+pub fn source_rows<'a>(app: &App, selected: usize) -> (List<'a>, ListState) {
+    let theme = &app.theme;
+    let (proton, ready) = drive::row(app);
+    let items: Vec<ListItem> =
+        vec![ListItem::new(Source::Local.label()), if ready { ListItem::new(proton) } else { ListItem::new(Line::styled(proton, theme.dim())) }];
     let list = List::new(items).highlight_style(theme.selected()).highlight_symbol(format!("{} ", theme.sym.pointer));
     (list, ListState::default().with_selected(Some(selected.min(1))))
 }
 
-fn source_view(f: &mut Frame, body: Rect, theme: &Theme, st: &ImportState) {
+fn source_view(f: &mut Frame, body: Rect, app: &App, st: &ImportState) {
+    let theme = &app.theme;
     let (list_area, details) = source_layout(body);
     let title = if st.mode == Mode::Inspect { " Inspect backups from " } else { " Restore from " };
-    let (list, mut ls) = source_rows(theme, st.source);
+    let (list, mut ls) = source_rows(app, st.source);
     f.render_stateful_widget(list.block(block(theme, title)), list_area, &mut ls);
-    let text = if Source::ALL[st.source.min(1)].available() {
-        "Backups in a folder on this computer: the data partition, your Downloads, a USB drive. Next: choose the folder."
+    let text = if Source::ALL[st.source.min(1)] == Source::Local {
+        Text::raw("Backups in a folder on this computer: the data partition, your Downloads, a USB drive. Next: choose the folder.")
     } else {
-        PROTON_SOON
+        Text::from(drive::details(app, false))
     };
     f.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }).block(block(theme, " Details ")), details);
 }
@@ -1130,14 +1136,15 @@ mod tests {
     }
 
     #[test]
-    fn proton_drive_is_shown_but_not_selectable() {
+    fn proton_drive_waits_for_its_check() {
         let mut a = app(80, 24);
-        update(&mut a, key(KeyCode::Char('6')));
+        a.drive = None;
+        assert!(matches!(update(&mut a, key(KeyCode::Char('6'))), Some(Command::DriveCheck { refresh: false })));
         update(&mut a, key(KeyCode::Down));
         assert!(update(&mut a, key(KeyCode::Enter)).is_none());
         assert!(matches!(st(&a).stage, Stage::Source));
-        assert_eq!(a.toast.as_ref().unwrap().text, PROTON_SOON);
-        assert!(render(&a).contains("Proton Drive  Not available yet"));
+        assert_eq!(a.toast.as_ref().unwrap().text, "Still checking Proton Drive…");
+        assert!(render(&a).contains("Proton Drive · checking…"));
         update(&mut a, key(KeyCode::Up));
         update(&mut a, key(KeyCode::Enter));
         assert!(matches!(st(&a).stage, Stage::Folder));

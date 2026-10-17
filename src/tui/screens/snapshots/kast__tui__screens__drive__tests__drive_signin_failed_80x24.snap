@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/drive.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore from ────────────────────────────────────────────────────────────────╮
+│  Local folder                                                                │
+│❯ Proton Drive · not signed in — Enter to sign in                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Restores backups from /my-files/kast-backups on Proton Drive, this machine's  │
+│or another's.                                                                 │
+│                                                                              │
+│proton-╭ Sign in to Proton Drive ─────────────────────────────────────╮       │
+│Status:│Sign-in didn't complete.                                      │       │
+│There's│Authentication timed out                                      │in     │
+│through│                                                              │       │
+│       │Enter try again · Esc close                                   │       │
+│Keeps 5╰──────────────────────────────────────────────────────────────╯       │
+│r re-check                                                                    │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Enter try again  Esc close

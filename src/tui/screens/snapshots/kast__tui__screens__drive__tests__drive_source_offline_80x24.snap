@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/drive.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore from ────────────────────────────────────────────────────────────────╮
+│  Local folder                                                                │
+│❯ Proton Drive · offline                                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Restores backups from /my-files/kast-backups on Proton Drive, this machine's  │
+│or another's.                                                                 │
+│                                                                              │
+│proton-drive 0.9.0 (/home/p3ter/.local/bin/proton-drive)                      │
+│Status: offline                                                               │
+│Proton Drive can't be reached. Check the network and re-check.                │
+│proton-drive said: ConnectionError: fetch failed                              │
+│                                                                              │
+│Keeps 5 backups per type and machine · session in the desktop keyring         │
+│r re-check                                                                    │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter choose  Esc back  ? help

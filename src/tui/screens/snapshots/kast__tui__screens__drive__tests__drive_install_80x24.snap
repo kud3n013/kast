@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/drive.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore from ────────────────────────────────────────────────────────────────╮
+│  Local folder                                                                │
+│❯ Proton Drive · not installed — Enter to install                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Restores backups from /my-files/kast-backups on Proton Drive, this machine's  │
+│or another's.                                                                 │
+│     ╭ Proton Drive ────────────────────────────────────────────────────╮     │
+│proto│Install proton-drive-cli-bin?                                     │     │
+│Enter│                                                                  │     │
+│     │  Proton's command-line tool for Drive, from kud3n's repository.  │     │
+│Keeps│  Recorded like any package install (kast undo can remove it).    │     │
+│r re-│                                                                  │     │
+│     │                        Install     Cancel                        │     │
+│     ╰──────────────────────────────────────────────────────────────────╯     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ y/n answer  ←/→ choose  Enter confirm  Esc no

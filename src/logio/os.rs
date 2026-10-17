@@ -141,6 +141,20 @@ pub fn open_file(path: &Path, hint: &str) -> Report {
     }
 }
 
+/// Open a web address in the user's browser (the sign-in link).
+pub fn open_url(url: &str, hint: &str) -> Report {
+    if !session().gui() {
+        return Report::err(format!("No graphical session; {hint}"));
+    }
+    let Some(argv) = opener(url, &have) else {
+        return Report::err(format!("No xdg-open, gio or kde-open found; {hint}"));
+    };
+    match launch(&argv, None) {
+        Ok(Waited::Exited(Some(0)) | Waited::StillRunning) => Report::ok("Opened the link in your browser"),
+        r => failure(&argv[0], r, hint),
+    }
+}
+
 /// `f`: show the log in the file manager (the file highlighted when it supports FileManager1).
 pub fn show_in_folder(path: &Path, hint: &str) -> Report {
     if !session().gui() {

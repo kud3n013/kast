@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/drive.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Restore from ────────────────────────────────────────────────────────────────╮
+│  Local folder                                                                │
+│❯ Proton Drive · not signed in — Enter to sign in                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│Restore╭ Sign in to Proton Drive ─────────────────────────────────────╮ine's  │
+│or anot│Open this link to sign in. You can also sign in on your phone:│       │
+│       │scan the code.                                                │       │
+│proton-│                                                              │       │
+│Status:│https://account.proton.me/sso/drive-cli#selector=Zm9vYmFy&key=│       │
+│There's│c2VjcmV0a2V5bWF0ZXJpYWw                                       │in     │
+│through│                                                              │       │
+│       │Terminal too small for the QR code (it needs 49×34): copy or  │       │
+│Keeps 5│open the link instead.                                        │       │
+│r re-ch│                                                              │       │
+│       │Waiting for you to sign in… 8:45 left                         │       │
+│       │y copy link · o open in browser · Esc cancel                  │       │
+│       ╰──────────────────────────────────────────────────────────────╯       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ y copy link  o open  Esc cancel

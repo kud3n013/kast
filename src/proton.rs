@@ -279,7 +279,8 @@ pub fn classify(exit: &Exit, text: &str) -> Problem {
     }
     let clean = scrub(text);
     let l = clean.to_ascii_lowercase();
-    let first = clean.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("").to_string();
+    // The CLI prints the error message last (after any progress or browser noise); skip stack frames
+    let first = clean.lines().map(str::trim).rfind(|l| !l.is_empty() && !l.starts_with("at ") && !l.starts_with("===")).unwrap_or("").to_string();
     let msg = if first.is_empty() { format!("{exit}") } else { first };
     if l.contains("illegal instruction") {
         Problem::NeedsBaseline
@@ -868,6 +869,135 @@ pub fn kill_group(pgid: i32) {
     let _ = kill(group, Signal::SIGKILL);
 }
 
+// --- Signing in -----------------------------------------------------------------------------
+
+/// The running `auth login`, killed on cancel and by `ctx::cleanup_temp_state` on the way out
+/// (an orphan would keep polling Proton for ten minutes).
+static LOGIN_PGID: std::sync::Mutex<Option<i32>> = std::sync::Mutex::new(None);
+
+pub fn kill_login() {
+    if let Some(pgid) = LOGIN_PGID.lock().unwrap().take() {
+        kill_group(pgid);
+    }
+}
+
+pub struct Login {
+    child: std::process::Child,
+    pgid: i32,
+    lines: std::sync::mpsc::Receiver<String>,
+    stderr: std::sync::Arc<std::sync::Mutex<String>>,
+    err_reader: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Cli {
+    /// Start `auth login --json` as the user. kast never types into it or passes a password.
+    pub fn start_login(&self) -> Result<Login, Problem> {
+        let mut child = self.command(&args_login()).spawn().map_err(|e| spawn_problem(&e))?;
+        let pgid = child.id() as i32;
+        *LOGIN_PGID.lock().unwrap() = Some(pgid);
+        let out = child.stdout.take().expect("piped");
+        let err = child.stderr.take().expect("piped");
+        let (tx, lines) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(out).lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let stderr = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let sink = stderr.clone();
+        let err_reader = std::thread::spawn(move || {
+            for line in BufReader::new(err).lines().map_while(Result::ok) {
+                let clean = crate::ui::sanitize_log(&scrub(&line));
+                crate::ctx::log_file_only("PROTON", &clean);
+                let mut s = sink.lock().unwrap();
+                s.push_str(&clean);
+                s.push('\n');
+            }
+        });
+        Ok(Login { child, pgid, lines, stderr, err_reader: Some(err_reader) })
+    }
+}
+
+impl Login {
+    /// Wait for the sign-in URL (the first `{"signInUrl":…}` line). Other lines are logged,
+    /// scrubbed. Fails if the CLI ends first or prints a URL kast won't show.
+    pub fn url(&mut self, timeout: Duration) -> Result<SignInUrl, Problem> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.lines.recv_timeout(left.min(Duration::from_millis(200))) {
+                Ok(line) => match parse_sign_in(&line) {
+                    Some(Ok(url)) => return Ok(url),
+                    Some(Err(e)) => {
+                        self.kill();
+                        return Err(Problem::Other(e));
+                    }
+                    None => crate::ctx::log_file_only("PROTON", &crate::ui::sanitize_log(&scrub(&line))),
+                },
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(self.finish(Duration::from_secs(5)).err().unwrap_or(Problem::Other("proton-drive printed no sign-in address".into())));
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if Instant::now() >= deadline => {
+                    self.kill();
+                    return Err(Problem::TimedOut);
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    /// Wait for the sign-in to complete (exit 0) or fail.
+    pub fn finish(&mut self, timeout: Duration) -> Result<(), Problem> {
+        let deadline = Instant::now() + timeout;
+        let exit = loop {
+            match self.child.try_wait() {
+                Ok(Some(st)) => break st.code().map(Exit::Code).or(st.signal().map(Exit::Signal)).unwrap_or(Exit::Code(-1)),
+                Ok(None) if Instant::now() >= deadline => {
+                    self.kill();
+                    break Exit::TimedOut;
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+                Err(e) => return Err(Problem::Other(e.to_string())),
+            }
+        };
+        {
+            let mut g = LOGIN_PGID.lock().unwrap();
+            if *g == Some(self.pgid) {
+                *g = None;
+            }
+        }
+        if let Some(h) = self.err_reader.take() {
+            let _ = h.join();
+        }
+        if exit == Exit::Code(0) {
+            return Ok(());
+        }
+        // Whatever it printed on stdout may carry the URL: scrub before classifying
+        let rest: Vec<String> = self.lines.try_iter().collect();
+        let text = format!("{}\n{}", self.stderr.lock().unwrap(), scrub(&rest.join("\n")));
+        Err(classify(&exit, &text))
+    }
+
+    pub fn kill(&mut self) {
+        kill_group(self.pgid);
+        let _ = self.child.wait();
+    }
+}
+
+impl Drop for Login {
+    fn drop(&mut self) {
+        if matches!(self.child.try_wait(), Ok(None)) {
+            self.kill();
+        }
+        let mut g = LOGIN_PGID.lock().unwrap();
+        if *g == Some(self.pgid) {
+            *g = None;
+        }
+    }
+}
+
 // --- Sign-in status -------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1023,6 +1153,29 @@ pub mod tests {
     }
 
     #[test]
+    fn fake_cli_sign_in_flow() {
+        let (dir, cli) = fake("signed_out");
+        let mut login = cli.start_login().unwrap();
+        let url = login.url(Duration::from_secs(10)).unwrap();
+        assert!(url.reveal().starts_with("https://account.proton.me/"));
+        login.finish(Duration::from_secs(20)).unwrap();
+        assert_eq!(cli.status(), Status::SignedIn);
+        // A failed sign-in carries the CLI's message, never the URL
+        set_mode(&dir, "login_fail");
+        let mut login = cli.start_login().unwrap();
+        login.url(Duration::from_secs(10)).unwrap();
+        let err = login.finish(Duration::from_secs(20)).unwrap_err();
+        assert_eq!(err, Problem::Other("Authentication timed out".into()));
+        // Canceling kills it
+        std::fs::write(dir.path().join("login_delay"), "30").unwrap();
+        let mut login = cli.start_login().unwrap();
+        login.url(Duration::from_secs(10)).unwrap();
+        let t = Instant::now();
+        drop(login);
+        assert!(t.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
     fn fake_cli_timeout_kills_the_group() {
         let (dir, cli) = fake("ok");
         std::fs::write(dir.path().join("login_delay"), "30").unwrap();
@@ -1122,7 +1275,7 @@ pub mod tests {
         assert_eq!(classify(&Exit::Signal(4), ""), Problem::NeedsBaseline);
         assert_eq!(c(132, "sudo: unable to execute: Illegal instruction"), Problem::NeedsBaseline);
         assert_eq!(classify(&Exit::TimedOut, "You need to login first"), Problem::TimedOut);
-        assert_eq!(c(1, "\n  Something odd  \nmore"), Problem::Other("Something odd".into()));
+        assert_eq!(c(1, "Opening it\n  Something odd  \n    at foo (x.ts:1)\n"), Problem::Other("Something odd".into()));
         assert_eq!(c(2, ""), Problem::Other("proton-drive exited with code 2".into()));
         assert!(Problem::SignedOut.not_ready() && !Problem::QuotaFull(String::new()).not_ready());
     }

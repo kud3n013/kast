@@ -479,6 +479,13 @@ fn remove_existing(paths: &[&Path]) {
     }
 }
 
+/// On the way out of kast (exit, signal, panic): also stop a sign-in still waiting.
+pub fn cleanup_on_exit() {
+    crate::proton::kill_login();
+    cleanup_temp_state();
+}
+
+/// After a job: what that job may have left behind.
 pub fn cleanup_temp_state() {
     cleanup_vault_staging();
     revoke_yay_sudo();
