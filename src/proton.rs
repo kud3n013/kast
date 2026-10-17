@@ -1250,6 +1250,9 @@ pub mod tests {
     fn versions() {
         let out = "Proton Drive CLI proton-drive-cli@0.9.0\nProton Drive SDK @protontech/drive-sdk@0.14.2\nYou are running the latest version.\n";
         assert_eq!(parse_version(out), Some(Version(0, 9, 0)));
+        // What the real 0.9.0 prints
+        let real = "Proton Drive CLI cli-drive@0.9.0+75612299\nProton Drive SDK js@0.22.2+75612299\nYou are running the latest version.\n";
+        assert_eq!(parse_version(real), Some(Version(0, 9, 0)));
         assert_eq!(parse_version("Proton Drive SDK 1.2.3\nProton Drive CLI 0.10.1"), Some(Version(0, 10, 1)));
         assert_eq!(parse_version("nothing here"), None);
         assert_eq!(compat(Version(0, 9, 0)), Compat::Ok);
@@ -1280,7 +1283,11 @@ pub mod tests {
             c(1, "Failed to load session from secrets (ensure you have secrets available, read the README for more information): Cannot autolaunch D-Bus without X11 $DISPLAY"),
             Problem::Keyring(m) if m.starts_with("Failed to load session")
         ));
-        assert!(matches!(c(1, "Failed to load session from pass (ensure pass is installed and gpg-agent can decrypt): x"), Problem::Keyring(_)));
+        // The real 0.9.0's words without a keyring, and without pass
+        assert!(matches!(
+            c(1, "Failed to load session from pass (ensure pass is installed and gpg-agent can decrypt): Executable not found in $PATH: \"pass\""),
+            Problem::Keyring(_)
+        ));
         assert!(matches!(c(1, "The name org.freedesktop.secrets was not provided by any .service files"), Problem::Keyring(_)));
         assert_eq!(c(1, "Error: 401 Unauthorized"), Problem::SignedOut);
         assert_eq!(c(1, "Invalid refresh token"), Problem::SignedOut);
