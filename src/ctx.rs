@@ -166,39 +166,91 @@ pub fn ok_priv(prog: &str, args: &[&str]) -> bool {
     }
 }
 
-/// `sudo -u <target> env HOME=... XDG_*=... <args>` so user programs see the user's
-/// environment (only these children get it).
-pub fn run_as_user(args: &[&str]) -> Command {
-    let c = ctx();
-    let runtime = format!("/run/user/{}", c.target_uid);
-    let mut wayland = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
-    if wayland.is_empty() {
-        if Path::new(&format!("{runtime}/wayland-1")).exists() {
-            wayland = "wayland-1".into();
-        } else if Path::new(&format!("{runtime}/wayland-0")).exists() {
-            wayland = "wayland-0".into();
-        }
+/// The target user's session: where their desktop programs find the display and the bus.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UserEnv {
+    pub user: String,
+    pub uid: u32,
+    pub home: String,
+    pub wayland: String,
+    pub display: String,
+    pub xauthority: String,
+    pub dbus: String,
+}
+
+impl UserEnv {
+    pub fn runtime_dir(&self) -> String {
+        format!("/run/user/{}", self.uid)
     }
-    let display = std::env::var("DISPLAY").unwrap_or_default();
-    let mut dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").unwrap_or_default();
+
+    /// `KEY=value` pairs for a program run as the user (as `run_as_user` passes them to `env`).
+    pub fn vars(&self) -> Vec<(String, String)> {
+        let home = &self.home;
+        let mut v: Vec<(String, String)> = [
+            ("HOME", home.clone()),
+            ("USER", self.user.clone()),
+            ("LOGNAME", self.user.clone()),
+            ("XDG_CONFIG_HOME", format!("{home}/.config")),
+            ("XDG_DATA_HOME", format!("{home}/.local/share")),
+            ("XDG_STATE_HOME", format!("{home}/.local/state")),
+            ("XDG_CACHE_HOME", format!("{home}/.cache")),
+            ("XDG_RUNTIME_DIR", self.runtime_dir()),
+            ("WAYLAND_DISPLAY", self.wayland.clone()),
+            ("DISPLAY", self.display.clone()),
+            ("DBUS_SESSION_BUS_ADDRESS", self.dbus.clone()),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        // An empty XAUTHORITY would hide ~/.Xauthority from X clients: only pass a real one
+        if !self.xauthority.is_empty() {
+            v.push(("XAUTHORITY".into(), self.xauthority.clone()));
+        }
+        v
+    }
+}
+
+/// The Wayland socket to use: `$WAYLAND_DISPLAY`, else `wayland-1`, `wayland-0` or any
+/// other `wayland-*` socket among `sockets` (the names in /run/user/<uid>).
+pub fn wayland_socket(env: &str, sockets: &[String]) -> String {
+    if !env.is_empty() {
+        return env.to_string();
+    }
+    let is_socket = |n: &&String| n.starts_with("wayland-") && !n.ends_with(".lock");
+    ["wayland-1", "wayland-0"]
+        .into_iter()
+        .find(|w| sockets.iter().any(|s| s == w))
+        .map(String::from)
+        .or_else(|| sockets.iter().filter(is_socket).min().cloned())
+        .unwrap_or_default()
+}
+
+/// The target user's session, resolved from our environment and their runtime dir.
+pub fn user_env() -> UserEnv {
+    let c = ctx();
+    let var = |k: &str| std::env::var(k).unwrap_or_default();
+    let runtime = format!("/run/user/{}", c.target_uid);
+    let sockets: Vec<String> = fs::read_dir(&runtime).map(|d| d.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect()).unwrap_or_default();
+    let mut dbus = var("DBUS_SESSION_BUS_ADDRESS");
     if dbus.is_empty() && Path::new(&format!("{runtime}/bus")).exists() {
         dbus = format!("unix:path={runtime}/bus");
     }
-    let home = c.target_home.display().to_string();
+    UserEnv {
+        user: c.target_user.clone(),
+        uid: c.target_uid,
+        home: c.target_home.display().to_string(),
+        wayland: wayland_socket(&var("WAYLAND_DISPLAY"), &sockets),
+        display: var("DISPLAY"),
+        xauthority: var("XAUTHORITY"),
+        dbus,
+    }
+}
+
+/// `sudo -u <target> env HOME=... XDG_*=... <args>` so user programs see the user's
+/// environment (only these children get it).
+pub fn run_as_user(args: &[&str]) -> Command {
     let mut cmd = Command::new("sudo");
-    cmd.args(["-u", &c.target_user, "env"])
-        .arg(format!("HOME={home}"))
-        .arg(format!("USER={}", c.target_user))
-        .arg(format!("LOGNAME={}", c.target_user))
-        .arg(format!("XDG_CONFIG_HOME={home}/.config"))
-        .arg(format!("XDG_DATA_HOME={home}/.local/share"))
-        .arg(format!("XDG_STATE_HOME={home}/.local/state"))
-        .arg(format!("XDG_CACHE_HOME={home}/.cache"))
-        .arg(format!("XDG_RUNTIME_DIR={runtime}"))
-        .arg(format!("WAYLAND_DISPLAY={wayland}"))
-        .arg(format!("DISPLAY={display}"))
-        .arg(format!("DBUS_SESSION_BUS_ADDRESS={dbus}"))
-        .args(args);
+    cmd.args(["-u", &ctx().target_user, "env"]).args(user_env().vars().into_iter().map(|(k, v)| format!("{k}={v}"))).args(args);
     cmd
 }
 
@@ -451,6 +503,25 @@ pub fn reported() -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wayland_socket_prefers_env_then_known_names() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        assert_eq!(wayland_socket("wayland-7", &s(&["wayland-0"])), "wayland-7");
+        assert_eq!(wayland_socket("", &s(&["bus", "wayland-0", "wayland-0.lock", "wayland-1"])), "wayland-1");
+        assert_eq!(wayland_socket("", &s(&["wayland-2.lock", "wayland-2"])), "wayland-2");
+        assert_eq!(wayland_socket("", &s(&["bus", "pipewire-0"])), "");
+    }
+
+    #[test]
+    fn user_env_vars_skip_empty_xauthority() {
+        let mut u = UserEnv { user: "p3ter".into(), uid: 1000, home: "/home/p3ter".into(), ..Default::default() };
+        let keys = |u: &UserEnv| u.vars().into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+        assert_eq!(keys(&u).len(), 11);
+        assert!(u.vars().contains(&("XDG_RUNTIME_DIR".into(), "/run/user/1000".into())));
+        u.xauthority = "/run/user/1000/xauth_x".into();
+        assert_eq!(keys(&u).last().unwrap(), "XAUTHORITY");
+    }
 
     #[test]
     fn atomic_write_keeps_mode() {

@@ -3,6 +3,8 @@
 
 mod ctx;
 mod interactive;
+#[allow(dead_code)] // wired up in the following commits
+mod logio;
 mod report;
 mod setup;
 mod tui;
