@@ -555,6 +555,10 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         KeyCode::Char('l') => return Some(Command::OpenLog),
         KeyCode::Char(c @ '1'..='9') => {
             let idx = c as usize - '1' as usize;
+            if !ITEMS[idx].enabled() {
+                app.toast(ToastKind::Info, crate::setup::PARTITION_DISABLED);
+                return None;
+            }
             app.menu.selected = idx;
             return activate(app, ITEMS[idx].action);
         }
@@ -681,6 +685,10 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => app.menu.down(),
             MouseEventKind::Down(MouseButton::Left) => {
                 let row = menu::row_at(app.body_area(), m.column, m.row)?;
+                if !ITEMS[row].enabled() {
+                    app.toast(ToastKind::Info, crate::setup::PARTITION_DISABLED);
+                    return None;
+                }
                 let double = app.last_click.is_some_and(|(r, t)| r == row && app.now_ms.saturating_sub(t) <= DOUBLE_CLICK_MS);
                 app.menu.selected = row;
                 if double {
@@ -860,7 +868,7 @@ pub mod tests {
         update(&mut a, key(KeyCode::Char('j')));
         update(&mut a, key(KeyCode::Char('j')));
         update(&mut a, key(KeyCode::Char('k')));
-        assert_eq!(a.menu.selected, 1);
+        assert_eq!(a.menu.selected, 2, "the disabled partition entry (1) is skipped");
         update(&mut a, key(KeyCode::End));
         assert_eq!(a.menu.action(), Action::Quit);
         update(&mut a, key(KeyCode::Home));
@@ -1021,6 +1029,29 @@ pub mod tests {
     fn snapshot_app_picker_fetching() {
         insta::assert_snapshot!("picker_fetching_80x24", render(&picker_app(80, 24, None)));
         insta::assert_snapshot!("picker_fetching_140x40", render(&picker_app(140, 40, None)));
+    }
+
+    #[test]
+    fn partition_entry_is_greyed_out() {
+        assert!(!crate::setup::PARTITION_ENABLED);
+        let mut a = app(80, 24);
+        update(&mut a, key(KeyCode::Down));
+        assert_eq!(a.menu.selected, 2, "skipped going down");
+        update(&mut a, key(KeyCode::Up));
+        assert_eq!(a.menu.selected, 0, "and going up");
+        assert!(update(&mut a, key(KeyCode::Char('2'))).is_none());
+        assert!(matches!(a.screen, Screen::Menu));
+        assert_eq!(a.toast.as_ref().unwrap().text, "Data partition setup is disabled for now; it will return in a future version");
+        assert!(render(&a).contains("2 Set up data partition (disabled)"));
+        // The step list shows it greyed out and unchecked
+        update(&mut a, key(KeyCode::Char('1')));
+        let Screen::Auto(w) = &a.screen else { panic!() };
+        let it = w.steps.item("partition").unwrap();
+        assert!(!it.enabled && !it.checked);
+        assert_eq!(w.steps.cursor, 1, "the cursor starts on the first step it can pick");
+        // The engine refuses, so `kast partition` exits non-zero without touching anything
+        assert_eq!(crate::setup::setup_data_partition(false, 0, 1, 1).unwrap_err().to_string(), crate::setup::PARTITION_DISABLED);
+        assert_eq!(crate::setup::partition_hint(), "disabled");
     }
 
     #[test]

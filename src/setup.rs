@@ -96,7 +96,12 @@ fn is_mounted(p: &str) -> bool {
     ok("findmnt", &[p])
 }
 
+// TODO(partition-undo): journal the fstab write, the mount and the folder moves when the
+// step comes back (PARTITION_ENABLED).
 pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Result<()> {
+    if !PARTITION_ENABLED {
+        anyhow::bail!(PARTITION_DISABLED);
+    }
     let c = ctx();
     let d = Dash::new(auto, o_start, o_step, o_total, "Setup Universal Data Partition");
     let s_total = 6;
@@ -813,10 +818,20 @@ pub fn collect_summary(o_start: i64, list: Option<&PkgList>) -> Summary {
 }
 
 pub const PARTITION_HINT: &str = "not set up (optional: menu option 2 or `sudo kast partition`)";
+
+/// The data partition step is switched off for now; it will come back. This one constant
+/// brings it back everywhere (menu, step list, `kast partition`, summary).
+pub const PARTITION_ENABLED: bool = false;
+pub const PARTITION_DISABLED: &str = "Data partition setup is disabled for now; it will return in a future version";
+
+/// The summary's data partition line when it isn't mounted.
+pub fn partition_hint() -> &'static str {
+    if PARTITION_ENABLED { PARTITION_HINT } else { "disabled" }
+}
 pub const HOWDY_RESTORE_HINT: &str = "(or restore a saved face model with menu option 6 / `sudo kast import`)";
 
 fn print_summary(s: &Summary) {
-    let partition = s.partition.clone().unwrap_or_else(|| format!("{C_GRAY}{PARTITION_HINT}{C_RESET}"));
+    let partition = s.partition.clone().unwrap_or_else(|| format!("{C_GRAY}{}{C_RESET}", partition_hint()));
     let repo = if s.repo_configured { "Configured in /etc/pacman.conf".to_string() } else { format!("{C_YELLOW}not configured{C_RESET}") };
     let issues = &s.issues;
     let rule = "=".repeat(80);

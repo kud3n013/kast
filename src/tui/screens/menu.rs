@@ -129,12 +129,29 @@ pub struct MenuState {
     pub selected: usize,
 }
 
+impl Item {
+    /// False for an entry that is switched off for now (shown dim, skipped by the cursor).
+    pub fn enabled(&self) -> bool {
+        self.action != Action::Partition || crate::setup::PARTITION_ENABLED
+    }
+}
+
 impl MenuState {
     pub fn up(&mut self) {
-        self.selected = (self.selected + ITEMS.len() - 1) % ITEMS.len();
+        loop {
+            self.selected = (self.selected + ITEMS.len() - 1) % ITEMS.len();
+            if ITEMS[self.selected].enabled() {
+                break;
+            }
+        }
     }
     pub fn down(&mut self) {
-        self.selected = (self.selected + 1) % ITEMS.len();
+        loop {
+            self.selected = (self.selected + 1) % ITEMS.len();
+            if ITEMS[self.selected].enabled() {
+                break;
+            }
+        }
     }
     pub fn action(&self) -> Action {
         ITEMS[self.selected].action
@@ -168,6 +185,9 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
         .iter()
         .map(|it| {
             let key = if it.key == 'q' { "q".to_string() } else { it.key.to_string() };
+            if !it.enabled() {
+                return ListItem::new(Line::from(vec![Span::styled(format!(" {key} {} (disabled)", it.label), theme.dim())]));
+            }
             ListItem::new(Line::from(vec![Span::styled(format!(" {key} "), theme.bold()), Span::raw(it.label)]))
         })
         .collect();
@@ -179,12 +199,10 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
     f.render_stateful_widget(list, list_area, &mut st);
 
     let it = &ITEMS[app.menu.selected];
+    let about = if it.enabled() { it.about } else { crate::setup::PARTITION_DISABLED };
     // Stacked (narrow) layout has little height: skip the heading and spacing
-    let mut lines = if body.width >= 100 {
-        vec![Line::styled(it.label, theme.title()), Line::raw(""), Line::raw(it.about), Line::raw("")]
-    } else {
-        vec![Line::raw(it.about)]
-    };
+    let mut lines =
+        if body.width >= 100 { vec![Line::styled(it.label, theme.title()), Line::raw(""), Line::raw(about), Line::raw("")] } else { vec![Line::raw(about)] };
     if it.action != Action::Quit {
         lines.push(Line::from(vec![Span::styled("Changes:    ", theme.bold()), Span::raw(it.changes)]));
         let root = if it.root { "yes (kast already runs as root)" } else { "no" };

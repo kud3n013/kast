@@ -3,8 +3,8 @@ source: src/tui/screens/wizard.rs
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
-╭ Automatic setup: steps · 5 of 7 selected ──────────────────╮╭ Details ───────────────────────────────────────────────────────────────────╮
-│❯ [x] Data partition (/media/data + home folder symlinks)   ││Data partition (/media/data + home folder symlinks)                         │
+╭ Automatic setup: steps · 4 of 7 selected ──────────────────╮╭ Details ───────────────────────────────────────────────────────────────────╮
+│❯ [ ] Data partition (/media/data + home folder symlinks)  d││Data partition (/media/data + home folder symlinks)                         │
 │  [ ] Export data (back up before anything changes)         ││                                                                            │
 │  [x] System upgrade (pacman -Syuu)                         ││Mounts the NTFS data partition at /media/data and moves your home folders   │
 │  [x] kud3n's repository                                    ││onto it. Runs first: backups usually live there.                            │

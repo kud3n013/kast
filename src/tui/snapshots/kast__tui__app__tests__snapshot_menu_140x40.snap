@@ -1,18 +1,19 @@
 ---
 source: src/tui/app.rs
+assertion_line: 1200
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Arch Linux / CachyOS setup ──────────╮╭ Details ─────────────────────────────────────────────────────────────────────────────────────────╮
-│   1 Run automatic setup              ││Set up data partition                                                                             │
-│❯  2 Set up data partition            ││                                                                                                  │
-│   3 Add kud3n's repository           ││Mounts the NTFS data partition at /media/data through /etc/fstab and moves Desktop, Documents,    │
-│   4 Install packages                 ││Downloads, Music, Pictures, Public, Templates, Videos and Projects onto it, leaving symlinks in   │
-│   5 Set up services                  ││your home.                                                                                        │
-│   6 Import data                      ││                                                                                                  │
-│   7 Export data                      ││Changes:    /etc/fstab (backup kept), your home folders, ~/.config/user-dirs.dirs                 │
-│   8 App status                       ││Needs root: yes (kast already runs as root)                                                       │
-│   9 Inspect a backup                 ││Automatic:  Optional step of the automatic run (off by default).                                  │
+│   1 Run automatic setup              ││Add kud3n's repository                                                                            │
+│   2 Set up data partition (disabled) ││                                                                                                  │
+│❯  3 Add kud3n's repository           ││Adds the [archrepo] repository to /etc/pacman.conf (or updates its server URL), then syncs and    │
+│   4 Install packages                 ││upgrades with pacman -Syyu.                                                                       │
+│   5 Set up services                  ││                                                                                                  │
+│   6 Import data                      ││Changes:    /etc/pacman.conf, upgraded packages                                                   │
+│   7 Export data                      ││Needs root: yes (kast already runs as root)                                                       │
+│   8 App status                       ││Automatic:  A step of the automatic run (on by default).                                          │
+│   9 Inspect a backup                 ││                                                                                                  │
 │   q Quit                             ││                                                                                                  │
 │                                      ││                                                                                                  │
 │                                      ││                                                                                                  │

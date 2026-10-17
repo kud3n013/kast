@@ -243,6 +243,7 @@ impl Checklist {
     pub fn view(&self, f: &mut Frame, area: Rect, theme: &Theme, title: &str) {
         let (on, off) = (theme.sym.on, theme.sym.off);
         let partial = "[-]";
+        let indent = if self.rows.iter().any(|r| matches!(r, Row::Header(_))) { "  " } else { "" };
         let items: Vec<ListItem> = self
             .rows
             .iter()
@@ -264,14 +265,13 @@ impl Checklist {
                     ]))
                 }
                 Row::Item(it) if !it.enabled => {
-                    let mut spans = vec![Span::styled(format!("  {off} {}", it.label), theme.dim())];
+                    let mut spans = vec![Span::styled(format!("{indent}{off} {}", it.label), theme.dim())];
                     if let Some(n) = it.note.as_ref().or(it.tag.as_ref()) {
                         spans.push(Span::styled(format!("  {n}"), theme.dim()));
                     }
                     ListItem::new(Line::from(spans))
                 }
                 Row::Item(it) => {
-                    let indent = if self.rows.iter().any(|r| matches!(r, Row::Header(_))) { "  " } else { "" };
                     let mut spans = vec![Span::raw(format!("{indent}{} {}", if it.checked { on } else { off }, it.label))];
                     if let Some(t) = &it.tag {
                         spans.push(Span::styled(format!("  {t}"), theme.dim()));

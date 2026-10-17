@@ -44,8 +44,8 @@ enum Cmd {
     /// Run the full automatic setup: upgrade, repo, packages, services (no data partition or import)
     #[command(visible_alias = "automatic")]
     Auto(ListSource),
-    /// Set up the universal data partition (/media/data & user dir symlinks); not part of auto
-    #[command(visible_alias = "data")]
+    /// Set up the universal data partition (/media/data & user dir symlinks): disabled for now
+    #[command(visible_alias = "data", hide = !setup::PARTITION_ENABLED)]
     Partition,
     /// Add kud3n's repository ([archrepo] in /etc/pacman.conf)
     #[command(visible_alias = "archrepo")]
@@ -285,7 +285,8 @@ fn interactive_vault(cmd: &Option<Cmd>) -> bool {
 fn needs_root(cmd: &Option<Cmd>) -> bool {
     match cmd {
         Some(Cmd::Packages(a)) => !a.list,
-        _ => matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Partition | Cmd::Repo | Cmd::Services)) || interactive_vault(cmd),
+        Some(Cmd::Partition) => setup::PARTITION_ENABLED,
+        _ => matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Repo | Cmd::Services)) || interactive_vault(cmd),
     }
 }
 

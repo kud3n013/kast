@@ -91,7 +91,17 @@ impl Default for Wizard {
 
 impl Wizard {
     pub fn new() -> Self {
-        let rows = Step::ALL.into_iter().map(|s| Row::Item(Item::new(s.key(), step_text(s).0, s.standard()))).collect();
+        let rows = Step::ALL
+            .into_iter()
+            .map(|s| {
+                let mut it = Item::new(s.key(), step_text(s).0, s.standard());
+                if s == Step::Partition && !crate::setup::PARTITION_ENABLED {
+                    it.enabled = false;
+                    it.note = Some("disabled for now".into());
+                }
+                Row::Item(it)
+            })
+            .collect();
         Wizard {
             stage: Stage::Steps,
             steps: Checklist::new(rows),

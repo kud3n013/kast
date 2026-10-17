@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Paragraph, Wrap};
 
-use crate::setup::{HOWDY_RESTORE_HINT, PARTITION_HINT, Step, Summary};
+use crate::setup::{HOWDY_RESTORE_HINT, PARTITION_ENABLED, Step, Summary, partition_hint};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::block;
 
@@ -23,8 +23,8 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
     let skipped = |st: Step| s.skipped.contains(&st);
     let partition = match &s.partition {
         Some(p) => Span::raw(p.clone()),
-        None if skipped(Step::Partition) => Span::styled("skipped (menu option 2 or `sudo kast partition`)", theme.dim()),
-        None => Span::styled(PARTITION_HINT, theme.dim()),
+        None if PARTITION_ENABLED && skipped(Step::Partition) => Span::styled("skipped (menu option 2 or `sudo kast partition`)", theme.dim()),
+        None => Span::styled(partition_hint(), theme.dim()),
     };
     lines.push(field("Data partition", partition));
     let repo = if s.repo_configured {

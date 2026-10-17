@@ -1,11 +1,12 @@
 ---
 source: src/tui/app.rs
+assertion_line: 1193
 expression: "render(&app(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Arch Linux / CachyOS setup ──────────────────────────────────────────────────╮
 │❯  1 Run automatic setup                                                      │
-│   2 Set up data partition                                                    │
+│   2 Set up data partition (disabled)                                         │
 │   3 Add kud3n's repository                                                   │
 │   4 Install packages                                                         │
 │   5 Set up services                                                          │
