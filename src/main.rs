@@ -6,6 +6,7 @@ mod drive;
 mod interactive;
 mod journal;
 mod logio;
+mod partition;
 mod perms;
 mod pkglist;
 mod plasma;
