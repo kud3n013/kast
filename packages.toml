@@ -47,6 +47,8 @@ packages = [
   { name = "libreoffice-fresh-vi" },
   { name = "github-cli" },
   { name = "git" },
+  { name = "claude-code" },
+  { name = "claude-desktop" },
 ]
 
 # Packages only the CachyOS repositories carry. Empty for now: which of the entries above
@@ -68,6 +70,14 @@ packages = [
   { name = "searxng" },
   { name = "freedownloadmanager", replaces = "freedownloadmanager-bin" },
   { name = "sine"},
+  { name = "cursor" },
+  { name = "galaxybudsclient" },
+  { name = "kast" },
+  { name = "kwin-scripts-krohnkite" },
+  { name = "millennium" },
+  { name = "proton-drive-cli" },
+  { name = "steam-globalmenu" },
+  { name = "dbusmenu-shortcut-shim" },
 ]
 
 [[group]]
