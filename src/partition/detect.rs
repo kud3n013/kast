@@ -142,20 +142,6 @@ pub struct Disk {
     pub parts: Vec<Partition>,
 }
 
-impl Disk {
-    /// "SanDisk Ultra Fit · 59.6 GiB · USB"
-    pub fn title(&self) -> String {
-        let model = if self.model.is_empty() { self.path.clone() } else { self.model.clone() };
-        let kind = match (self.tran.as_deref(), self.external) {
-            (Some("usb"), _) => "USB".to_string(),
-            (_, true) => "external".to_string(),
-            (Some(t), false) => format!("internal, {t}"),
-            (None, false) => "internal".to_string(),
-        };
-        format!("{model} · {} · {kind}", super::human(self.size))
-    }
-}
-
 fn partition(d: &Dev, disk: &Dev, whole: bool) -> Partition {
     let mut mounts = d.mountpoints.clone();
     for m in &d.mountpoint {
@@ -478,10 +464,8 @@ mod tests {
         let disks = parse_lsblk(FULL).unwrap();
         let nvme = &disks[0];
         assert_eq!((nvme.path.as_str(), nvme.external, nvme.parts.len()), ("/dev/nvme0n1", false, 7));
-        assert_eq!(nvme.title(), "Samsung SSD 980 PRO 512GB · 476.9 GiB · internal, nvme");
         let usb = &disks[1];
         assert!(usb.external);
-        assert_eq!(usb.title(), "SanDisk Ultra Fit · 59.6 GiB · USB");
         let p = &usb.parts[0];
         assert_eq!(
             (p.fstype.as_deref(), p.fsver.as_deref(), p.label.as_deref(), p.uuid.as_deref(), p.external),

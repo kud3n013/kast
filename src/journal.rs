@@ -482,12 +482,6 @@ pub fn finish_change(kind: &str, seq: Option<u64>, ok: bool, data: Value) {
     }
 }
 
-/// A change in one line (it already happened).
-pub fn note_change(kind: &str, data: Value) -> Option<u64> {
-    let j = current()?;
-    j.note_seq(kind, data).map_err(warn).ok()
-}
-
 /// A change of this run that was taken back right away (a failed step rolled it back): it
 /// no longer shows up as something to undo.
 pub fn revert_change(seq: Option<u64>, note: &str) {

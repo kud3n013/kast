@@ -3,8 +3,8 @@ source: src/tui/screens/wizard.rs
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
-╭ Automatic setup: steps · 4 of 7 selected ────────────────────────────────────╮
-│❯ [ ] Data partition (/media/data + home folder symlinks)  disabled for now   │
+╭ Automatic setup: steps · 5 of 7 selected ────────────────────────────────────╮
+│❯ [x] Data partition (pick one, fstab line, mount)                            │
 │  [ ] Export data (back up before anything changes)                           │
 │  [x] System upgrade (pacman -Syuu)                                           │
 │  [x] kud3n's repository                                                      │
@@ -13,13 +13,13 @@ expression: render(&a)
 │  [ ] Import data (restore a backup; runs last)                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Details ─────────────────────────────────────────────────────────────────────╮
-│Mounts the NTFS data partition at /media/data and moves your home folders onto│
-│it. Runs first: backups usually live there.                                   │
-│Changes:    /etc/fstab (backup kept), your home folders                       │
+│Mounts a partition you pick through /etc/fstab, after a test mount, and       │
+│optionally moves your home folders onto it. Runs first: backups usually live  │
+│there.                                                                        │
+│Changes:    /etc/fstab (backup kept), the mount point, optionally your home   │
+│folders                                                                       │
 │Needs root: yes (kast already runs as root)                                   │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│Next: pick the partition, mount point, options and folders.                   │
 │                                                                              │
 │                                                                              │
 │                                                                              │

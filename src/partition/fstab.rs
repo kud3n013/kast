@@ -51,7 +51,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use super::{Driver, Fs, Out, Partition, Runner};
+use super::{Driver, Out, Partition, Runner};
 
 // --- Choices and the entry ---------------------------------------------------------------
 
@@ -832,9 +832,7 @@ pub fn verify_diff(before: &Out, after: &Out, mountpoint: &str) -> VerifyResult 
         });
         let ours = same_dir(&i.target, mountpoint);
         let line = format!("{}: {}", i.target, i.msg);
-        if (!existed || ours) && i.error {
-            r.errors.push(line);
-        } else if !existed && i.msg.contains("more than once") {
+        if ((!existed || ours) && i.error) || (!existed && i.msg.contains("more than once")) {
             r.errors.push(line);
         } else if !existed || ours {
             r.warnings.push(line);
@@ -851,9 +849,6 @@ pub fn verify_diff(before: &Out, after: &Out, mountpoint: &str) -> VerifyResult 
 pub fn verify_file(rn: &dyn Runner, file: &std::path::Path) -> Out {
     rn.run("findmnt", &["--verify", "--verbose", "--tab-file", &file.to_string_lossy()])
 }
-
-// The filesystems kast lets people pick, for the type list in docs and tests.
-pub const FILESYSTEMS: [Fs; 6] = [Fs::Ntfs, Fs::Exfat, Fs::Vfat, Fs::Ext4, Fs::Btrfs, Fs::Xfs];
 
 #[cfg(test)]
 mod tests {
@@ -1250,18 +1245,5 @@ mod tests {
         // a clean candidate, but the tool itself failed
         let r = verify_diff(&out(true, VERIFY_OK), &Out { ok: false, code: Some(1), stderr: "boom".into(), ..Default::default() }, "/media/data");
         assert_eq!(r.errors.len(), 1);
-    }
-
-    #[test]
-    fn the_filesystem_list_is_complete() {
-        assert_eq!(FILESYSTEMS.len(), 6);
-        assert!(FILESYSTEMS.iter().all(|f| Fs::from_type(match f {
-            Fs::Ntfs => "ntfs",
-            Fs::Exfat => "exfat",
-            Fs::Vfat => "vfat",
-            Fs::Ext4 => "ext4",
-            Fs::Btrfs => "btrfs",
-            Fs::Xfs => "xfs",
-        }) == Some(*f)));
     }
 }

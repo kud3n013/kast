@@ -6,6 +6,7 @@ pub mod import;
 pub mod log;
 pub mod menu;
 pub mod packages;
+pub mod partition;
 pub mod plasma;
 pub mod run;
 pub mod schedule;

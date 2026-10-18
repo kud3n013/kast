@@ -298,10 +298,10 @@ pub fn check_mounted(json_text: &str, entry: &FstabEntry, part: &Partition, driv
     if !want.contains(&fstype) {
         return Err(format!("it is mounted as {fstype}, not {}", driver.fstab_type()));
     }
-    if let (Some(u), Some(got)) = (part.uuid.as_deref(), row["uuid"].as_str()) {
-        if u != got {
-            return Err(format!("the mounted filesystem has UUID {got}, not {u}"));
-        }
+    if let (Some(u), Some(got)) = (part.uuid.as_deref(), row["uuid"].as_str())
+        && u != got
+    {
+        return Err(format!("the mounted filesystem has UUID {got}, not {u}"));
     }
     let opts = row["options"].as_str().unwrap_or_default();
     let have: std::collections::HashMap<&str, Option<&str>> = opts
@@ -374,10 +374,10 @@ fn precheck(plan: &Plan, env: &Env) -> Result<Spot> {
         (None, _, Some(want), Some(got)) if want.eq_ignore_ascii_case(got) => {}
         (None, ..) => bail!("{} is not the partition that was chosen any more; scan again", p.path),
     }
-    if let (Some(t), Some(got)) = (p.fstype.as_deref(), id.get("TYPE")) {
-        if t != got {
-            bail!("{} is {got} now, not {t}; scan again", p.path);
-        }
+    if let (Some(t), Some(got)) = (p.fstype.as_deref(), id.get("TYPE"))
+        && t != got
+    {
+        bail!("{} is {got} now, not {t}; scan again", p.path);
     }
     let mounted = env.rn.run("findmnt", &["-rn", "-S", &p.path, "-o", "TARGET"]);
     let targets: Vec<&str> = mounted.stdout.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
@@ -416,14 +416,14 @@ fn test_mount(plan: &Plan, entry: &FstabEntry, env: &Env) -> Result<()> {
         }
         if !plan.folders.is_empty() {
             let sizes: u64 = plan.folders.iter().map(|f| dir_size(&plan.who.home.join(f))).sum();
-            if let Some(free) = (env.free)(&probe) {
-                if free < needed(sizes) {
-                    bail!(
-                        "Not enough room on the partition for the folders: they take {}, it has {} free (with some margin).",
-                        super::human(sizes),
-                        super::human(free)
-                    );
-                }
+            if let Some(free) = (env.free)(&probe)
+                && free < needed(sizes)
+            {
+                bail!(
+                    "Not enough room on the partition for the folders: they take {}, it has {} free (with some margin).",
+                    super::human(sizes),
+                    super::human(free)
+                );
             }
         }
         Ok(())
@@ -685,10 +685,10 @@ fn move_folders(plan: &Plan, env: &Env, report: &mut Report) -> Result<()> {
     let foreign = plan.choices.driver.fs().foreign();
     let who = &plan.who;
     let sizes: u64 = plan.folders.iter().map(|f| dir_size(&who.home.join(f))).sum();
-    if let Some(free) = (env.free)(&mount) {
-        if free < needed(sizes) {
-            bail!("Not enough room on the partition for the folders ({} needed, {} free); no folder was moved.", super::human(sizes), super::human(free));
-        }
+    if let Some(free) = (env.free)(&mount)
+        && free < needed(sizes)
+    {
+        bail!("Not enough room on the partition for the folders ({} needed, {} free); no folder was moved.", super::human(sizes), super::human(free));
     }
     let mut set: Vec<(&str, String)> = Vec::new();
     for dir in &plan.folders {
@@ -749,7 +749,12 @@ pub fn describe(plan: &Plan) -> Vec<String> {
         format!("fstab line:   {e}"),
         format!("comment:      {}", plan.comment()),
         format!("Mount point:  {} ({})", c.mountpoint, if c.mode == Mode::Automount { "mounted on first access" } else { "mounted at boot" }),
-        format!("Test mount:   mount -t {} -o {} {} <private folder>, a write test, unmount", e.vfstype, e.mount_options().join(","), e.spec),
+        format!(
+            "Test mount:   mount -t {}{} {} <private folder>, a write test, unmount",
+            e.vfstype,
+            if e.mount_options().is_empty() { String::new() } else { format!(" -o {}", e.mount_options().join(",")) },
+            e.spec
+        ),
         format!(
             "Then:         check the new fstab with findmnt --verify, write it, systemctl daemon-reload, {}",
             if c.mode == Mode::Automount { "start the automount unit" } else { "mount --target" }

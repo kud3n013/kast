@@ -1,12 +1,11 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1573
 expression: "format!(\"{menu}{}\", render(&a))"
 ---
  kast │ p3ter (1000:1000) │ archbox │ root
 ╭ Arch Linux / CachyOS setup ──────────────────────────────╮
 │❯  1 Run automatic setup                                  │
-│   2 Set up data partition (disabled)                     │
+│   2 Set up data partition                                │
 │   3 Add kud3n's repository                               │
 │   4 Install packages                                     │
 │   5 Set up services                                      │

@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/partition.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Options ───────────────────────────────────────────────────╮╭ fstab line ────────────────────────────────────────────────────────────────╮
+│  Mount  at boot                                            ││This line is added to /etc/fstab:                                           │
+│  [ ] Read-only                                             ││UUID=9d8a0c4e-1f0b-4c52-8d3e-6a7b5c4d3e2f /media/backup ext4                │
+│  [ ] Don't record access times (noatime)                   ││nofail,x-systemd.device-timeout=10s 0 2                                     │
+│  [x] Make the top folder yours (chown the folder only, not ││                                                                            │
+│❯ Edit the options by hand                                  ││Device:     UUID=9d8a0c4e-1f0b-4c52-8d3e-6a7b5c4d3e2f                       │
+│  ▶ Continue                                                ││Folder:     /media/backup                                                   │
+│                                                            ││Type:       ext4                                                            │
+│                                                            ││Options:    nofail                                                          │
+│                                                            ││            x-systemd.device-timeout=10s                                    │
+│                                                            ││Dump, fsck: 0 2                                                             │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││Options (comma separated, only ones the driver accepts):                    │
+│                                                            ││noatime,exec                                                                │
+│                                                            ││✗ `exec` is not allowed: `exec` makes every file executable; use the "files │
+│                                                            ││executable" preset instead                                                  │
+│                                                            ││Enter keeps them, Esc cancels, empty goes back to the generated ones.       │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+╰────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────╯
+ Enter keep  Esc cancel

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.0
+
+- **The data partition step is back, and it works for any partition**, not just the old NTFS
+  `/media/data`. Menu `2`, `kast partition` and the first step of the automatic run: pick an
+  internal or external partition (NTFS, exFAT, FAT, ext4, btrfs, XFS) from a list that greys out
+  what can't be used and says why, choose the mount point and options, see the exact
+  `/etc/fstab` line, and optionally move home folders onto it.
+  - Detection with `lsblk -J -b` cross-checked by `blkid -p`, parsed defensively across
+    util-linux versions (string booleans/sizes, `mountpoint` vs `mountpoints`, missing columns).
+  - A correct entry per filesystem: six fields, escaped, `UUID=` as reported, `nofail`, a device
+    timeout (5 s external, 10 s internal), `x-systemd.automount` for external drives (with a toggle
+    for mounting at boot), correct fsck order, ownership through `uid/gid` + `dmask/fmask` presets
+    on NTFS/exFAT/FAT and a `chown` of the mount folder only on ext4/btrfs/xfs. Never `defaults`,
+    `exec`, `force` or `umask=000`; options are only emitted if the driver accepts them.
+  - Safe apply: test mount first (NTFS Fast Startup/dirty volumes are explained), `findmnt
+    --verify` on the candidate fstab (only new problems block), atomic write with a backup,
+    `daemon-reload`, mount only that entry (never `mount -a`) and verify it; any failure restores
+    the original bytes of `/etc/fstab`.
+  - Fully undoable: the fstab line (and the line it replaced), the mount, the mount folder's
+    owner, the folder moves (copied back, never deleting the copy on the partition) and
+    `user-dirs.dirs` are journaled; a busy mount stops the undo and names the processes.
+  - `kast partition --list [--json]`, `--device … --mountpoint … --dry-run`, `--external`,
+    `--internal`, `--boot`, `--read-only`, `--options`, `--move-folders`, `--replace`,
+    `--unmount-first`. `kast undo --step partition` works.
+  - `~/.config/user-dirs.dirs` is now edited key by key and journaled instead of overwritten.
+
 ## 0.6.2
 
 - **`kast fix-permissions` now checks the folders themselves**: `~`, `~/.config`, `~/.local` and

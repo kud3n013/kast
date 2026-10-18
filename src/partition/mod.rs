@@ -8,6 +8,7 @@
 //! - `cli`: `kast partition`
 
 pub mod apply;
+pub mod cli;
 pub mod detect;
 #[cfg(test)]
 pub mod fake;
@@ -26,10 +27,12 @@ pub struct Out {
 }
 
 impl Out {
+    #[cfg(test)]
     pub fn success(stdout: &str) -> Out {
         Out { ok: true, code: Some(0), stdout: stdout.into(), stderr: String::new() }
     }
 
+    #[cfg(test)]
     pub fn failure(stderr: &str) -> Out {
         Out { ok: false, code: Some(1), stdout: String::new(), stderr: stderr.into() }
     }
@@ -37,7 +40,10 @@ impl Out {
     /// stderr, or stdout when stderr is empty: the message to show for a failed command.
     pub fn message(&self) -> String {
         let m = if self.stderr.trim().is_empty() { &self.stdout } else { &self.stderr };
-        m.trim().to_string()
+        match (m.trim(), self.code) {
+            ("", Some(c)) if !self.ok => format!("exited with status {c}"),
+            (m, _) => m.to_string(),
+        }
     }
 }
 
@@ -195,6 +201,14 @@ impl Partition {
             None => self.path.clone(),
         }
     }
+}
+
+/// `/media/<label>` in a form fstab and systemd are happy with.
+pub fn default_mountpoint(p: &Partition) -> String {
+    let name: String =
+        p.label.as_deref().unwrap_or("data").to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' }).collect();
+    let name = name.trim_matches('-');
+    format!("/media/{}", if name.is_empty() { "data" } else { name })
 }
 
 /// "12.3 GiB"

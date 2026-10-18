@@ -70,6 +70,14 @@ pub enum Loaded {
     Schedule(Box<crate::tui::screens::schedule::ScheduleInfo>),
     /// The answer to a Plasma settings request
     Plasma(Box<crate::tui::screens::plasma::PlasmaResp>),
+    /// The disks and the fstab, for the data partition screen
+    Partitions(Result<Box<crate::tui::screens::partition::Scan>, String>),
+    /// The mount point as typed, checked on the machine
+    Mountpoint {
+        raw: String,
+        result: Result<(String, crate::partition::fstab::Spot), String>,
+    },
+    Subvolumes(Result<Vec<String>, String>),
     /// A schedule change or run finished (the message for a toast)
     ScheduleDone(Result<String, String>),
     DriveBackups {

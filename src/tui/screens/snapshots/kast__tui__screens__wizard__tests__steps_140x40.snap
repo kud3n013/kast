@@ -3,16 +3,16 @@ source: src/tui/screens/wizard.rs
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
-╭ Automatic setup: steps · 4 of 7 selected ──────────────────╮╭ Details ───────────────────────────────────────────────────────────────────╮
-│❯ [ ] Data partition (/media/data + home folder symlinks)  d││Data partition (/media/data + home folder symlinks)                         │
+╭ Automatic setup: steps · 5 of 7 selected ──────────────────╮╭ Details ───────────────────────────────────────────────────────────────────╮
+│❯ [x] Data partition (pick one, fstab line, mount)          ││Data partition (pick one, fstab line, mount)                                │
 │  [ ] Export data (back up before anything changes)         ││                                                                            │
-│  [x] System upgrade (pacman -Syuu)                         ││Mounts the NTFS data partition at /media/data and moves your home folders   │
-│  [x] kud3n's repository                                    ││onto it. Runs first: backups usually live there.                            │
-│  [x] Install packages (pick the apps next)                 ││Changes:    /etc/fstab (backup kept), your home folders                     │
-│  [x] Services (VPN, IME, Howdy, Valkey/SearXNG)            ││Needs root: yes (kast already runs as root)                                 │
-│  [ ] Import data (restore a backup; runs last)             ││                                                                            │
-│                                                            ││                                                                            │
-│                                                            ││                                                                            │
+│  [x] System upgrade (pacman -Syuu)                         ││Mounts a partition you pick through /etc/fstab, after a test mount, and     │
+│  [x] kud3n's repository                                    ││optionally moves your home folders onto it. Runs first: backups usually live│
+│  [x] Install packages (pick the apps next)                 ││there.                                                                      │
+│  [x] Services (VPN, IME, Howdy, Valkey/SearXNG)            ││Changes:    /etc/fstab (backup kept), the mount point, optionally your home │
+│  [ ] Import data (restore a backup; runs last)             ││folders                                                                     │
+│                                                            ││Needs root: yes (kast already runs as root)                                 │
+│                                                            ││Next: pick the partition, mount point, options and folders.                 │
 │                                                            ││                                                                            │
 │                                                            ││                                                                            │
 │                                                            ││                                                                            │

@@ -71,6 +71,8 @@ pub enum Screen {
     Schedule(Box<super::screens::schedule::ScheduleState>),
     /// `p` KDE Plasma settings: profiles, save, apply, export, import, config check
     Plasma(Box<PlasmaState>),
+    /// Option 2: pick a partition, mount point, options, folders, review
+    Partition(Box<super::screens::partition::PartState>),
     /// The log file, opened from the screen kept alongside
     Log(Box<LogState>, Box<Screen>),
 }
@@ -206,6 +208,12 @@ pub enum Command {
     OpenSignIn(crate::proton::SignInUrl),
     /// A Plasma settings request (answered with `Loaded::Plasma`)
     Plasma(PlasmaReq),
+    /// Look at the disks and /etc/fstab (answered with `Loaded::Partitions`)
+    LoadPartitions,
+    /// Check a typed mount point on the machine (answered with `Loaded::Mountpoint`)
+    CheckMountpoint(String),
+    /// List the subvolumes of a btrfs partition (answered with `Loaded::Subvolumes`)
+    LoadSubvolumes(Box<crate::partition::Partition>),
 }
 
 /// Which part of the log `y` copies.
@@ -301,7 +309,9 @@ impl App {
             Screen::Undo(s) => s.loading(),
             Screen::Schedule(s) => s.loading || s.busy,
             Screen::Plasma(s) => s.working(),
+            Screen::Partition(s) => s.busy(),
             Screen::Auto(w) => match w.stage {
+                wizard::Stage::Partition => w.partition.as_ref().is_some_and(|p| p.busy()),
                 wizard::Stage::Upgrade => self.snapshots.is_none(),
                 wizard::Stage::Apps => matches!(self.packages, PkgState::Fetching) || self.installed == Installed::Loading,
                 wizard::Stage::Import => w.import.as_ref().is_some_and(ImportState::busy),
@@ -338,6 +348,7 @@ impl App {
             Screen::Undo(_) => ("Undo changes", &undo_screen::HELP),
             Screen::Schedule(_) => ("Scheduled backup", &super::screens::schedule::HELP),
             Screen::Plasma(_) => ("KDE Plasma settings", &plasma::HELP),
+            Screen::Partition(_) => ("Data partition", &super::screens::partition::HELP),
         }
     }
 
@@ -423,6 +434,15 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         }
         Event::Loaded(Loaded::ScheduleDone(r)) => super::screens::schedule::on_done(app, r),
         Event::Loaded(Loaded::Plasma(r)) => plasma::on_resp(app, *r),
+        Event::Loaded(Loaded::Partitions(r)) => {
+            super::screens::partition::on_scan(app, r);
+            None
+        }
+        Event::Loaded(Loaded::Mountpoint { raw, result }) => super::screens::partition::on_mountpoint(app, raw, result),
+        Event::Loaded(Loaded::Subvolumes(r)) => {
+            super::screens::partition::on_subvolumes(app, r);
+            None
+        }
         Event::Loaded(Loaded::DriveHosts(r)) => {
             import::on_hosts(app, r);
             None
@@ -446,6 +466,7 @@ pub fn update(app: &mut App, ev: Event) -> Option<Command> {
         Event::Loaded(Loaded::Inspected { path, pick, result }) => import::on_inspected(app, path, pick, result),
         Event::Loaded(Loaded::Completion { value, matches }) => {
             export::on_completion(app, value.clone(), matches.clone());
+            super::screens::partition::on_completion(app, value.clone(), matches.clone());
             import::on_completion(app, value, matches);
             None
         }
@@ -561,7 +582,14 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 app.screen = Screen::Menu;
                 Some(Command::DriveWipeRestore)
             }
-            Screen::Summary(_) | Screen::Export(_) | Screen::Status(_) | Screen::Packages(_) | Screen::Undo(_) | Screen::Schedule(_) | Screen::Plasma(_) => {
+            Screen::Summary(_)
+            | Screen::Export(_)
+            | Screen::Status(_)
+            | Screen::Packages(_)
+            | Screen::Undo(_)
+            | Screen::Schedule(_)
+            | Screen::Partition(_)
+            | Screen::Plasma(_) => {
                 app.screen = Screen::Menu;
                 None
             }
@@ -608,12 +636,13 @@ fn on_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         Screen::Undo(_) => undo_screen::key(app, k),
         Screen::Schedule(_) => super::screens::schedule::key(app, k),
         Screen::Plasma(_) => plasma::key(app, k),
+        Screen::Partition(_) => super::screens::partition::key(app, k),
     }
 }
 
 /// A text field has the keyboard (letters must reach it, not shortcuts).
 fn text_field_open(app: &App) -> bool {
-    import::state_ref(app).is_some_and(ImportState::typing) || export::editing(app) || plasma::editing(app)
+    import::state_ref(app).is_some_and(ImportState::typing) || export::editing(app) || plasma::editing(app) || super::screens::partition::editing(app)
 }
 
 fn modal_key(app: &mut App, k: KeyEvent) -> Option<Command> {
@@ -724,10 +753,6 @@ fn menu_key(app: &mut App, k: KeyEvent) -> Option<Command> {
         }
         KeyCode::Char(c @ '1'..='9') => {
             let idx = c as usize - '1' as usize;
-            if !ITEMS[idx].enabled() {
-                app.toast(ToastKind::Info, crate::setup::PARTITION_DISABLED);
-                return None;
-            }
             app.menu.selected = idx;
             return activate(app, ITEMS[idx].action);
         }
@@ -796,7 +821,7 @@ pub fn activate(app: &mut App, action: Action) -> Option<Command> {
             app.screen = Screen::Packages(Box::new(PackagesState::new(false)));
             return packages::sync(app);
         }
-        Action::Partition => JobKind::Partition,
+        Action::Partition => return super::screens::partition::open(app),
         Action::Repo => JobKind::Repo,
         Action::Services => JobKind::Services,
         Action::Import => {
@@ -867,10 +892,6 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             MouseEventKind::ScrollDown => app.menu.down(),
             MouseEventKind::Down(MouseButton::Left) => {
                 let row = menu::row_at(app.body_area(), m.column, m.row)?;
-                if !ITEMS[row].enabled() {
-                    app.toast(ToastKind::Info, crate::setup::PARTITION_DISABLED);
-                    return None;
-                }
                 let double = app.last_click.is_some_and(|(r, t)| r == row && app.now_ms.saturating_sub(t) <= DOUBLE_CLICK_MS);
                 app.menu.selected = row;
                 if double {
@@ -894,7 +915,7 @@ fn on_mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
         Screen::Packages(_) => return packages::mouse(app, m),
         Screen::Auto(_) => return wizard::mouse(app, m),
         Screen::Undo(_) => return undo_screen::mouse(app, m),
-        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Schedule(_) | Screen::Plasma(_) => {}
+        Screen::Summary(_) | Screen::Import(_) | Screen::Export(_) | Screen::Status(_) | Screen::Schedule(_) | Screen::Plasma(_) | Screen::Partition(_) => {}
     }
     None
 }
@@ -955,6 +976,10 @@ pub fn view(app: &App, f: &mut Frame) {
         Screen::Plasma(st) => {
             plasma::view(f, body, app, st);
             plasma::hints(st)
+        }
+        Screen::Partition(st) => {
+            super::screens::partition::view(f, body, app, st);
+            super::screens::partition::hints(st)
         }
     };
     let hints: &[(&str, &str)] = if let Some(s) = &app.signin {
@@ -1074,7 +1099,7 @@ pub mod tests {
         update(&mut a, key(KeyCode::Char('j')));
         update(&mut a, key(KeyCode::Char('j')));
         update(&mut a, key(KeyCode::Char('k')));
-        assert_eq!(a.menu.selected, 2, "the disabled partition entry (1) is skipped");
+        assert_eq!(a.menu.selected, 1);
         update(&mut a, key(KeyCode::End));
         assert_eq!(a.menu.action(), Action::Quit);
         update(&mut a, key(KeyCode::Home));
@@ -1235,29 +1260,6 @@ pub mod tests {
     fn snapshot_app_picker_fetching() {
         insta::assert_snapshot!("picker_fetching_80x24", render(&picker_app(80, 24, None)));
         insta::assert_snapshot!("picker_fetching_140x40", render(&picker_app(140, 40, None)));
-    }
-
-    #[test]
-    fn partition_entry_is_greyed_out() {
-        const { assert!(!crate::setup::PARTITION_ENABLED) };
-        let mut a = app(80, 24);
-        update(&mut a, key(KeyCode::Down));
-        assert_eq!(a.menu.selected, 2, "skipped going down");
-        update(&mut a, key(KeyCode::Up));
-        assert_eq!(a.menu.selected, 0, "and going up");
-        assert!(update(&mut a, key(KeyCode::Char('2'))).is_none());
-        assert!(matches!(a.screen, Screen::Menu));
-        assert_eq!(a.toast.as_ref().unwrap().text, "Data partition setup is disabled for now; it will return in a future version");
-        assert!(render(&a).contains("2 Set up data partition (disabled)"));
-        // The step list shows it greyed out and unchecked
-        update(&mut a, key(KeyCode::Char('1')));
-        let Screen::Auto(w) = &a.screen else { panic!() };
-        let it = w.steps.item("partition").unwrap();
-        assert!(!it.enabled && !it.checked);
-        assert_eq!(w.steps.cursor, 1, "the cursor starts on the first step it can pick");
-        // The engine refuses, so `kast partition` exits non-zero without touching anything
-        assert_eq!(crate::setup::setup_data_partition(false, 0, 1, 1).unwrap_err().to_string(), crate::setup::PARTITION_DISABLED);
-        assert_eq!(crate::setup::partition_hint(), "disabled");
     }
 
     #[test]

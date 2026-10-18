@@ -59,7 +59,8 @@ kast import           # full-screen restore screen (also through sudo)
 kast export           # full-screen backup screen (also through sudo)
 
 kast auto             # upgrade, repo, packages, services (--no-snapshot: no btrfs snapshot first)
-kast partition        # disabled for now (it will return)
+kast partition        # pick a partition, see the fstab line, test-mount, install, mount (undoable)
+kast partition --list # the partitions and why a row can't be used (no root needed; --json too)
 kast repo | packages | services
 kast packages --list  # what would be installed, and from which list (no root needed)
 kast undo --list      # what kast changed, run by run; kast undo <run> / --last undoes it
@@ -158,12 +159,13 @@ and `l` opens the log (`/var/log/kast.log`). Below 60×20 it asks for a bigger w
 | Screen | Keys |
 | --- | --- |
 | Everywhere | `?` help · `Ctrl+C` cancel / back / quit · mouse wheel scrolls |
-| Menu | `↑/↓` `j/k` move (wraps, skips the disabled entry) · `Home/End` · `Enter` run · `1`–`9` `s` `u` `x` run directly · `l` log · `q`/`Esc` quit · click selects, double-click runs |
+| Menu | `↑/↓` `j/k` move (wraps) · `Home/End` · `Enter` run · `1`–`9` `s` `u` `x` run directly · `l` log · `q`/`Esc` quit · click selects, double-click runs |
 | Progress | `PgUp/PgDn` `↑/↓` scroll (pauses following) · `g`/`G` oldest / follow · `Esc`/`q` cancel the job (asks first) · when done: `Enter` back, `l` full log |
 | Questions | `y`/`n` · `←/→` `Tab` choose · `Enter` the highlighted button · `Esc` always answers No |
 | Summary | `Enter` back to menu · `l` full log |
 | Checklists (steps, apps) | `↑/↓` `j/k` move (skips greyed items) · `Home/End` `g/G` `PgUp/PgDn` · `Space` toggle (on a group header: the group) · `a` all · `n` none · `i` invert · click toggles · `Enter` continue · `Esc` back (choices are kept) |
 | Install packages (4) | the checklist · `r` download the list again after a fallback · `Enter` asks, then installs what's checked |
+| Data partition (2, or a stage of the automatic run) | list: `↑/↓` move · `Enter` pick (greyed rows say why they can't) · `r` scan again · mount point: type it, `Tab` completes, `Enter` checks it · options: `Space` change · `←/→` cycle · `c` continue · folders: `Space` · `Enter` continue · review: `s` start · `Esc` back one stage |
 | Review (automatic run) | `←/→` `Tab` Start / Back · `Enter` the highlighted button · `s` start · `Esc` back |
 | Import / Inspect | source: `Enter` Local folder or Proton Drive (`r` re-check, `L` sign out) · folder: type it, `Tab` completes, `Enter` lists it · Proton Drive: machines, then their backups · files: `↑/↓` move, `Enter` choose (Proton Drive: download, `Esc` stops it), `/` filter · `Esc` back one stage |
 | Restore options | `↑/↓` move · `Space` select / toggle · `Enter` choose · `s` start (automatic run: use this) · `Esc` back |
@@ -175,12 +177,12 @@ and `l` opens the log (`/var/log/kast.log`). Below 60×20 it asks for a bigger w
 
 Menu option 1 first shows the steps of a full setup, in the order they run:
 
-1. Data partition: **disabled for now** (shown greyed out; it will return in a future version)
+1. Data partition (off by default): pick the partition, mount point, options and home folders while configuring
 2. Export data (off by default): before anything below changes your apps
 3. System upgrade · 4. kud3n's repository · 5. Install packages · 6. Services (all on by default)
 7. Import data (off by default): last, once the apps are installed and `/media/data` is mounted
 
-The defaults are `kast auto`'s run. `Enter` then goes through a stage for each checked step
+The defaults are `kast auto`'s run (the data partition stays off until you check it). `Enter` then goes through a stage for each checked step
 that needs choices: the apps to install (all checked; an add-on can only be picked while its
 app is checked or already installed), the backup to restore and its options, what to back up
 and where. A review lists everything; `Start` runs it unattended. The overall progress bar
@@ -360,6 +362,61 @@ sudo kast fix-permissions         # fix it (sudo only to chown root-owned files)
 It checks the folders themselves (`~`, `~/.config`, `~/.local/share`: an old restore could leave them root-owned)
 and the KDE and app settings kast manages, never follows symlinks and never leaves your home.
 
+## Data partition
+
+Menu `2` (or the first step of the automatic run) mounts any partition you pick. It lists the
+disks with `lsblk -J -b` (cross-checked with `blkid -p`); rows that can't be used are dim and
+say why: in use by the system or as swap, the EFI partition, no filesystem or UUID, encrypted
+(LUKS/BitLocker), read-only media, a filesystem the kernel has no driver for. Supported:
+NTFS (ntfs3, or ntfs-3g when the kernel driver is missing), exFAT, FAT, ext4, btrfs, XFS.
+
+You pick the partition, the mount point (checked: absolute, not a system folder, not an
+existing mount point, empty), the options, and optionally home folders to move onto it. The
+options stage shows **the exact line** that will be added to `/etc/fstab`, live. Examples:
+
+```
+UUID=6C62ADEA62ADB96A /media/data ntfs3 uid=1000,gid=1000,dmask=0077,fmask=0177,iocharset=utf8,windows_names,nofail,x-systemd.device-timeout=10s 0 0
+UUID=A40D-85E7 /media/stick exfat uid=1000,gid=1000,dmask=0077,fmask=0177,nofail,x-systemd.device-timeout=5s,x-systemd.automount,x-systemd.idle-timeout=5min 0 0
+UUID=8b1e2f3a-aaaa-bbbb-cccc-0123456789ab /media/backup ext4 nofail,x-systemd.device-timeout=10s 0 2
+UUID=8b1e2f3a-aaaa-bbbb-cccc-0123456789ab /media/pool btrfs subvol=/@data,compress=zstd:1,nofail,x-systemd.device-timeout=10s 0 0
+UUID=8b1e2f3a-aaaa-bbbb-cccc-0123456789ab /media/data xfs nofail,x-systemd.device-timeout=10s 0 2
+```
+
+What the lines follow (see the comments in `src/partition/fstab.rs` for the man-page sources):
+
+- six explicit fields; spaces, tabs and backslashes escaped as `\040`, `\011`, `\134`; `UUID=`
+  exactly as `lsblk` reports it, `PARTUUID=` only when there is no UUID;
+- `nofail` always (a missing drive never stops the boot) and `x-systemd.device-timeout=` 10 s
+  (internal) or 5 s (external); never `defaults`, `exec`, `force` or `umask=000`;
+- external drives are mounted on first access (`x-systemd.automount`, unmounted after 5 min
+  idle) so an unplugged drive doesn't wait at boot; a toggle switches to mounting at boot;
+- passno 0 for NTFS, exFAT, FAT and btrfs; 2 for ext4 and XFS; never 1;
+- NTFS/exFAT/FAT have no Unix owners: `uid`/`gid` and the permission preset (*Only me* `0077/0177`,
+  *Me, others can read* `0022/0133`, *Me, files executable* `0077/0077`). ext4, btrfs and XFS get
+  no `uid`/`gid`; "Make the top folder yours" changes the owner of the mount point folder only.
+
+Applying it is a sequence that stops and puts things back at the first failure: re-check that the
+device is the one you saw; **test-mount** it read-write on a private folder (a dirty NTFS from
+Windows Fast Startup is explained, not forced); write a candidate fstab and run
+`findmnt --verify` on it (only *new* problems block); write `/etc/fstab` atomically, keeping a
+copy; `systemctl daemon-reload`; mount **only that entry** (never `mount -a`) and check it came up
+as expected and is writable as you. If any step fails the exact original bytes of `/etc/fstab`
+are restored, the test mount is unmounted and the folders kast made are removed. Moving home
+folders copies first and replaces a folder with a link only after a complete copy.
+
+```sh
+kast partition --list [--json]
+kast partition --device LABEL=Data --mountpoint /media/data --dry-run
+sudo kast partition --device /dev/sdb1 --mountpoint /media/stick --external --move-folders Documents,Videos
+```
+
+Undo (`u`, or `sudo kast undo --last --step partition`) reverses it in this order: link → real
+folder copied back (only if the link is still the one kast made and there is room; the copy on the
+partition is never deleted), `user-dirs.dirs` restored, the mount folder's owner given back,
+unmount (a busy mount names the processes and stops the undo; never lazy or forced), the `fstab`
+line removed (the lines it replaced are put back; a file you edited since only loses kast's own
+lines), `systemctl daemon-reload`, and the mount point folder removed if kast made it and it is empty.
+
 ## Undo and uninstall
 
 Everything kast changes on the system is recorded in **`/var/lib/kast/`** (root only: the
@@ -378,6 +435,7 @@ exactly what will run, in order → a job. What it can undo, newest first:
 | Legacy packages a swap removed (`sine-bin`, `zed`, ...) | offered for reinstall, unchecked |
 | `/etc/pacman.conf`, the archrepo key | the file restored (or just the `[archrepo]` block taken out if you edited it since); the key removed if kast imported it; packages still installed from archrepo are listed (they stop getting updates) and can be removed too |
 | PAM files, the Howdy resume hook, `howdy set`, services | files restored or deleted; then the PAM files are checked (they parse, their modules and includes exist, `sudo` keeps an auth stack): if not, they're put back as they were and the undo stops, so `sudo` keeps working; values set back; only units kast enabled are disabled |
+| A data partition | the folders copied back, the `fstab` line taken out (and the line it replaced put back), unmounted, the mount point removed if kast made it and it is empty; a busy mount stops the undo and names the processes |
 | A restore | put back from its safety snapshot (as your user). Without a snapshot it can't be undone and shows greyed out |
 | A backup | "delete the backup file", unchecked |
 | The system upgrade | never undone by kast; with a snapshot the summary and the undo list give the rollback commands |

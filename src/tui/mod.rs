@@ -190,6 +190,7 @@ pub enum Start {
     Menu,
     Import,
     Export,
+    Partition,
 }
 
 /// `list`: the package list when it's known up front (`--offline`, `--packages-file`);
@@ -211,6 +212,7 @@ pub fn run(start: Start, list: Option<crate::pkglist::PkgList>) -> Result<()> {
         Start::Menu => None,
         Start::Import => app::activate(&mut app, Action::Import),
         Start::Export => app::activate(&mut app, Action::Export),
+        Start::Partition => app::activate(&mut app, Action::Partition),
     };
     let len = log_len();
     let mut marks = LogMarks { session: len, job: len };
@@ -477,6 +479,29 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
             });
         }
         Command::DriveCancelTransfer => crate::proton::cancel_transfer(),
+        Command::LoadPartitions => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(Event::Loaded(event::Loaded::Partitions(screens::partition::load())));
+            });
+        }
+        Command::CheckMountpoint(raw) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let dir = crate::journal::sys_path(&raw);
+                let result = crate::partition::fstab::check_mountpoint(&raw, &dir, &crate::partition::SysRunner);
+                let _ = tx.send(Event::Loaded(event::Loaded::Mountpoint { raw, result }));
+            });
+        }
+        Command::LoadSubvolumes(part) => {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let r =
+                    crate::partition::apply::list_subvolumes(&crate::partition::SysRunner, &part, std::path::Path::new("/run")).map_err(|e| format!("{e:#}"));
+                crate::partition::apply::cleanup_probes();
+                let _ = tx.send(Event::Loaded(event::Loaded::Subvolumes(r)));
+            });
+        }
         Command::LoadSchedule => {
             let tx = tx.clone();
             std::thread::spawn(move || {

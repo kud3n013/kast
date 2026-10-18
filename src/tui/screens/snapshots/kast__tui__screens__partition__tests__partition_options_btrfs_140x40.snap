@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/partition.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Options ───────────────────────────────────────────────────╮╭ fstab line ────────────────────────────────────────────────────────────────╮
+│  Mount  at boot                                            ││This line is added to /etc/fstab:                                           │
+│  [ ] Read-only                                             ││UUID=11111111-2222-3333-4444-555555555555 /media/pool btrfs                 │
+│  [ ] Don't record access times (noatime)                   ││subvol=/@data,nofail,x-systemd.device-timeout=10s 0 0                       │
+│  [ ] Compress files (zstd:1)                               ││                                                                            │
+│❯ Subvolume  /@data                                         ││Device:     UUID=11111111-2222-3333-4444-555555555555                       │
+│  [x] Make the top folder yours (chown the folder only, not ││Folder:     /media/pool                                                     │
+│  Edit the options by hand                                  ││Type:       btrfs                                                           │
+│  ▶ Continue                                                ││Options:    subvol=/@data                                                   │
+│                                                            ││            nofail                                                          │
+│                                                            ││            x-systemd.device-timeout=10s                                    │
+│                                                            ││Dump, fsck: 0 0                                                             │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+╰────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────╯
+ Space change  ←/→ cycle  c continue  Esc back  ? help

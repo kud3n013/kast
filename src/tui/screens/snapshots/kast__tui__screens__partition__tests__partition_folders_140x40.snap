@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/partition.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Move home folders onto the partition (optional) · 2 of 9 selected ───────────────────────────────────────────────────────────────────────╮
+│  [ ] ~/Desktop  folder                                                                                                                   │
+│  [x] ~/Documents  folder                                                                                                                 │
+│  [ ] ~/Downloads  folder                                                                                                                 │
+│  [ ] ~/Music  folder                                                                                                                     │
+│  [ ] ~/Pictures  folder                                                                                                                  │
+│  [ ] ~/Public  already a link to /media/old/Public                                                                                       │
+│  [ ] ~/Templates  folder                                                                                                                 │
+│❯ [x] ~/Videos  folder                                                                                                                    │
+│  [ ] ~/Projects  not there yet: created on the partition                                                                                 │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ About ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│A checked folder is copied to the partition, and only after a full copy replaced by a link. Undo copies it back.                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help

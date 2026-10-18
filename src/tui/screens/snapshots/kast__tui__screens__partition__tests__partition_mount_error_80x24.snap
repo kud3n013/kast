@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/partition.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Mount point ─────────────────────────────────────────────────────────────────╮
+│media/x                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ About ───────────────────────────────────────────────────────────────────────╮
+│✗ the mount point must be an absolute path (start with /)                     │
+│                                                                              │
+│/dev/sda1 will be mounted here. The folder is created if it doesn't exist (and│
+│removed again by undo if it is empty).                                        │
+│Spaces and special characters are escaped in /etc/fstab for you. Tab completes│
+│a folder.                                                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Enter check  Tab complete  Esc back

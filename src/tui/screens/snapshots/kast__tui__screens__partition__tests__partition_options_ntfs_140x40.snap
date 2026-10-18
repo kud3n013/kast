@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/partition.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Options ───────────────────────────────────────────────────╮╭ fstab line ────────────────────────────────────────────────────────────────╮
+│❯ Mount  at boot                                            ││This line is added to /etc/fstab:                                           │
+│  Who can use it  Only me: owned by you; nobody else can ope││UUID=6C62ADEA62ADB96A /media/data ntfs3                                     │
+│  [ ] Read-only                                             ││uid=1000,gid=1000,dmask=0077,fmask=0177,iocharset=utf8,windows_names,nofail,│
+│  [ ] Don't record access times (noatime)                   ││x-systemd.device-timeout=10s 0 0                                            │
+│  [ ] Preallocate on write (prealloc)                       ││                                                                            │
+│  Edit the options by hand                                  ││Device:     UUID=6C62ADEA62ADB96A                                           │
+│  ▶ Continue                                                ││Folder:     /media/data                                                     │
+│                                                            ││Type:       ntfs3                                                           │
+│                                                            ││Options:    uid=1000                                                        │
+│                                                            ││            gid=1000                                                        │
+│                                                            ││            dmask=0077                                                      │
+│                                                            ││            fmask=0177                                                      │
+│                                                            ││            iocharset=utf8                                                  │
+│                                                            ││            windows_names                                                   │
+│                                                            ││            nofail                                                          │
+│                                                            ││            x-systemd.device-timeout=10s                                    │
+│                                                            ││Dump, fsck: 0 0                                                             │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+╰────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────╯
+ Space change  ←/→ cycle  c continue  Esc back  ? help

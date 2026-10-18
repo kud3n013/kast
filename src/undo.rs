@@ -1085,6 +1085,9 @@ pub fn cmd_undo(a: &UndoArgs) -> Result<()> {
     let user = crate::ctx::ctx().target_user.clone();
     let out = journal::recorded(&["undo"], false, || execute(&chosen, &dir, &user, &mut |_, l| println!("==> {l}")))?;
     println!("Undone: {}", out.done.len());
+    for n in &out.notes {
+        println!("  note: {n}");
+    }
     if !out.failed.is_empty() {
         for f in &out.failed {
             println!("  ✘ {f}");

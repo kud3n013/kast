@@ -22,7 +22,8 @@ pub enum JobKind {
     /// The steps and choices made before starting, with the package list the user saw
     /// (None when the plan installs no packages)
     Auto(Option<Arc<PkgList>>, Box<AutoPlan>),
-    Partition,
+    /// Mount the chosen partition (the decisions are all in the plan)
+    Partition(Box<crate::partition::apply::Plan>),
     Repo,
     /// The list and the chosen package names (None = all)
     Packages(Arc<PkgList>, Option<Vec<String>>),
@@ -60,7 +61,7 @@ impl JobKind {
     pub fn title(&self) -> String {
         match self {
             JobKind::Auto(..) => "Automatic setup".into(),
-            JobKind::Partition => "Set up data partition".into(),
+            JobKind::Partition(_) => "Set up data partition".into(),
             JobKind::Repo => "Add kud3n's repository".into(),
             JobKind::Packages(..) => "Install packages".into(),
             JobKind::Services => "Set up services".into(),
@@ -208,6 +209,7 @@ fn run(kind: JobKind) -> Result<Outcome> {
         JobKind::Packages(..) => ("packages", false),
         JobKind::Repo => ("repo", false),
         JobKind::Services => ("services", false),
+        JobKind::Partition(_) => ("partition", false),
         JobKind::InstallProton => ("packages", false),
         JobKind::Import(o) => ("import", o.dry_run),
         JobKind::Export(o) => ("export", o.dry_run),
@@ -229,9 +231,12 @@ fn run_job(kind: JobKind) -> Result<Outcome> {
             let out = setup::run_plan(&plan, list.as_deref())?;
             Outcome::Summary(Box::new(setup::plan_summary(&plan, &out, list.as_deref())))
         }
-        JobKind::Partition => {
-            setup::setup_data_partition(false, 0, 1, 1)?;
-            finished("Data partition step finished")
+        JobKind::Partition(plan) => {
+            let r = setup::setup_data_partition(&plan, false, 0, 1, 1)?;
+            for (dir, why) in &r.kept {
+                ctx::add_issue(format!("~/{dir} was kept where it is: {why}"));
+            }
+            finished(&format!("{} is mounted at {} ({})", plan.part.path, r.mountpoint, crate::partition::apply::UNDO_HINT))
         }
         JobKind::Repo => {
             setup::add_kud3n_repo(false, 0, 1, 1)?;
@@ -288,6 +293,9 @@ fn run_job(kind: JobKind) -> Result<Outcome> {
             })?;
             for f in &out.failed {
                 ctx::add_issue(format!("Not undone: {f}"));
+            }
+            for n in &out.notes {
+                ctx::add_issue(format!("Note: {n}"));
             }
             finished(&format!("{} change(s) undone", out.done.len()))
         }

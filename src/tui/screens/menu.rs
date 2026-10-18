@@ -52,11 +52,12 @@ pub const ITEMS: [Item; 14] = [
         action: Action::Partition,
         key: '2',
         label: "Set up data partition",
-        about: "Mounts the NTFS data partition at /media/data through /etc/fstab and moves Desktop, Documents, Downloads, \
-                Music, Pictures, Public, Templates, Videos and Projects onto it, leaving symlinks in your home.",
-        changes: "/etc/fstab (backup kept), your home folders, ~/.config/user-dirs.dirs",
+        about: "Pick any internal or external partition (NTFS, exFAT, FAT, ext4, btrfs, XFS), see the exact /etc/fstab line, \
+                test-mount it, then install the line and mount it. Optionally moves home folders onto it, leaving symlinks. \
+                Undo puts everything back.",
+        changes: "/etc/fstab (backup kept), the mount point, optionally your home folders and ~/.config/user-dirs.dirs",
         root: true,
-        auto: "Optional step of the automatic run (off by default).",
+        auto: "Optional step of the automatic run (off by default; you pick the partition while configuring).",
     },
     Item {
         action: Action::Repo,
@@ -173,29 +174,12 @@ pub struct MenuState {
     pub selected: usize,
 }
 
-impl Item {
-    /// False for an entry that is switched off for now (shown dim, skipped by the cursor).
-    pub fn enabled(&self) -> bool {
-        self.action != Action::Partition || crate::setup::PARTITION_ENABLED
-    }
-}
-
 impl MenuState {
     pub fn up(&mut self) {
-        loop {
-            self.selected = (self.selected + ITEMS.len() - 1) % ITEMS.len();
-            if ITEMS[self.selected].enabled() {
-                break;
-            }
-        }
+        self.selected = (self.selected + ITEMS.len() - 1) % ITEMS.len();
     }
     pub fn down(&mut self) {
-        loop {
-            self.selected = (self.selected + 1) % ITEMS.len();
-            if ITEMS[self.selected].enabled() {
-                break;
-            }
-        }
+        self.selected = (self.selected + 1) % ITEMS.len();
     }
     pub fn action(&self) -> Action {
         ITEMS[self.selected].action
@@ -229,9 +213,6 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
         .iter()
         .map(|it| {
             let key = if it.key == 'q' { "q".to_string() } else { it.key.to_string() };
-            if !it.enabled() {
-                return ListItem::new(Line::from(vec![Span::styled(format!(" {key} {} (disabled)", it.label), theme.dim())]));
-            }
             ListItem::new(Line::from(vec![Span::styled(format!(" {key} "), theme.bold()), Span::raw(it.label)]))
         })
         .collect();
@@ -243,7 +224,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App) {
     f.render_stateful_widget(list, list_area, &mut st);
 
     let it = &ITEMS[app.menu.selected];
-    let about = if it.enabled() { it.about } else { crate::setup::PARTITION_DISABLED };
+    let about = it.about;
     // Stacked (narrow) layout has little height: skip the heading and spacing
     let mut lines =
         if body.width >= 100 { vec![Line::styled(it.label, theme.title()), Line::raw(""), Line::raw(about), Line::raw("")] } else { vec![Line::raw(about)] };

@@ -1,21 +1,20 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1408
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
 ╭ Arch Linux / CachyOS setup ──────────╮╭ Details ─────────────────────────────────────────────────────────────────────────────────────────╮
-│   1 Run automatic setup              ││Add kud3n's repository                                                                            │
-│   2 Set up data partition (disabled) ││                                                                                                  │
-│❯  3 Add kud3n's repository           ││Adds the [archrepo] repository to /etc/pacman.conf (or updates its server URL), then syncs and    │
-│   4 Install packages                 ││upgrades with pacman -Syyu.                                                                       │
-│   5 Set up services                  ││                                                                                                  │
-│   6 Import data                      ││Changes:    /etc/pacman.conf, upgraded packages                                                   │
-│   7 Export data                      ││Needs root: yes (kast already runs as root)                                                       │
-│   8 App status                       ││Automatic:  A step of the automatic run (on by default).                                          │
-│   9 Inspect a backup                 ││                                                                                                  │
-│   p KDE Plasma settings              ││                                                                                                  │
-│   s Scheduled backup                 ││                                                                                                  │
+│   1 Run automatic setup              ││Set up data partition                                                                             │
+│❯  2 Set up data partition            ││                                                                                                  │
+│   3 Add kud3n's repository           ││Pick any internal or external partition (NTFS, exFAT, FAT, ext4, btrfs, XFS), see the exact       │
+│   4 Install packages                 ││/etc/fstab line, test-mount it, then install the line and mount it. Optionally moves home folders │
+│   5 Set up services                  ││onto it, leaving symlinks. Undo puts everything back.                                             │
+│   6 Import data                      ││                                                                                                  │
+│   7 Export data                      ││Changes:    /etc/fstab (backup kept), the mount point, optionally your home folders and           │
+│   8 App status                       ││~/.config/user-dirs.dirs                                                                          │
+│   9 Inspect a backup                 ││Needs root: yes (kast already runs as root)                                                       │
+│   p KDE Plasma settings              ││Automatic:  Optional step of the automatic run (off by default; you pick the partition while      │
+│   s Scheduled backup                 ││configuring).                                                                                     │
 │   u Undo changes                     ││                                                                                                  │
 │   x Uninstall apps                   ││                                                                                                  │
 │   q Quit                             ││                                                                                                  │

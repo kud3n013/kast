@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/wizard.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Review ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│These steps run in this order, without further questions:                                                                                 │
+│                                                                                                                                          │
+│  1. Data partition: /dev/sdc1 → /media/backup (UUID=9d8a0c4e-1f0b-4c52-8d3e-6a7b5c4d3e2f /media/backup ext4                              │
+│nofail,x-systemd.device-timeout=10s 0 2)                                                                                                  │
+│                                                                                                                                          │
+│Skipped: Export data, System upgrade, kud3n's repository, Install packages, Services, Import data                                         │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+│                                                                                                                                          │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ ❯ Start       Back                                                                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ Enter choose  ←/→ Start/Back  s start  Esc back  ? help

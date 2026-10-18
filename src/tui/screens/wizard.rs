@@ -26,6 +26,8 @@ use crate::vault::import::ImportOpts;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
     Steps,
+    /// Pick the partition, mount point, options and folders (the partition screen's stages)
+    Partition,
     /// The upgrade can't be undone: say so, offer a snapshot
     Upgrade,
     Apps,
@@ -46,6 +48,10 @@ pub struct Wizard {
     pub export_opts: Option<BackupOpts>,
     /// The backup goes to Proton Drive like this
     pub export_upload: Option<crate::drive::UploadOpts>,
+    /// The data partition's stages, kept while going back and forth
+    pub partition: Option<Box<super::partition::PartState>>,
+    /// What they decided
+    pub partition_plan: Option<crate::partition::apply::Plan>,
     /// Review: Start (true) or Back highlighted
     pub start_focused: bool,
     /// "Take a snapshot before upgrading", built once the machine was looked at
@@ -56,9 +62,9 @@ pub struct Wizard {
 pub fn step_text(s: Step) -> (&'static str, &'static str, &'static str) {
     match s {
         Step::Partition => (
-            "Data partition (/media/data + home folder symlinks)",
-            "Mounts the NTFS data partition at /media/data and moves your home folders onto it. Runs first: backups usually live there.",
-            "/etc/fstab (backup kept), your home folders",
+            "Data partition (pick one, fstab line, mount)",
+            "Mounts a partition you pick through /etc/fstab, after a test mount, and optionally moves your home folders onto it. Runs first: backups usually live there.",
+            "/etc/fstab (backup kept), the mount point, optionally your home folders",
         ),
         Step::Export => (
             "Export data (back up before anything changes)",
@@ -97,17 +103,7 @@ impl Default for Wizard {
 
 impl Wizard {
     pub fn new() -> Self {
-        let rows = Step::ALL
-            .into_iter()
-            .map(|s| {
-                let mut it = Item::new(s.key(), step_text(s).0, s.standard());
-                if s == Step::Partition && !crate::setup::PARTITION_ENABLED {
-                    it.enabled = false;
-                    it.note = Some("disabled for now".into());
-                }
-                Row::Item(it)
-            })
-            .collect();
+        let rows = Step::ALL.into_iter().map(|s| Row::Item(Item::new(s.key(), step_text(s).0, s.standard()))).collect();
         Wizard {
             stage: Stage::Steps,
             steps: Checklist::new(rows),
@@ -117,6 +113,8 @@ impl Wizard {
             import_opts: None,
             export_opts: None,
             export_upload: None,
+            partition: None,
+            partition_plan: None,
             start_focused: true,
             snap: None,
         }
@@ -172,6 +170,9 @@ impl Wizard {
     /// The stages for the steps now checked, in order.
     pub fn stages(&self) -> Vec<Stage> {
         let mut v = vec![Stage::Steps];
+        if self.has(Step::Partition) {
+            v.push(Stage::Partition);
+        }
         if self.has(Step::Upgrade) {
             v.push(Stage::Upgrade);
         }
@@ -197,6 +198,7 @@ impl Wizard {
             export: if steps.contains(&Step::Export) { self.export_opts.clone() } else { None },
             upload: if steps.contains(&Step::Export) { self.export_upload.clone() } else { None },
             snapshot: steps.contains(&Step::Upgrade) && self.snapshot_on(),
+            partition: if steps.contains(&Step::Partition) { self.partition_plan.clone().map(Box::new) } else { None },
             steps,
         }
     }
@@ -250,6 +252,11 @@ fn enter(app: &mut App, stage: Stage) -> Option<Command> {
     let w = wiz(app)?;
     w.stage = stage;
     match stage {
+        Stage::Partition => {
+            let fresh = w.partition.is_none();
+            w.partition.get_or_insert_with(|| Box::new(super::partition::PartState::new(true)));
+            fresh.then_some(Command::LoadPartitions)
+        }
         Stage::Apps => packages::sync(app),
         Stage::Import => {
             w.import.get_or_insert_with(|| ImportState::new(import::Mode::Restore, true, import_dir));
@@ -338,6 +345,12 @@ pub fn skip_packages(app: &mut App) -> Option<Command> {
     enter(app, to)
 }
 
+/// The partition stages' end: remember what was decided, go on.
+pub fn partition_done(app: &mut App, plan: crate::partition::apply::Plan) -> Option<Command> {
+    wiz(app)?.partition_plan = Some(plan);
+    next(app)
+}
+
 /// The import stage's "Use this": remember the restore, go on.
 pub fn import_done(app: &mut App, opts: ImportOpts) -> Option<Command> {
     wiz(app)?.import_opts = Some(opts);
@@ -364,6 +377,10 @@ fn start(app: &mut App) -> Option<Command> {
     let w = wiz(app)?;
     let plan = w.plan();
     let list = w.list();
+    if plan.has(Step::Partition) && plan.partition.is_none() {
+        app.toast(ToastKind::Error, "The data partition step has no partition chosen");
+        return None;
+    }
     if plan.has(Step::Packages) && list.is_none() {
         app.toast(ToastKind::Error, "The package list isn't loaded yet");
         return None;
@@ -399,6 +416,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 _ => None,
             }
         }
+        Stage::Partition => super::partition::key(app, k),
         Stage::Apps => packages::key(app, k),
         Stage::Import => import::key(app, k),
         Stage::Export => export::key(app, k),
@@ -456,7 +474,7 @@ pub fn mouse(app: &mut App, m: MouseEvent) -> Option<Command> {
             }
             None
         }
-        Stage::Review | Stage::Upgrade => None,
+        Stage::Review | Stage::Upgrade | Stage::Partition => None,
     }
 }
 
@@ -475,6 +493,11 @@ fn layout(body: Rect) -> (Rect, Rect) {
 
 pub fn view(f: &mut Frame, body: Rect, app: &App, w: &Wizard) {
     match w.stage {
+        Stage::Partition => {
+            if let Some(st) = &w.partition {
+                super::partition::view(f, body, app, st);
+            }
+        }
         Stage::Apps => packages::view(f, body, app, &w.apps),
         Stage::Import => {
             if let Some(st) = &w.import {
@@ -536,6 +559,7 @@ fn steps_view(f: &mut Frame, body: Rect, app: &App, w: &Wizard) {
             lines.extend(warn.into_iter().map(|l| Line::styled(l, theme.warn())));
         }
         let next = match step {
+            Step::Partition => "Next: pick the partition, mount point, options and folders.",
             Step::Packages => "Next: pick the apps.",
             Step::Import => "Next: pick the backup and what to restore.",
             Step::Export => "Next: pick what to back up and where.",
@@ -578,6 +602,10 @@ pub fn review_lines(theme: &Theme, w: &Wizard) -> Vec<Line<'static>> {
                     }
                     d
                 }
+                None => String::new(),
+            },
+            Step::Partition => match &plan.partition {
+                Some(p) => format!("{} → {} ({})", p.part.path, p.choices.mountpoint, p.entry()),
                 None => String::new(),
             },
             Step::Upgrade => {
@@ -631,6 +659,7 @@ pub fn hints(app: &App, w: &Wizard) -> &'static [(&'static str, &'static str)] {
     match w.stage {
         Stage::Steps => &[("Space", "toggle"), ("Enter", "continue"), ("Esc", "back"), ("?", "help"), ("a", "all"), ("n", "none"), ("i", "invert")],
         Stage::Upgrade => &[("Space", "toggle"), ("Enter", "continue"), ("Esc", "back"), ("?", "help")],
+        Stage::Partition => w.partition.as_ref().map_or(&[], |p| super::partition::hints(p)),
         Stage::Apps => packages::hints(app),
         Stage::Import => w.import.as_ref().map_or(&[], import::hints),
         Stage::Export => w.export.as_ref().map_or(&[], export::hints),
@@ -642,6 +671,7 @@ pub fn help(w: &Wizard) -> (&'static str, &'static [(&'static str, &'static str)
     match w.stage {
         Stage::Steps => ("Automatic setup: steps", &STEPS_HELP),
         Stage::Upgrade => ("System upgrade", &UPGRADE_HELP),
+        Stage::Partition => ("Data partition", &super::partition::HELP),
         Stage::Apps => ("Apps to install", &packages::HELP),
         Stage::Import => ("Backup to restore", &import::HELP),
         Stage::Export => ("Back up", &export::HELP),
@@ -897,6 +927,64 @@ mod tests {
         assert_eq!(plan.steps, [Step::Upgrade, Step::Repo, Step::Services]);
         assert!(Path::new("/").exists());
         let _ = PathBuf::new();
+    }
+
+    #[test]
+    fn the_data_partition_is_chosen_while_configuring() {
+        use crate::tui::screens::partition::tests::scan;
+        let mut a = opened(140, 40);
+        a.now = 1_792_400_000;
+        for s in [Step::Upgrade, Step::Repo, Step::Packages, Step::Services, Step::Partition] {
+            flip(&mut a, s);
+        }
+        assert_eq!(w(&a).stages(), [Stage::Steps, Stage::Partition, Stage::Review]);
+        assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::LoadPartitions)));
+        assert_eq!(w(&a).stage, Stage::Partition);
+        update(&mut a, Event::Loaded(Loaded::Partitions(Ok(scan()))));
+        // /dev/sdc1 (ext4), mount point, options, folders: Documents
+        if let Screen::Auto(w) = &mut a.screen {
+            w.partition.as_mut().unwrap().cursor = 2;
+        }
+        update(&mut a, key(KeyCode::Enter));
+        let Some(Command::CheckMountpoint(raw)) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a check") };
+        update(&mut a, Event::Loaded(Loaded::Mountpoint { raw, result: Ok(("/media/backup".into(), crate::partition::fstab::Spot::Missing)) }));
+        update(&mut a, key(KeyCode::Char('c')));
+        let i = w(&a).partition.as_ref().unwrap().folders.rows.iter().position(|r| matches!(r, Row::Item(it) if it.key == "Documents")).unwrap();
+        if let Screen::Auto(w) = &mut a.screen {
+            w.partition.as_mut().unwrap().folders.cursor = i;
+        }
+        update(&mut a, key(KeyCode::Char(' ')));
+        // Enter ends the partition stages: no review of its own, on to the run's review
+        update(&mut a, key(KeyCode::Enter));
+        assert_eq!(w(&a).stage, Stage::Review);
+        let plan = w(&a).plan();
+        let p = plan.partition.as_ref().expect("a partition plan");
+        assert_eq!((p.part.path.as_str(), p.choices.mountpoint.as_str(), p.folders.as_slice()), ("/dev/sdc1", "/media/backup", &["Documents".to_string()][..]));
+        assert!(plan.has(Step::Partition));
+        let out = render(&a);
+        assert!(out.contains("Data partition: /dev/sdc1 → /media/backup (UUID=9d8a0c4e"), "{out}");
+        insta::assert_snapshot!("wizard_review_partition_140x40", out);
+        // Esc goes back into the partition stages with everything as it was
+        update(&mut a, key(KeyCode::Esc));
+        assert_eq!(w(&a).stage, Stage::Partition);
+        assert_eq!(w(&a).partition.as_ref().unwrap().choices.as_ref().unwrap().mountpoint, "/media/backup");
+        // Unchecking the step drops the plan
+        if let Screen::Auto(w) = &mut a.screen {
+            w.stage = Stage::Steps;
+        }
+        flip(&mut a, Step::Partition);
+        assert!(w(&a).plan().partition.is_none() && !w(&a).plan().has(Step::Partition));
+    }
+
+    #[test]
+    fn a_run_with_the_partition_step_needs_a_partition() {
+        let mut a = opened(80, 24);
+        flip(&mut a, Step::Partition);
+        if let Screen::Auto(w) = &mut a.screen {
+            w.stage = Stage::Review;
+        }
+        assert!(update(&mut a, key(KeyCode::Char('s'))).is_none());
+        assert!(a.toast.as_ref().unwrap().text.contains("no partition chosen"));
     }
 
     #[test]

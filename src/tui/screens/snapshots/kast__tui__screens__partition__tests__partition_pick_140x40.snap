@@ -1,0 +1,44 @@
+---
+source: src/tui/screens/partition.rs
+expression: out
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Pick the partition ────────────────────────────────────────╮╭ Details ───────────────────────────────────────────────────────────────────╮
+│❯ /dev/sda1       Data       NTFS         931.0 GiB  inte…  ││/dev/sda1                                                                   │
+│  /dev/sdb1       STICK      exFAT         59.0 GiB  exte…  ││Disk:        Samsung 970 EVO                                                │
+│  /dev/sdc1       Backup     ext4        2000.0 GiB  inte…  ││Filesystem:  ntfs (driver ntfs3)                                            │
+│  /dev/sdd1       Pool       btrfs       1000.0 GiB  inte…  ││Size:        931.0 GiB (310.3 GiB used)                                     │
+│  /dev/nvme0n1p2  -          btrfs        500.0 GiB  inte…  ││UUID:        6C62ADEA62ADB96A                                               │
+│     • in use by the system (mounted at /)                  ││                                                                            │
+│  /dev/nvme0n1p1  -          FAT          512.0 MiB  inte…  ││✓ Can be used                                                               │
+│     • EFI system partition                                 ││                                                                            │
+│  /dev/nvme0n1p3  -          crypto_LUKS  100.0 GiB  inte…  ││⚠ If Windows has Fast Startup or hibernation on, the partition is left      │
+│     • encrypted (LUKS): needs /etc/crypttab, not support…  ││"dirty" and Linux can only mount it read-only (or not at all). Turn Fast    │
+│                                                            ││Startup off in Windows and shut down fully.                                 │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+│                                                            ││                                                                            │
+╰────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter pick  r scan again  Esc back  ? help

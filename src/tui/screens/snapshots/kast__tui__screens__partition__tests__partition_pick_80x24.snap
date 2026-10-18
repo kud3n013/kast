@@ -1,0 +1,28 @@
+---
+source: src/tui/screens/partition.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Pick the partition ──────────────────────────────────────────────────────────╮
+│❯ /dev/sda1       Data       NTFS         931.0 GiB  internal                 │
+│  /dev/sdb1       STICK      exFAT         59.0 GiB  external                 │
+│  /dev/sdc1       Backup     ext4        2000.0 GiB  internal                 │
+│  /dev/sdd1       Pool       btrfs       1000.0 GiB  internal                 │
+│  /dev/nvme0n1p2  -          btrfs        500.0 GiB  internal                 │
+│     • in use by the system (mounted at /)                                    │
+│  /dev/nvme0n1p1  -          FAT          512.0 MiB  internal                 │
+│     • EFI system partition                                                   │
+│  /dev/nvme0n1p3  -          crypto_LUKS  100.0 GiB  internal                 │
+│     • encrypted (LUKS): needs /etc/crypttab, not supported yet               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│/dev/sda1                                                                     │
+│Disk:        Samsung 970 EVO                                                  │
+│Filesystem:  ntfs (driver ntfs3)                                              │
+│Size:        931.0 GiB (310.3 GiB used)                                       │
+│UUID:        6C62ADEA62ADB96A                                                 │
+│                                                                              │
+│✓ Can be used                                                                 │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ ↑/↓ move  Enter pick  r scan again  Esc back  ? help

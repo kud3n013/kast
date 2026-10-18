@@ -1,12 +1,11 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1423
 expression: render(&a)
 ---
  kast | p3ter (UID 1000, GID 1000) | /home/p3ter | archbox | root
 ┌ Arch Linux / CachyOS setup ──────────────────────────────────────────────────┐
 │>  1 Run automatic setup                                                      │
-│   2 Set up data partition (disabled)                                         │
+│   2 Set up data partition                                                    │
 │   3 Ad┌ Help: Main menu ─────────────────────────────────────────────┐       │
 │   4 In│Up/Down  j/k   Move the selection (wraps around)              │       │
 │   5 Se│Home/End  g/G  First / last entry                             │       │

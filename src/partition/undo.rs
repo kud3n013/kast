@@ -14,7 +14,6 @@ use super::Runner;
 use super::apply::{busy_processes, needed, unit_name, unmount};
 use super::fstab;
 use crate::ctx;
-use crate::journal;
 
 /// Is a real filesystem (not just the autofs placeholder of an idle automount) mounted here?
 pub fn really_mounted(rn: &dyn Runner, mp: &str) -> bool {
@@ -86,16 +85,16 @@ pub fn move_back(rn: &dyn Runner, home: &Path, from: &Path, uid: u32, gid: u32, 
     }
     let size = super::apply::dir_size(from);
     let parent = home.parent().unwrap_or(Path::new("/"));
-    if let Some(f) = free(parent) {
-        if f < needed(size) / 4 + size {
-            bail!(
-                "not enough room in {} to copy {} back: it needs {}, {} is free. Free some space and run the undo again",
-                parent.display(),
-                home.display(),
-                super::human(size),
-                super::human(f)
-            );
-        }
+    if let Some(f) = free(parent)
+        && f < needed(size) / 4 + size
+    {
+        bail!(
+            "not enough room in {} to copy {} back: it needs {}, {} is free. Free some space and run the undo again",
+            parent.display(),
+            home.display(),
+            super::human(size),
+            super::human(f)
+        );
     }
     let name = home.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = parent.join(format!(".{name}.kast-restore"));
@@ -170,11 +169,6 @@ pub fn remove_dirs(dirs: &[PathBuf]) -> Vec<PathBuf> {
         }
     }
     kept
-}
-
-/// The journal's hash of a file, for the "unchanged since" check.
-pub fn hash_of(p: &Path) -> Option<String> {
-    journal::sha256_file(p)
 }
 
 #[cfg(test)]

@@ -42,10 +42,10 @@ impl Runner for Fake {
         let line = format!("{prog} {}", args.join(" "));
         self.calls.borrow_mut().push(line.clone());
         for (k, q) in self.queues.borrow_mut().iter_mut() {
-            if line.contains(k.as_str()) {
-                if let Some(o) = q.pop_front() {
-                    return o;
-                }
+            if line.contains(k.as_str())
+                && let Some(o) = q.pop_front()
+            {
+                return o;
             }
         }
         self.rules.iter().find(|(k, _)| line.contains(k.as_str())).map(|(_, o)| o.clone()).unwrap_or_else(|| Out::success(""))

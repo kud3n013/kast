@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use regex::Regex;
 
 use crate::ctx::{self, add_issue, ctx, have, log, ok, ok_logged, output, run_as_user};
 use crate::journal::{self, sys_path};
@@ -15,7 +14,6 @@ use crate::pkglist::{Parsed, Pkg, PkgList};
 use crate::ui::{self, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW, Dash};
 
 pub const MOUNT_POINT: &str = "/media/data";
-const DEFAULT_DATA_UUID: &str = "6C62ADEA62ADB96A";
 pub const REPO_URL: &str = "https://github.com/kud3n013/archrepo/releases/download/packages";
 const OLD_REPO_URL: &str = "https://kud3n013.github.io/archrepo/x86_64";
 /// archrepo signs its database and packages with this key (see the archrepo README).
@@ -23,7 +21,7 @@ const REPO_KEY: &str = include_str!("../assets/archrepo.asc");
 const REPO_KEY_FPR: &str = "CFB791543B4B2D2821E9127AC012A9476C170A37";
 const PAM_RULE: &str = "auth      sufficient pam_howdy.so workaround=native";
 const HOWDY_HOOK: &str = "/usr/lib/systemd/system-sleep/howdy-resume.sh";
-const USER_DIRS: [&str; 9] = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Public", "Templates", "Videos", "Projects"];
+pub const USER_DIRS: [&str; 9] = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Public", "Templates", "Videos", "Projects"];
 
 fn pacman(args: &[&str]) -> Command {
     let mut c = Command::new("pacman");
@@ -96,139 +94,46 @@ pub fn system_upgrade(auto: bool, o_start: i64, o_step: i64, o_total: i64, snaps
 
 // --- State 2: Universal data partition --------------------------------------------------
 
-pub fn fstab_line(uuid: &str, uid: u32, gid: u32) -> String {
-    format!("UUID={uuid}                     {MOUNT_POINT}    ntfs3   defaults,nofail,uid={uid},gid={gid},rw,windows_names,iocharset=utf8,umask=000,exec 0 0")
-}
-
-fn mount_regex() -> Regex {
-    Regex::new(&format!(r"[[:space:]]{}[[:space:]]", regex::escape(MOUNT_POINT))).unwrap()
-}
-
-/// New fstab content, or None when the existing entry is already right.
-pub fn patch_fstab(content: &str, uuid: &str, uid: u32, gid: u32) -> Option<String> {
-    let re = mount_regex();
-    let line = fstab_line(uuid, uid, gid);
-    match content.lines().rfind(|l| re.is_match(l)) {
-        Some(cur) if cur.contains(uuid) && cur.contains("umask=000") && cur.contains(&format!("uid={uid}")) => None,
-        Some(_) => {
-            let mut res: String = content.lines().map(|l| if re.is_match(l) { line.as_str() } else { l }).collect::<Vec<_>>().join("\n");
-            if content.ends_with('\n') {
-                res.push('\n');
-            }
-            Some(res)
-        }
-        None => {
-            let mut res = content.to_string();
-            if !res.is_empty() && !res.ends_with('\n') {
-                res.push('\n');
-            }
-            res += &line;
-            res.push('\n');
-            Some(res)
-        }
-    }
-}
-
 fn is_mounted(p: &str) -> bool {
     ok("findmnt", &[p])
 }
 
-// TODO(partition-undo): journal the fstab write, the mount and the folder moves when the
-// step comes back (PARTITION_ENABLED).
-pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Result<()> {
-    if !PARTITION_ENABLED {
-        anyhow::bail!(PARTITION_DISABLED);
+/// The data partition step: the plan was decided (and shown) before the run started. Every
+/// change is journaled by `partition::apply`, and a failure rolls back what it did.
+pub fn setup_data_partition(
+    plan: &crate::partition::apply::Plan,
+    auto: bool,
+    o_start: i64,
+    o_step: i64,
+    o_total: i64,
+) -> Result<crate::partition::apply::Report> {
+    use crate::partition::apply::{self, Env};
+    let d = Dash::new(auto, o_start, o_step, o_total, "Setup Data Partition");
+    let n = std::cell::Cell::new(0);
+    let progress = |m: &str| {
+        n.set((n.get() + 1).min(9));
+        d.step("Partition", n.get(), 10, "Data partition", m);
+    };
+    let env = Env::new(&crate::partition::SysRunner, &progress);
+    let result = apply::apply(plan, &env);
+    apply::cleanup_probes();
+    let r = result?;
+    for note in &r.notes {
+        log("INFO", note);
     }
-    let c = ctx();
-    let d = Dash::new(auto, o_start, o_step, o_total, "Setup Universal Data Partition");
-    let s_total = 6;
-    let step = |n: i64, item: &str, msg: &str| d.step("Partition", n, s_total, item, msg);
-
-    step(0, "Initializing", "Verifying configuration...");
-    let mut uuid = DEFAULT_DATA_UUID.to_string();
-    if let Some(part) = output("blkid", &["-L", "Data"]).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-        && let Some(u) = output("blkid", &["-s", "UUID", "-o", "value", &part]).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-    {
-        uuid = u;
+    for (dir, why) in &r.kept {
+        log("WARN", &format!("~/{dir} kept: {why}"));
     }
-
-    step(1, "Mount Directory", &format!("Ensuring {MOUNT_POINT} exists..."));
-    fs::create_dir_all(MOUNT_POINT).with_context(|| format!("creating {MOUNT_POINT}"))?;
-    ctx::chown_path(Path::new(MOUNT_POINT), c.target_uid, c.target_gid);
-
-    step(2, "Fstab Entry", "Checking /etc/fstab configuration...");
-    let fstab = fs::read_to_string("/etc/fstab").unwrap_or_default();
-    match patch_fstab(&fstab, &uuid, c.target_uid, c.target_gid) {
-        None => log("INFO", &format!("Fstab entry already up to date for {MOUNT_POINT}.")),
-        Some(new) => {
-            let backup = format!("/etc/fstab.bak.{}", ctx::now_str("%Y%m%d_%H%M%S"));
-            fs::copy("/etc/fstab", &backup).context("backing up /etc/fstab")?;
-            ctx::write_atomic(Path::new("/etc/fstab"), new.as_bytes()).context("writing /etc/fstab")?;
-            log("INFO", &format!("Updated /etc/fstab entry for {MOUNT_POINT} (backup at {backup})."));
-        }
+    for (dir, why) in &r.failed {
+        log("ERROR", &format!("~/{dir} not moved: {why}"));
+        add_issue(format!("Could not move ~/{dir} to {} ({why}); the original was kept", r.mountpoint));
     }
-
-    step(3, "Mount Filesystem", "Verifying mount...");
-    ok_logged("systemctl", &["daemon-reload"]);
-    if !is_mounted(MOUNT_POINT) {
-        let _ = ok_logged("mount", &["-a"]) || ok_logged("mount", &[MOUNT_POINT]);
-    } else {
-        ok_logged("mount", &["-o", "remount", MOUNT_POINT]);
+    if r.writable_as_user == Some(false) {
+        add_issue(format!("{} is mounted but your user cannot write to it", r.mountpoint));
     }
-    if !is_mounted(MOUNT_POINT) {
-        // Migrating now would move the user's files onto the root filesystem underneath
-        // the mount point, where they get hidden as soon as the partition is mounted.
-        log("ERROR", &format!("Mount point {MOUNT_POINT} is not mounted. Skipping user directory migration."));
-        add_issue(format!("Data partition not mounted at {MOUNT_POINT}; user folders were not migrated"));
-        step(6, "Aborted", &format!("{MOUNT_POINT} not mounted; user directories left untouched."));
-        ui::sleep_secs(2.0);
-        return Ok(());
-    }
-    // ntfs3 mounts read-only (or refuses rw) when Windows was hibernated / Fast Startup is on
-    let probe = PathBuf::from(format!("{MOUNT_POINT}/.kast-write-test.{}", std::process::id()));
-    if fs::write(&probe, b"").is_err() {
-        log("ERROR", &format!("{MOUNT_POINT} is mounted but not writable (Windows Fast Startup/hibernation?). Skipping migration."));
-        add_issue(format!("{MOUNT_POINT} is read-only (disable Windows Fast Startup, then re-run step 2)"));
-        step(6, "Aborted", &format!("{MOUNT_POINT} is read-only; user directories left untouched."));
-        ui::sleep_secs(2.0);
-        return Ok(());
-    }
-    let _ = fs::remove_file(&probe);
-
-    step(4, "Migrate User Directories", "Linking Desktop, Documents, Downloads, etc.");
-    for (dir, dst) in migrate_user_dirs(Path::new(MOUNT_POINT), &c.target_home, &USER_DIRS, c.target_uid, c.target_gid, true, ctx::log_stdio)? {
-        log("ERROR", &format!("Copying {} to {dst} failed; leaving it in place.", c.target_home.join(&dir).display()));
-        add_issue(format!("Could not migrate ~/{dir} to {dst} (original kept)"));
-    }
-
-    step(5, "XDG User Dirs", &format!("Configuring user-dirs.dirs for {}...", c.target_user));
-    let xdg_pairs = [
-        ("DESKTOP", "Desktop"),
-        ("DOCUMENTS", "Documents"),
-        ("DOWNLOAD", "Downloads"),
-        ("MUSIC", "Music"),
-        ("PICTURES", "Pictures"),
-        ("VIDEOS", "Videos"),
-        ("PUBLICSHARE", "Public"),
-        ("TEMPLATES", "Templates"),
-    ];
-    if have("xdg-user-dirs-update") {
-        let mut args: Vec<String> = vec!["xdg-user-dirs-update".into()];
-        for (key, dir) in xdg_pairs {
-            args.extend(["--set".into(), key.into(), format!("{MOUNT_POINT}/{dir}")]);
-        }
-        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-        let _ = run_as_user(&argv).stdout(ctx::log_stdio()).stderr(ctx::log_stdio()).status();
-    }
-    let cfg = c.target_home.join(".config/user-dirs.dirs");
-    ctx::mkdir_user(cfg.parent().unwrap())?;
-    let body: String = xdg_pairs.iter().map(|(key, dir)| format!("XDG_{key}_DIR=\"{MOUNT_POINT}/{dir}\"\n")).collect();
-    fs::write(&cfg, body).with_context(|| format!("writing {}", cfg.display()))?;
-    ctx::chown_path(&cfg, c.target_uid, c.target_gid);
-
-    step(6, "Completed", "Data partition & directories configured successfully.");
+    d.render(10, 10, "Completed", &format!("{} mounted: {}", r.mountpoint, r.line), Some("✔"));
     ui::sleep_secs(1.0);
-    Ok(())
+    Ok(r)
 }
 
 /// What a home folder is now.
@@ -294,28 +199,6 @@ pub fn migrate_one(mount: &Path, home: &Path, dir: &str, uid: u32, gid: u32, for
     symlink(&target, &home_dir).with_context(|| format!("linking {}", home_dir.display()))?;
     ctx::lchown_path(&home_dir, uid, gid);
     Ok(Moved::Linked)
-}
-
-/// Move each home folder onto the partition (see `migrate_one`). Returns (folder,
-/// destination) for every folder whose copy failed; those are left as they were.
-pub fn migrate_user_dirs(
-    mount: &Path,
-    home: &Path,
-    dirs: &[&str],
-    uid: u32,
-    gid: u32,
-    foreign: bool,
-    cp_output: impl Fn() -> std::process::Stdio,
-) -> Result<Vec<(String, String)>> {
-    let mut failed = Vec::new();
-    for dir in dirs {
-        match migrate_one(mount, home, dir, uid, gid, foreign, &cp_output)? {
-            Moved::Failed => failed.push((dir.to_string(), mount.join(dir).display().to_string())),
-            Moved::Kept(why) => log("WARN", &why),
-            Moved::Linked | Moved::AlreadyLinked => {}
-        }
-    }
-    Ok(failed)
 }
 
 // --- State 3: kud3n's repository ----------------------------------------------------
@@ -853,12 +736,22 @@ pub struct AutoPlan {
     pub upload: Option<crate::drive::UploadOpts>,
     /// Take a snapshot before the upgrade (when the machine has a tool for it)
     pub snapshot: bool,
+    /// The data partition step's decisions
+    pub partition: Option<Box<crate::partition::apply::Plan>>,
 }
 
 impl AutoPlan {
     /// `kast auto`: upgrade, repo, packages, services.
     pub fn standard() -> Self {
-        AutoPlan { steps: Step::ALL.into_iter().filter(|s| s.standard()).collect(), packages: None, import: None, export: None, upload: None, snapshot: false }
+        AutoPlan {
+            steps: Step::ALL.into_iter().filter(|s| s.standard()).collect(),
+            packages: None,
+            import: None,
+            export: None,
+            upload: None,
+            snapshot: false,
+            partition: None,
+        }
     }
 
     pub fn has(&self, s: Step) -> bool {
@@ -879,6 +772,7 @@ pub struct PlanOutcome {
     pub export: Option<String>,
     /// How to roll the upgrade back (when a snapshot was taken)
     pub rollback: Option<String>,
+    pub partition: Option<String>,
 }
 
 /// Run the plan's steps in order. A failing step records an issue and the run goes on,
@@ -903,7 +797,14 @@ fn run_steps(plan: &AutoPlan, list: Option<&PkgList>, out: &mut PlanOutcome) -> 
         let o_step = i as i64 + 1;
         journal::set_step(step.key());
         match step {
-            Step::Partition => setup_data_partition(true, o_start, o_step, o_total)?,
+            Step::Partition => match &plan.partition {
+                Some(p) => match setup_data_partition(p, true, o_start, o_step, o_total) {
+                    Ok(r) => out.partition = Some(format!("{} mounted ({})", r.mountpoint, p.part.title())),
+                    // Rolled back: the machine is as it was, and the rest of the run can go on
+                    Err(e) => add_issue(format!("Data partition step failed and was rolled back: {e:#}")),
+                },
+                None => add_issue("Data partition step skipped: no partition was chosen"),
+            },
             Step::Upgrade => out.rollback = crate::snapshot::rollback_hint(&system_upgrade(true, o_start, o_step, o_total, plan.snapshot)?),
             Step::Repo => add_kud3n_repo(true, o_start, o_step, o_total)?,
             Step::Packages => match list {
@@ -981,6 +882,9 @@ pub fn plan_summary(plan: &AutoPlan, out: &PlanOutcome, list: Option<&PkgList>) 
     s.import = out.import.clone();
     s.export = out.export.clone();
     s.rollback = out.rollback.clone();
+    if plan.has(Step::Partition) {
+        s.partition = out.partition.clone();
+    }
     s
 }
 
@@ -1012,16 +916,11 @@ pub fn collect_summary(o_start: i64, list: Option<&PkgList>) -> Summary {
     }
 }
 
-pub const PARTITION_HINT: &str = "not set up (optional: menu option 2 or `sudo kast partition`)";
-
-/// The data partition step is switched off for now; it will come back. This one constant
-/// brings it back everywhere (menu, step list, `kast partition`, summary).
-pub const PARTITION_ENABLED: bool = false;
-pub const PARTITION_DISABLED: &str = "Data partition setup is disabled for now; it will return in a future version";
+pub const PARTITION_HINT: &str = "not set up (menu option 2 or `sudo kast partition`)";
 
 /// The summary's data partition line when it isn't mounted.
 pub fn partition_hint() -> &'static str {
-    if PARTITION_ENABLED { PARTITION_HINT } else { "disabled" }
+    PARTITION_HINT
 }
 pub const HOWDY_RESTORE_HINT: &str = "(or restore a saved face model with menu option 6 / `sudo kast import`)";
 
@@ -1073,22 +972,6 @@ fn print_summary(s: &Summary) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn fstab_appends_when_missing() {
-        let out = patch_fstab("UUID=x / ext4 defaults 0 1", "ABC", 1000, 1000).unwrap();
-        assert_eq!(out, format!("UUID=x / ext4 defaults 0 1\n{}\n", fstab_line("ABC", 1000, 1000)));
-    }
-
-    #[test]
-    fn fstab_replaces_stale_entry_and_keeps_good_one() {
-        let stale = "UUID=x / ext4 defaults 0 1\nUUID=OLD /media/data ntfs3 defaults 0 0\n";
-        let out = patch_fstab(stale, "ABC", 1000, 1000).unwrap();
-        assert_eq!(out, format!("UUID=x / ext4 defaults 0 1\n{}\n", fstab_line("ABC", 1000, 1000)));
-        assert_eq!(patch_fstab(&out, "ABC", 1000, 1000), None);
-        // /media/database must not be mistaken for the mount point
-        assert!(patch_fstab("UUID=y /media/database ext4 d 0 0\n", "ABC", 1000, 1000).unwrap().contains("/media/database"));
-    }
 
     #[test]
     fn pacman_conf_block() {
@@ -1154,7 +1037,12 @@ mod tests {
 
         let uid = nix::unistd::getuid().as_raw();
         let gid = nix::unistd::getgid().as_raw();
-        let failed = migrate_user_dirs(&mount, &home, &["Documents", "Music", "Videos", "Projects"], uid, gid, true, std::process::Stdio::null).unwrap();
+        let mut failed = Vec::new();
+        for dir in ["Documents", "Music", "Videos", "Projects"] {
+            if migrate_one(&mount, &home, dir, uid, gid, true, std::process::Stdio::null).unwrap() == Moved::Failed {
+                failed.push((dir.to_string(), mount.join(dir).display().to_string()));
+            }
+        }
         fs::set_permissions(mount.join("Videos"), fs::Permissions::from_mode(0o755)).unwrap();
 
         // Real folder: copied, removed, symlinked

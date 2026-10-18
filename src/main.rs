@@ -55,9 +55,14 @@ enum Cmd {
     /// Run the full automatic setup: upgrade, repo, packages, services (no data partition or import)
     #[command(visible_alias = "automatic")]
     Auto(AutoArgs),
-    /// Set up the universal data partition (/media/data & user dir symlinks): disabled for now
-    #[command(visible_alias = "data", hide = !setup::PARTITION_ENABLED)]
-    Partition,
+    /// Mount a partition through /etc/fstab (NTFS, exFAT, FAT, ext4, btrfs, XFS); reversible with undo
+    #[command(
+        visible_alias = "data",
+        after_help = "Without arguments: the interactive screen. `--list` shows the partitions and why a row can't be used;\n\
+                      `--device … --dry-run` shows the exact fstab line without changing anything.\n\
+                      Undo: `sudo kast undo --last --step partition`, or Undo changes in the menu."
+    )]
+    Partition(partition::cli::PartitionArgs),
     /// Add kud3n's repository ([archrepo] in /etc/pacman.conf)
     #[command(visible_alias = "archrepo")]
     Repo,
@@ -307,7 +312,7 @@ struct UndoCli {
     #[arg(long, conflicts_with_all = ["run", "prune"])]
     last: bool,
     /// Only this step's changes
-    #[arg(long, value_parser = ["packages", "repo", "services", "import", "export", "upgrade", "uninstall"])]
+    #[arg(long, value_parser = ["partition", "packages", "repo", "services", "import", "export", "upgrade", "uninstall"])]
     step: Option<String>,
     /// Show what would be undone, change nothing
     #[arg(long)]
@@ -498,6 +503,7 @@ impl ImportArgs {
 /// the menu, so sudo asks for the password once, before the full-screen UI starts.
 fn interactive_vault(cmd: &Option<Cmd>) -> bool {
     match cmd {
+        Some(Cmd::Partition(a)) => a.is_empty() && interactive_terminal(),
         Some(Cmd::Import(a)) => a.is_empty() && interactive_terminal(),
         Some(Cmd::Export(a)) => a.is_empty() && interactive_terminal(),
         _ => false,
@@ -507,7 +513,7 @@ fn interactive_vault(cmd: &Option<Cmd>) -> bool {
 fn needs_root(cmd: &Option<Cmd>) -> bool {
     match cmd {
         Some(Cmd::Packages(a)) => !a.list,
-        Some(Cmd::Partition) => setup::PARTITION_ENABLED,
+        Some(Cmd::Partition(a)) => a.needs_root(),
         // The journal is root's: undo and uninstall run through sudo, listing included
         _ => matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Repo | Cmd::Services | Cmd::Undo(_) | Cmd::Uninstall { .. })) || interactive_vault(cmd),
     }
@@ -559,7 +565,8 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             }
             setup::run_automatic(&announce_list(&a.source.or(top))?, snap)
         }
-        Some(Cmd::Partition) => setup::setup_data_partition(false, 0, 1, 1),
+        Some(Cmd::Partition(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Partition, top.known()?),
+        Some(Cmd::Partition(a)) => partition::cli::run(a),
         Some(Cmd::Repo) => journal::recorded(&["repo"], false, || setup::add_kud3n_repo(false, 0, 1, 1)),
         Some(Cmd::Packages(a)) if a.list => {
             // A fallback is a valid answer: it's shown with its reason, and the exit status is 0

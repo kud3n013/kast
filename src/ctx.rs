@@ -541,6 +541,7 @@ pub fn cleanup_on_exit() {
 pub fn cleanup_temp_state() {
     cleanup_vault_staging();
     revoke_yay_sudo();
+    crate::partition::apply::cleanup_probes();
 }
 
 /// Error already shown to the user; callers only need the failure status.
