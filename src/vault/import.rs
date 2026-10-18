@@ -470,7 +470,6 @@ fn restore_howdy(staging: &Path, rollback: &Path, manifest: &Value, o: &ImportOp
         howdy_user = c.target_user.clone();
     }
     let dest = Path::new(HOWDY_MODELS_DIR);
-    let src_s = models_src.to_string_lossy().into_owned();
 
     if o.safety_backup && dest.is_dir() {
         let snap = rollback.join("howdy/models");
@@ -484,14 +483,23 @@ fn restore_howdy(staging: &Path, rollback: &Path, manifest: &Value, o: &ImportOp
             return Err(reported());
         }
     }
-    sh_priv(r#"cp -p "$1"/*.dat "$2"/"#, &[&src_s, HOWDY_MODELS_DIR]);
-    // A model saved under another user name is installed for the current target user
-    let renamed = models_src.join(format!("{howdy_user}.dat"));
+    // Only this user's model goes in, named for this account: whatever name the archive
+    // used would leave a model for a user that doesn't exist here
     let own = howdy_model_path(&c.target_user);
-    if renamed.is_file() && (!c.is_root || !own.is_file()) {
-        ok_priv("cp", &["-p", &renamed.to_string_lossy(), &own.to_string_lossy()]);
+    let mut dats: Vec<PathBuf> = fs::read_dir(&models_src)?.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "dat")).collect();
+    dats.sort();
+    let model = dats.iter().find(|p| p.file_stem().is_some_and(|s| *s == *howdy_user.as_str())).or(if dats.len() == 1 { dats.first() } else { None });
+    let Some(model) = model else {
+        log_warn(&format!("No face model for '{howdy_user}' in the archive; nothing installed."));
+        return Ok(());
+    };
+    if !ok_priv("cp", &["-p", &model.to_string_lossy(), &own.to_string_lossy()]) {
+        log_error(&format!("Failed to install the face model at {}", own.display()));
+        return Err(reported());
     }
-    sh_priv(r#"chown root:root "$1"/*.dat; chmod 600 "$1"/*.dat"#, &[HOWDY_MODELS_DIR]);
+    let own_s = own.to_string_lossy().into_owned();
+    ok_priv("chown", &["root:root", &own_s]);
+    ok_priv("chmod", &["600", &own_s]);
     log_success("Howdy face models restored with permissions 0600 (root:root).");
     howdy_list();
     Ok(())
