@@ -196,7 +196,7 @@ pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64)
     let _ = fs::remove_file(&probe);
 
     step(4, "Migrate User Directories", "Linking Desktop, Documents, Downloads, etc.");
-    for (dir, dst) in migrate_user_dirs(Path::new(MOUNT_POINT), &c.target_home, &USER_DIRS, c.target_uid, c.target_gid, ctx::log_stdio)? {
+    for (dir, dst) in migrate_user_dirs(Path::new(MOUNT_POINT), &c.target_home, &USER_DIRS, c.target_uid, c.target_gid, true, ctx::log_stdio)? {
         log("ERROR", &format!("Copying {} to {dst} failed; leaving it in place.", c.target_home.join(&dir).display()));
         add_issue(format!("Could not migrate ~/{dir} to {dst} (original kept)"));
     }
@@ -231,43 +231,89 @@ pub fn setup_data_partition(auto: bool, o_start: i64, o_step: i64, o_total: i64)
     Ok(())
 }
 
-/// Move each home folder onto the data partition and leave a symlink in its place.
-/// Returns (folder, destination) for every folder whose copy failed; those are left as-is.
+/// What a home folder is now.
+#[derive(Debug, Clone, PartialEq)]
+pub enum HomeState {
+    Dir,
+    File,
+    /// A symlink, to here
+    Link(PathBuf),
+    Absent,
+}
+
+pub fn home_state(p: &Path) -> HomeState {
+    match p.symlink_metadata() {
+        Err(_) => HomeState::Absent,
+        Ok(m) if m.file_type().is_symlink() => HomeState::Link(fs::read_link(p).unwrap_or_default()),
+        Ok(m) if m.is_dir() => HomeState::Dir,
+        Ok(_) => HomeState::File,
+    }
+}
+
+/// How moving one home folder went.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Moved {
+    /// Copied (if it was there) and linked: the home path is now a symlink kast made
+    Linked,
+    /// Already a link to the right place: nothing to do
+    AlreadyLinked,
+    /// Left alone, and why
+    Kept(String),
+    /// The copy failed; the original is untouched
+    Failed,
+}
+
+/// Move one home folder onto the data partition and leave a symlink in its place. The
+/// original goes only after a fully successful copy, and a folder that is already a symlink
+/// to somewhere else is never touched. `foreign`: the partition can't hold Unix owners, so
+/// only timestamps are preserved.
+pub fn migrate_one(mount: &Path, home: &Path, dir: &str, uid: u32, gid: u32, foreign: bool, cp_output: impl Fn() -> std::process::Stdio) -> Result<Moved> {
+    let target = mount.join(dir);
+    let home_dir = home.join(dir);
+    let state = home_state(&home_dir);
+    match &state {
+        HomeState::Link(t) if *t == target => return Ok(Moved::AlreadyLinked),
+        HomeState::Link(t) => return Ok(Moved::Kept(format!("~/{dir} is already a link to {}", t.display()))),
+        HomeState::File => return Ok(Moved::Kept(format!("~/{dir} is a file, not a folder"))),
+        HomeState::Dir | HomeState::Absent => {}
+    }
+    let made = !target.exists();
+    fs::create_dir_all(&target).with_context(|| format!("creating {}", target.display()))?;
+    if made {
+        ctx::chown_path(&target, uid, gid);
+    }
+    if state == HomeState::Dir {
+        let preserve = if foreign { "--preserve=timestamps" } else { "--preserve=mode,ownership,timestamps,links" };
+        let mut cp = Command::new("cp");
+        cp.args(["-RT", preserve]).arg(&home_dir).arg(&target).stdin(std::process::Stdio::null()).stdout(cp_output()).stderr(cp_output());
+        if !crate::report::run_tracked(&mut cp).is_ok_and(|s| s.success()) {
+            return Ok(Moved::Failed);
+        }
+        fs::remove_dir_all(&home_dir).with_context(|| format!("removing {}", home_dir.display()))?;
+    }
+    symlink(&target, &home_dir).with_context(|| format!("linking {}", home_dir.display()))?;
+    ctx::lchown_path(&home_dir, uid, gid);
+    Ok(Moved::Linked)
+}
+
+/// Move each home folder onto the partition (see `migrate_one`). Returns (folder,
+/// destination) for every folder whose copy failed; those are left as they were.
 pub fn migrate_user_dirs(
     mount: &Path,
     home: &Path,
     dirs: &[&str],
     uid: u32,
     gid: u32,
+    foreign: bool,
     cp_output: impl Fn() -> std::process::Stdio,
 ) -> Result<Vec<(String, String)>> {
-    let owner = format!("{uid}:{gid}");
     let mut failed = Vec::new();
     for dir in dirs {
-        let target = mount.join(dir);
-        let home_dir = home.join(dir);
-        fs::create_dir_all(&target).with_context(|| format!("creating {}", target.display()))?;
-        ctx::chown_r(&target, &owner);
-
-        let meta = home_dir.symlink_metadata();
-        let is_link = meta.as_ref().is_ok_and(|m| m.file_type().is_symlink());
-        if meta.is_ok() && !is_link {
-            // NTFS can't hold Unix owners/modes, so only preserve timestamps; never delete
-            // the original unless the copy fully succeeded.
-            let mut cp = Command::new("cp");
-            cp.args(["-RT", "--preserve=timestamps"]).arg(&home_dir).arg(&target).stdin(std::process::Stdio::null()).stdout(cp_output()).stderr(cp_output());
-            let copied = crate::report::run_tracked(&mut cp).is_ok_and(|s| s.success());
-            if !copied {
-                failed.push((dir.to_string(), target.display().to_string()));
-                continue;
-            }
-            if meta.as_ref().is_ok_and(|m| m.is_dir()) { fs::remove_dir_all(&home_dir) } else { fs::remove_file(&home_dir) }
-                .with_context(|| format!("removing {}", home_dir.display()))?;
-        } else if is_link {
-            fs::remove_file(&home_dir).with_context(|| format!("replacing {}", home_dir.display()))?;
+        match migrate_one(mount, home, dir, uid, gid, foreign, &cp_output)? {
+            Moved::Failed => failed.push((dir.to_string(), mount.join(dir).display().to_string())),
+            Moved::Kept(why) => log("WARN", &why),
+            Moved::Linked | Moved::AlreadyLinked => {}
         }
-        symlink(&target, &home_dir).with_context(|| format!("linking {}", home_dir.display()))?;
-        ctx::lchown_path(&home_dir, uid, gid);
     }
     Ok(failed)
 }
@@ -1108,14 +1154,15 @@ mod tests {
 
         let uid = nix::unistd::getuid().as_raw();
         let gid = nix::unistd::getgid().as_raw();
-        let failed = migrate_user_dirs(&mount, &home, &["Documents", "Music", "Videos", "Projects"], uid, gid, std::process::Stdio::null).unwrap();
+        let failed = migrate_user_dirs(&mount, &home, &["Documents", "Music", "Videos", "Projects"], uid, gid, true, std::process::Stdio::null).unwrap();
         fs::set_permissions(mount.join("Videos"), fs::Permissions::from_mode(0o755)).unwrap();
 
         // Real folder: copied, removed, symlinked
         assert_eq!(fs::read_link(home.join("Documents")).unwrap(), mount.join("Documents"));
         assert_eq!(fs::read_to_string(mount.join("Documents/sub/a.txt")).unwrap(), "doc");
-        // Existing symlink: repointed
-        assert_eq!(fs::read_link(home.join("Music")).unwrap(), mount.join("Music"));
+        // A symlink to somewhere else is not touched
+        assert_eq!(fs::read_link(home.join("Music")).unwrap(), t.path().join("elsewhere"));
+        assert!(!mount.join("Music").exists());
         // Missing folder: just linked
         assert_eq!(fs::read_link(home.join("Projects")).unwrap(), mount.join("Projects"));
         // Failed copy: original kept, no symlink

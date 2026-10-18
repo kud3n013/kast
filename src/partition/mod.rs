@@ -7,6 +7,7 @@
 //! - `apply`: test mount, install, mount, verify, roll back; the home folder moves
 //! - `cli`: `kast partition`
 
+pub mod apply;
 pub mod detect;
 pub mod fstab;
 

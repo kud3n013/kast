@@ -339,8 +339,14 @@ impl Journal {
 
     /// A finished change in one line (nothing to write ahead: e.g. a file kast created).
     pub fn note(&self, kind: &str, data: Value) -> io::Result<()> {
+        self.note_seq(kind, data).map(|_| ())
+    }
+
+    /// `note`, and the number it was given.
+    pub fn note_seq(&self, kind: &str, data: Value) -> io::Result<u64> {
         let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
-        self.append(kind, "done", seq, data)
+        self.append(kind, "done", seq, data)?;
+        Ok(seq)
     }
 
     /// Keep a copy of `data` under its hash; identical content is stored once.
@@ -445,8 +451,13 @@ fn before_state(j: &Journal, path: &Path) -> io::Result<Value> {
 /// Write `data` to `path` atomically and record it: the previous content (or that there
 /// was none) before, the new hash after. `mode` applies to a new file.
 pub fn write_file(path: &Path, data: &[u8], mode: Option<u32>) -> io::Result<()> {
+    write_file_tracked(path, data, mode).map(|_| ())
+}
+
+/// `write_file`, and the number of the journal entry it wrote (None: not recording).
+pub fn write_file_tracked(path: &Path, data: &[u8], mode: Option<u32>) -> io::Result<Option<u64>> {
     let Some(j) = current() else {
-        return write_plain(path, data, mode);
+        return write_plain(path, data, mode).map(|_| None);
     };
     let before = before_state(&j, path)?;
     let kind = if before["absent"] == true { "file_create" } else { "file_write" };
@@ -456,7 +467,33 @@ pub fn write_file(path: &Path, data: &[u8], mode: Option<u32>) -> io::Result<()>
     if let Err(e) = j.finish(kind, seq, result.is_ok(), json!({ "after_sha256": after })) {
         warn(e);
     }
-    result
+    result.map(|_| Some(seq))
+}
+
+/// Write a change ahead (`finish_change` gives its outcome). None when not recording.
+pub fn start_change(kind: &str, data: Value) -> Option<u64> {
+    let j = current()?;
+    j.start(kind, data).map_err(warn).ok()
+}
+
+pub fn finish_change(kind: &str, seq: Option<u64>, ok: bool, data: Value) {
+    if let (Some(j), Some(seq)) = (current(), seq) {
+        j.finish(kind, seq, ok, data).unwrap_or_else(warn);
+    }
+}
+
+/// A change in one line (it already happened).
+pub fn note_change(kind: &str, data: Value) -> Option<u64> {
+    let j = current()?;
+    j.note_seq(kind, data).map_err(warn).ok()
+}
+
+/// A change of this run that was taken back right away (a failed step rolled it back): it
+/// no longer shows up as something to undo.
+pub fn revert_change(seq: Option<u64>, note: &str) {
+    let (Some(j), Some(seq)) = (current(), seq) else { return };
+    let user = crate::ctx::ctx().target_user.clone();
+    mark_undone(&state_dir(), &j.run, seq, &user, note).unwrap_or_else(warn);
 }
 
 fn write_plain(path: &Path, data: &[u8], mode: Option<u32>) -> io::Result<()> {
