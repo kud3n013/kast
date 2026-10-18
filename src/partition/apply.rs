@@ -169,7 +169,7 @@ pub fn unit_name(rn: &dyn Runner, path: &str, suffix: &str) -> String {
     format!("{}.{suffix}", if name.is_empty() { "-".into() } else { name })
 }
 
-fn avail(path: &Path) -> Option<u64> {
+pub fn avail(path: &Path) -> Option<u64> {
     let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
     let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: `c` is a valid NUL-terminated path and `s` a zeroed statvfs the call fills in
@@ -782,45 +782,8 @@ pub fn describe(plan: &Plan) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::partition::Out;
+    use crate::partition::fake::Fake;
     use crate::partition::fstab::Preset;
-    use std::cell::RefCell;
-
-    /// Runs nothing: answers from rules (the first whose text is in "prog args" wins) and
-    /// remembers every call. Unlisted commands succeed with no output.
-    struct Fake {
-        calls: RefCell<Vec<String>>,
-        rules: Vec<(String, Out)>,
-    }
-
-    impl Fake {
-        fn new(rules: Vec<(&str, Out)>) -> Fake {
-            Fake { calls: Default::default(), rules: rules.into_iter().map(|(k, v)| (k.to_string(), v)).collect() }
-        }
-
-        fn called(&self, what: &str) -> bool {
-            self.calls.borrow().iter().any(|c| c.contains(what))
-        }
-
-        fn count(&self, what: &str) -> usize {
-            self.calls.borrow().iter().filter(|c| c.contains(what)).count()
-        }
-
-        fn index(&self, what: &str) -> usize {
-            self.calls.borrow().iter().position(|c| c.contains(what)).unwrap_or_else(|| panic!("{what} was never called: {:?}", self.calls.borrow()))
-        }
-    }
-
-    impl Runner for Fake {
-        fn run(&self, prog: &str, args: &[&str]) -> Out {
-            let line = format!("{prog} {}", args.join(" "));
-            self.calls.borrow_mut().push(line.clone());
-            self.rules.iter().find(|(k, _)| line.contains(k.as_str())).map(|(_, o)| o.clone()).unwrap_or_else(|| Out::success(""))
-        }
-
-        fn run_as_user(&self, args: &[&str]) -> Out {
-            self.run("as-user", args)
-        }
-    }
 
     const FSTAB: &str = "UUID=D0A3-F918 /boot vfat defaults 0 2\nUUID=2720fb5d-cbdd /  btrfs subvol=/@ 0 0";
     const UUID: &str = "6C62ADEA62ADB96A";

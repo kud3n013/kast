@@ -50,6 +50,37 @@ pub enum Act {
         fingerprint: Option<String>,
     },
     DeleteFile(PathBuf),
+    /// Copy a home folder back from the data partition and drop the link kast made
+    MoveBack {
+        home: PathBuf,
+        from: PathBuf,
+        uid: u32,
+        gid: u32,
+        foreign: bool,
+    },
+    /// Give the partition's top folder its previous owner and mode back
+    ChownBack {
+        path: PathBuf,
+        uid: u32,
+        gid: u32,
+        mode: u32,
+    },
+    /// Stop the mount (and automount) units and unmount; never lazy or forced
+    Unmount {
+        mountpoint: String,
+        automount: bool,
+    },
+    /// Take kast's entry out of /etc/fstab: the saved copy when the file is unchanged since
+    /// (`snapshot` = its hash), otherwise only kast's line and comment
+    FstabRevert {
+        path: PathBuf,
+        line: String,
+        comment: String,
+        replaced: Vec<String>,
+        snapshot: Option<String>,
+    },
+    /// Remove the folders kast made for the mount point (only while empty)
+    RemoveDirs(Vec<PathBuf>),
     /// Move these Proton Drive paths to Drive's trash (as the user)
     TrashRemote(Vec<String>),
     /// Turn the scheduled backup off, putting back the units that were there before
@@ -108,6 +139,20 @@ pub struct View {
     pub snapshots: HashMap<PathBuf, Option<String>>,
     /// Runs whose file copies are gone (pruned): their files can't be put back
     pub pruned: HashSet<String>,
+    /// Home folders: where each is a symlink to now (None: it isn't one)
+    pub links: HashMap<PathBuf, Option<PathBuf>>,
+    /// Mount points with something mounted on them now (an idle automount counts)
+    pub mounted: HashMap<String, bool>,
+    /// Folders kast made: None = gone, Some(true) = empty, Some(false) = has content
+    pub dirs: HashMap<PathBuf, Option<bool>>,
+}
+
+/// The write of /etc/fstab that went with a `fstab_entry`: the next one on the same path.
+fn fstab_sibling<'a>(run: &'a Run, entry: &Change) -> Option<&'a Change> {
+    run.changes
+        .iter()
+        .filter(|x| matches!(x.kind.as_str(), "file_write" | "file_create") && x.data["path"] == entry.data["path"] && x.seq > entry.seq)
+        .min_by_key(|x| x.seq)
 }
 
 fn s(v: &Value) -> String {
@@ -126,6 +171,8 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
     // Packages first: which can go, which must stay
     let candidates: HashSet<String> =
         live.iter().filter(|c| c.kind == "pkg_install" && !c.newer).map(|c| s(&c.data["name"])).filter(|n| view.installed.contains_key(n)).collect();
+    // The write of /etc/fstab belongs to its `fstab_entry`: one item reverts both
+    let absorbed: HashSet<u64> = live.iter().filter(|c| c.kind == "fstab_entry").filter_map(|c| fstab_sibling(run, c)).map(|f| f.seq).collect();
     for c in live.iter().rev() {
         if c.newer {
             rest.push(Item::not_undoable(c, id, format!("{} (from a newer kast)", c.kind), "made by a newer kast: update kast to undo it"));
@@ -162,6 +209,96 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
                 let mut it = Item::new(c, id, Act::Reinstall { name: name.clone(), version: version.clone() }, format!("Reinstall {name} {version}"));
                 it.default_on = false;
                 reinstalls.push(it);
+            }
+            "file_write" | "file_create" if absorbed.contains(&c.seq) => continue,
+            "fstab_entry" => {
+                let path = PathBuf::from(s(&c.data["path"]));
+                let Some(f) = fstab_sibling(run, c) else { continue };
+                let before = f.data["before"]["sha256"].as_str().map(String::from);
+                let after = f.data["after_sha256"].as_str().map(String::from);
+                let now = view.files.get(&path).cloned().flatten();
+                if now == before {
+                    continue; // already as it was (or the write never happened)
+                }
+                let line = s(&c.data["line"]);
+                let replaced: Vec<String> = c.data["replaced"].as_array().map(|a| a.iter().map(s).collect()).unwrap_or_default();
+                let mut label = format!("Remove from {}: {line}", path.display());
+                for r in &replaced {
+                    label += &format!(" (and put back: {r})");
+                }
+                if now.is_none() {
+                    let mut it = Item::not_undoable(c, id, label, "/etc/fstab is gone");
+                    it.seqs.push(f.seq);
+                    rest.push(it);
+                    continue;
+                }
+                let edited = now != after && f.status != Status::Incomplete;
+                let snapshot = (!edited && !view.pruned.contains(id)).then(|| before.clone()).flatten();
+                let act = Act::FstabRevert { path, line, comment: s(&c.data["comment"]), replaced, snapshot };
+                let mut it = Item::new(c, id, act, label);
+                it.seqs.push(f.seq);
+                it.warning = if edited { Some("changed since kast wrote it: only kast's line is taken out, the rest stays".into()) } else { incomplete };
+                rest.push(it);
+            }
+            "mount" => {
+                let mp = s(&c.data["mountpoint"]);
+                if c.status == Status::Failed || view.mounted.get(&mp) != Some(&true) {
+                    continue;
+                }
+                rest.push(Item::new(c, id, Act::Unmount { mountpoint: mp.clone(), automount: c.data["mode"] == "automount" }, format!("Unmount {mp}")));
+            }
+            "chown_root" => {
+                if c.status == Status::Failed {
+                    continue;
+                }
+                let b = &c.data["before"];
+                let path = PathBuf::from(s(&c.data["path"]));
+                let (uid, gid, mode) =
+                    (b["uid"].as_u64().unwrap_or(0) as u32, b["gid"].as_u64().unwrap_or(0) as u32, b["mode"].as_u64().unwrap_or(0o755) as u32);
+                rest.push(Item::new(
+                    c,
+                    id,
+                    Act::ChownBack { path: path.clone(), uid, gid, mode },
+                    format!("Give {} back to {uid}:{gid} (mode {mode:04o})", path.display()),
+                ));
+            }
+            "folder_move" => {
+                if c.status == Status::Failed {
+                    continue;
+                }
+                let home = PathBuf::from(s(&c.data["home"]));
+                let new_path = PathBuf::from(s(&c.data["new_path"]));
+                let name = s(&c.data["name"]);
+                let label = format!("Copy {} back from {} ({})", home.display(), new_path.display(), human(c.data["size"].as_u64().unwrap_or(0)));
+                let link = view.links.get(&home).cloned().flatten();
+                if link.as_deref() == Some(new_path.as_path()) {
+                    let act = Act::MoveBack {
+                        home,
+                        from: new_path,
+                        uid: c.data["uid"].as_u64().unwrap_or(0) as u32,
+                        gid: c.data["gid"].as_u64().unwrap_or(0) as u32,
+                        foreign: c.data["foreign"] == true,
+                    };
+                    rest.push(Item::new(c, id, act, label));
+                } else if c.status == Status::Done && c.data["symlink_created"] == true {
+                    rest.push(Item::not_undoable(c, id, label, &format!("~/{name} is no longer the link kast made; left alone")));
+                }
+            }
+            "dir_create" => {
+                if c.status == Status::Failed {
+                    continue;
+                }
+                let dirs: Vec<PathBuf> = c.data["created"].as_array().map(|a| a.iter().map(|d| PathBuf::from(s(d))).collect()).unwrap_or_default();
+                let state = |d: &PathBuf| view.dirs.get(d).cloned().flatten();
+                if dirs.iter().all(|d| state(d).is_none()) {
+                    continue;
+                }
+                let label = format!("Remove the mount point {} (kast created it)", s(&c.data["path"]));
+                if dirs.iter().any(|d| state(d) == Some(false)) {
+                    rest.push(Item::not_undoable(c, id, label, "kept: it is not empty"));
+                } else {
+                    rest.push(Item::new(c, id, Act::RemoveDirs(dirs), label));
+                }
             }
             "file_write" | "file_create" => {
                 let path = PathBuf::from(s(&c.data["path"]));
@@ -276,6 +413,22 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
             _ => rest.push(Item::not_undoable(c, id, c.kind.clone(), "unknown change")),
         }
     }
+    // user-dirs.dirs goes back once the folders are back; unmounting with folders still
+    // linked to the partition leaves them dangling
+    let moves = |i: &Item| matches!(i.act, Act::MoveBack { .. }) || (!i.undoable && i.label.starts_with("Copy "));
+    if let (Some(ui), Some(last)) =
+        (rest.iter().position(|i| matches!(&i.act, Act::RestoreFile { path, .. } if path.ends_with(".config/user-dirs.dirs"))), rest.iter().rposition(moves))
+        && ui < last
+    {
+        let it = rest.remove(ui);
+        rest.insert(last, it);
+    }
+    let stuck: Vec<String> = rest.iter().filter(|i| !i.undoable && i.label.starts_with("Copy ")).map(|i| i.label.clone()).collect();
+    if !stuck.is_empty() {
+        for i in rest.iter_mut().filter(|i| matches!(i.act, Act::Unmount { .. })) {
+            i.warning = Some("some home folders still link to the partition and will point at nothing".into());
+        }
+    }
     // Warn when [archrepo] goes while packages from it stay
     if repo_touched {
         let removing: HashSet<String> = removals.iter().filter_map(|i| if let Act::Remove(n) = &i.act { Some(n.clone()) } else { None }).collect();
@@ -351,6 +504,30 @@ pub fn gather(runs: &[&Run]) -> View {
                 let p = PathBuf::from(s(&c.data["path"]));
                 let h = journal::sha256_file(&p);
                 v.files.insert(p, h);
+            }
+            "fstab_entry" => {
+                let p = PathBuf::from(s(&c.data["path"]));
+                let h = journal::sha256_file(&p);
+                v.files.insert(p, h);
+            }
+            "mount" => {
+                let mp = s(&c.data["mountpoint"]);
+                let on = crate::partition::undo::anything_mounted(&crate::partition::SysRunner, &mp);
+                v.mounted.insert(mp, on);
+            }
+            "folder_move" => {
+                let home = PathBuf::from(s(&c.data["home"]));
+                let link = fs::read_link(&home).ok();
+                v.links.insert(home, link);
+            }
+            "dir_create" => {
+                for d in c.data["created"].as_array().into_iter().flatten().map(|d| PathBuf::from(s(d))) {
+                    let state = match fs::read_dir(&d) {
+                        Ok(mut it) => Some(it.next().is_none()),
+                        Err(_) => None,
+                    };
+                    v.dirs.insert(d, state);
+                }
             }
             "import" => {
                 if let Some(snap) = c.data["snapshot"].as_str() {
@@ -454,6 +631,8 @@ pub fn module_dirs() -> Vec<PathBuf> {
 pub struct Outcome {
     pub done: Vec<String>,
     pub failed: Vec<String>,
+    /// Things to tell the user (e.g. "the copy on the partition can be removed by hand")
+    pub notes: Vec<String>,
 }
 
 fn ok_cmd(prog: &str, args: &[&str]) -> bool {
@@ -479,7 +658,18 @@ pub fn without_repo_block(conf: &str) -> String {
 /// Run the chosen items (in plan order). PAM files are checked after they're restored; if
 /// the check fails they go back to how they were before the undo and the undo stops.
 pub fn execute(items: &[Item], dir: &Path, user: &str, report: &mut dyn FnMut(usize, &str)) -> Result<Outcome> {
+    execute_with(items, dir, user, &crate::partition::SysRunner, report)
+}
+
+/// `execute`, with the runner for mount, umount, findmnt and systemctl.
+pub fn execute_with(items: &[Item], dir: &Path, user: &str, rn: &dyn crate::partition::Runner, report: &mut dyn FnMut(usize, &str)) -> Result<Outcome> {
     let mut out = Outcome::default();
+    // A busy partition stops the undo before anything is touched
+    for it in items {
+        if let Act::Unmount { mountpoint, .. } = &it.act {
+            crate::partition::undo::check_not_busy(rn, mountpoint)?;
+        }
+    }
     let mark = |it: &Item| {
         for s in &it.seqs {
             let _ = journal::mark_undone(dir, &it.run, *s, user, &it.label);
@@ -542,6 +732,31 @@ pub fn execute(items: &[Item], dir: &Path, user: &str, report: &mut dyn FnMut(us
             }
             Act::RestoreImport { snapshot, apps, fingerprint } => crate::vault::import::undo_restore(snapshot, apps, fingerprint.as_deref()),
             Act::DeleteFile(p) => fs::remove_file(p).map_err(Into::into),
+            Act::MoveBack { home, from, uid, gid, foreign } => {
+                crate::partition::undo::move_back(rn, home, from, *uid, *gid, *foreign, &|p| crate::partition::apply::avail(p)).map(|n| out.notes.push(n))
+            }
+            Act::ChownBack { path, uid, gid, mode } => crate::partition::undo::chown_back(rn, path, &path.to_string_lossy(), *uid, *gid, *mode).map(|n| {
+                if !n.is_empty() {
+                    out.notes.push(n);
+                }
+            }),
+            Act::Unmount { mountpoint, automount } => crate::partition::undo::unmount_partition(rn, mountpoint, *automount),
+            Act::FstabRevert { path, line, comment, replaced, snapshot } => {
+                let snap = match snapshot {
+                    Some(h) => journal::read_copy(dir, &it.run, h).map(Some).map_err(|e| anyhow::anyhow!(e)),
+                    None => Ok(None),
+                };
+                snap.and_then(|snapshot| {
+                    crate::partition::undo::fstab_revert(rn, &crate::partition::undo::FstabRevert { path, line, comment, replaced, snapshot })
+                })
+            }
+            Act::RemoveDirs(dirs) => {
+                let kept = crate::partition::undo::remove_dirs(dirs);
+                if !kept.is_empty() {
+                    out.notes.push(format!("kept {}: not empty", kept.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join(", ")));
+                }
+                Ok(())
+            }
             Act::TrashRemote(paths) => trash_remote(paths),
             Act::UndoTimer { before_service, before_timer } => crate::schedule::undo_enable(before_service.as_deref(), before_timer.as_deref()),
             Act::Reinstall { name, .. } => {
@@ -558,6 +773,11 @@ pub fn execute(items: &[Item], dir: &Path, user: &str, report: &mut dyn FnMut(us
             Ok(()) => {
                 mark(it);
                 out.done.push(it.label.clone());
+            }
+            Err(e) if matches!(it.act, Act::MoveBack { .. } | Act::Unmount { .. } | Act::FstabRevert { .. }) => {
+                // The data partition steps depend on each other: stop here, nothing half-done
+                let done = if out.done.is_empty() { "nothing".to_string() } else { out.done.join("; ") };
+                bail!("{}: {e}\nThe undo stopped there. Already undone: {done}.", it.label);
             }
             Err(e) => out.failed.push(format!("{}: {e}", it.label)),
         }
@@ -701,6 +921,11 @@ pub fn describe(c: &Change) -> String {
     let what = match c.kind.as_str() {
         "pkg_install" | "pkg_replace" | "pkg_remove" => format!("{} {}", s(&d["name"]), s(&d["version"])),
         "file_write" | "file_create" => s(&d["path"]),
+        "fstab_entry" => s(&d["line"]),
+        "mount" => format!("{} ({})", s(&d["mountpoint"]), s(&d["mode"])),
+        "chown_root" => s(&d["path"]),
+        "folder_move" => format!("{} -> {}", s(&d["home"]), s(&d["new_path"])),
+        "dir_create" => s(&d["path"]),
         "howdy_set" => format!("{} = {}", s(&d["key"]), s(&d["after"])),
         "service_enable" => s(&d["unit"]),
         "pacman_key" => s(&d["fpr"]),

@@ -9,7 +9,10 @@
 
 pub mod apply;
 pub mod detect;
+#[cfg(test)]
+pub mod fake;
 pub mod fstab;
+pub mod undo;
 
 use std::process::{Command, Stdio};
 
