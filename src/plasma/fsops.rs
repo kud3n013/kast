@@ -44,7 +44,9 @@ pub fn copy_file_atomic(src: &Path, dst: &Path, owner: Owner) -> io::Result<()> 
     let mut tmp = tempfile::Builder::new().prefix(".kast-tmp-").tempfile_in(parent)?;
     io::copy(&mut input, tmp.as_file_mut())?;
     tmp.as_file().sync_all()?;
-    fs::set_permissions(tmp.path(), fs::Permissions::from_mode(meta.mode() & 0o777))?;
+    // Owner read/write always: a profile file saved 0444 must not make the restored one
+    // read-only (KDE: `Configuration file ... not writable`)
+    fs::set_permissions(tmp.path(), fs::Permissions::from_mode((meta.mode() & 0o777) | 0o600))?;
     filetime::set_file_mtime(tmp.path(), FileTime::from_last_modification_time(&meta))?;
     if let Some((u, g)) = owner {
         chown_path(tmp.path(), u, g);

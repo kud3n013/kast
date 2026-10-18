@@ -128,7 +128,8 @@ pub fn extract_zip_archive(zip_file: &Path, dest: &Path) -> Result<()> {
                 .with_context(|| format!("writing {}", out.display()))?;
             io::copy(&mut f, &mut w)?;
             drop(w);
-            fs::set_permissions(&out, fs::Permissions::from_mode(mode.unwrap_or(0o644)))?;
+            // Owner read/write always: a 0444 or 0000 entry must stay usable after it is restored
+            fs::set_permissions(&out, fs::Permissions::from_mode(mode.unwrap_or(0o644) | 0o600))?;
             if let Some(t) = mtime {
                 let _ = filetime::set_file_mtime(&out, t);
             }

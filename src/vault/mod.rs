@@ -3,6 +3,7 @@
 
 pub mod archive;
 pub mod backup;
+pub mod fix;
 pub mod import;
 pub mod info;
 pub mod status;
@@ -342,8 +343,23 @@ pub fn kde_copy_named(src_root: &Path, dest_root: &Path, dry_run: bool, names: &
 
 /// `rsync <opts> <src> <dest>`; fails on a non-zero exit.
 pub fn rsync(opts: &[&str], src: &Path, dest: &str) -> Result<()> {
-    let mut cmd = std::process::Command::new("rsync");
-    cmd.args(opts).arg(src).arg(dest);
+    rsync_as(false, opts, src, dest)
+}
+
+/// Like [`rsync`], run as the target user when `as_user` and kast is root (through sudo -u),
+/// so everything it creates belongs to that user from the start.
+pub fn rsync_as(as_user: bool, opts: &[&str], src: &Path, dest: &str) -> Result<()> {
+    let mut cmd = if as_user && ctx().is_root {
+        let src = src.to_string_lossy();
+        let mut args = vec!["rsync"];
+        args.extend_from_slice(opts);
+        args.extend([src.as_ref(), dest]);
+        ctx::run_as_user(&args)
+    } else {
+        let mut c = std::process::Command::new("rsync");
+        c.args(opts).arg(src).arg(dest);
+        c
+    };
     if report::owns_terminal() {
         cmd.stdin(std::process::Stdio::null()).stdout(ctx::log_stdio()).stderr(ctx::log_stdio());
     }
@@ -356,9 +372,13 @@ pub fn rsync(opts: &[&str], src: &Path, dest: &str) -> Result<()> {
 
 /// `rsync -a <opts> src/ dest/`
 pub fn rsync_dir(extra: &[String], src: &Path, dest: &Path) -> Result<()> {
+    rsync_dir_as(false, extra, src, dest)
+}
+
+pub fn rsync_dir_as(as_user: bool, extra: &[String], src: &Path, dest: &Path) -> Result<()> {
     let mut opts: Vec<&str> = vec!["-a"];
     opts.extend(extra.iter().map(String::as_str));
-    rsync(&opts, Path::new(&format!("{}/", src.display())), &format!("{}/", dest.display()))
+    rsync_as(as_user, &opts, Path::new(&format!("{}/", src.display())), &format!("{}/", dest.display()))
 }
 
 // --- Processes ---------------------------------------------------------------------

@@ -6,6 +6,7 @@ mod drive;
 mod interactive;
 mod journal;
 mod logio;
+mod perms;
 mod pkglist;
 mod plasma;
 mod proton;
@@ -108,6 +109,19 @@ enum Cmd {
     Plasma {
         #[command(subcommand)]
         cmd: plasma::cli::PlasmaCmd,
+    },
+    /// Repair settings left root-owned or read-only by an older restore ("Configuration file ... not writable")
+    #[command(
+        visible_alias = "fix-perms",
+        after_help = "Checks the KDE and app settings kast manages for files not owned by you or without owner write, lists them\nand fixes them after asking. Never follows symlinks and never leaves your home. Run with sudo when it says\nsomething needs root (chown); --dry-run only lists."
+    )]
+    FixPermissions {
+        /// Only list what would be repaired
+        #[arg(long)]
+        dry_run: bool,
+        /// Don't ask
+        #[arg(short, long)]
+        yes: bool,
     },
     /// Show detected applications & Howdy status, paths & sizes
     Status,
@@ -612,6 +626,7 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         }),
         Some(Cmd::Uninstall { pkgs, dry_run }) => undo::cmd_uninstall(&pkgs, dry_run),
         Some(Cmd::Plasma { cmd }) => plasma::cli::run(cmd),
+        Some(Cmd::FixPermissions { dry_run, yes }) => vault::fix::cmd_fix_permissions(dry_run, yes),
         Some(Cmd::Test) => Ok(()),
     }
 }

@@ -304,6 +304,7 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
     ctx::set_staging(staging.clone());
     log_step("Extracting archive to temporary workspace...");
     extract_zip_archive(&o.file, &staging)?;
+    prepare_staging(&staging);
 
     if apps.is_empty() {
         let has = |names: &[&str]| names.iter().any(|n| staging.join(n).is_dir());
@@ -355,7 +356,7 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
         return Ok(());
     }
 
-    hand_back_ownership(&apps, &rollback);
+    verify_restore(&apps, &rollback);
     ctx::cleanup_vault_staging();
     report::blank();
     log_success("Restore process finished successfully!");
@@ -380,17 +381,18 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
         fs::create_dir_all(&snap)?;
         rsync_dir(&[], &dest, &snap)?;
     }
-    fs::create_dir_all(&dest)?;
-    rsync_dir(&restore_opts(), &src, &dest)?;
+    ctx::mkdir_user(&dest)?;
+    rsync_dir_as(as_user(), &restore_opts(), &src, &dest)?;
     chmod(&dest, 0o700)?;
 
     if app == "zalo" {
         let flags_dest = c.config_home.join("zalo-flags.conf");
         if let Some(f) = ["zalo-flags.conf", "zalo/extra/zalo-flags.conf"].iter().map(|f| staging.join(f)).find(|p| p.is_file())
-            && !ok("cp", &["-p", &f.to_string_lossy(), &flags_dest.to_string_lossy()])
+            && !user_ok(&["cp", "-p", &f.to_string_lossy(), &flags_dest.to_string_lossy()])
         {
             bail!("copying {} failed", f.display());
         }
+        user_ok(&["chmod", "u+rw", &flags_dest.to_string_lossy()]);
     }
     if app == "hypr" {
         if have("hyprctl") && process_running("Hyprland", None) {
@@ -402,16 +404,19 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
     Ok(())
 }
 
-/// rsync options for writing restored files into the home: no group/other write, and owned
-/// by the user from the start when root, so an app restarted before `hand_back_ownership`
-/// (plasmashell) never finds its config root-owned.
-fn restore_opts() -> Vec<String> {
+/// Restored data is written by the target user (rsync runs through `sudo -u` when kast is
+/// root), so nothing can end up root-owned, and an app restarted right after the copy
+/// (plasmashell) always finds its config owned by the user.
+fn as_user() -> bool {
     let c = ctx();
-    let mut opts = vec!["--chmod=go-w".to_string()];
-    if c.is_root && c.target_uid != 0 {
-        opts.push(format!("--chown={}:{}", c.target_uid, c.target_gid));
-    }
-    opts
+    c.is_root && c.target_uid != 0
+}
+
+/// rsync options for writing restored files into the home: the owner can always read and
+/// write (an archived 0444 or 0400 file would otherwise stay read-only and KDE would say
+/// `Configuration file ... not writable`), group and others never write.
+fn restore_opts() -> Vec<String> {
+    vec!["--chmod=Du+rwx,Fu+rw,go-w".to_string()]
 }
 
 /// Each entry of `src` into `dest`, leaving `dest` itself alone: `rsync -a src/ dest/` also
@@ -424,7 +429,7 @@ fn rsync_entries(opts: &[String], src: &Path, dest: &Path) -> Result<()> {
     let mut entries: Vec<PathBuf> = fs::read_dir(src)?.flatten().map(|e| e.path()).collect();
     entries.sort();
     for e in entries {
-        rsync(&args, &e, &dest)?;
+        rsync_as(as_user(), &args, &e, &dest)?;
     }
     Ok(())
 }
@@ -553,7 +558,7 @@ pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>)
     }
     let intact = fingerprint.is_some() && crate::journal::fingerprint(snapshot).as_deref() == fingerprint;
     let rsync_back = |src: String, dest: String, delete: bool| -> Result<()> {
-        let mut args = vec!["rsync", "-a"];
+        let mut args = vec!["rsync", "-a", "--chmod=Du+rwx,Fu+rw"];
         if delete {
             args.push("--delete");
         }
@@ -604,67 +609,130 @@ pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>)
     Ok(())
 }
 
-/// Restored files were written as root; give them (and the safety snapshots) back to the user.
-fn hand_back_ownership(apps: &[String], rollback: &Path) {
+/// The files and folders restoring `apps` writes (Howdy's models live in /etc and are not
+/// among them). Also what `kast fix-permissions` checks.
+pub fn managed_paths(apps: &[String]) -> Vec<PathBuf> {
     let c = ctx();
-    let env_id = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
-    let (mut uid, mut gid) = (env_id("SUDO_UID"), env_id("SUDO_GID"));
-    if uid.is_none() && c.target_uid != 0 {
-        uid = Some(c.target_uid.to_string());
-        gid = Some(c.target_gid.to_string());
-    }
-    if uid.as_deref().is_none_or(|u| u == "0")
-        && c.target_user != "root"
-        && let Ok(Some(u)) = nix::unistd::User::from_name(&c.target_user)
-    {
-        uid = Some(u.uid.to_string());
-        gid = Some(u.gid.to_string());
-    }
-    let Some(uid) = uid.filter(|u| u != "0") else { return };
-    let owner = format!("{uid}:{}", gid.unwrap_or_default());
-    let chown_if = |p: PathBuf| {
-        if p.exists() {
-            ctx::chown_r(&p, &owner);
-        }
-    };
+    let mut v = Vec::new();
     for app in apps {
         match app.as_str() {
-            "zalo" => {
-                chown_if(c.config_home.join("ZaloData"));
-                let flags = c.config_home.join("zalo-flags.conf");
-                if flags.is_file() {
-                    let _ = ok("chown", &[&owner, &flags.to_string_lossy()]);
-                }
-            }
             "kde" => {
-                for e in kde_config_entries() {
-                    chown_if(c.config_home.join(e));
-                }
-                for e in KDE_SHARE_ENTRIES {
-                    chown_if(c.data_home.join(e));
-                }
-                for e in KDE_HOME_ENTRIES {
-                    chown_if(c.target_home.join(e));
-                }
+                v.extend(kde_config_entries().iter().map(|e| c.config_home.join(e)));
+                v.extend(KDE_SHARE_ENTRIES.iter().map(|e| c.data_home.join(e)));
+                v.extend(KDE_HOME_ENTRIES.iter().map(|e| c.target_home.join(e)));
             }
             other => {
                 if let Some(spec) = restore_spec(other) {
-                    chown_if(c.config_home.join(spec.folder));
+                    v.push(c.config_home.join(spec.folder));
+                }
+                if other == "zalo" {
+                    v.push(c.config_home.join("zalo-flags.conf"));
                 }
             }
+        }
+    }
+    v.retain(|p| p.symlink_metadata().is_ok());
+    v
+}
+
+/// The folders a repair may look at: the user's home and their XDG folders.
+pub fn repair_jails() -> Vec<PathBuf> {
+    let c = ctx();
+    vec![c.target_home.clone(), c.config_home.clone(), c.data_home.clone()]
+}
+
+/// Make the extracted archive usable by the user the restore writes as: everything except
+/// the Howdy face models is handed to them, and the staging folder can be entered but not
+/// listed. The models stay root-only (the archive can hold every user's).
+fn prepare_staging(staging: &Path) {
+    if !as_user() {
+        return;
+    }
+    let c = ctx();
+    let report = |what: &str, e: &dyn std::fmt::Display| ctx::add_issue(format!("Could not prepare the extracted files ({what}): {e}"));
+    if let Err(e) = chmod(staging, 0o711) {
+        report("staging folder", &e);
+    }
+    let Ok(rd) = fs::read_dir(staging) else { return };
+    for e in rd.flatten() {
+        if e.file_name() == "howdy" {
+            if let Err(err) = chmod(&e.path(), 0o700) {
+                report("howdy", &err);
+            }
+            continue;
+        }
+        for (path, err) in crate::perms::fix_tree(&e.path(), c.target_uid, c.target_gid) {
+            report(&path.display().to_string(), &err);
+        }
+    }
+}
+
+/// After a restore: every restored entry must belong to the user and be writable by them.
+/// Fixes what it can (as root, chown), and records everything left as an issue with the repair
+/// command, so a `Configuration file ... not writable` never goes unexplained.
+fn verify_restore(apps: &[String], rollback: &Path) {
+    let c = ctx();
+    let (uid, gid) = (c.target_uid, c.target_gid);
+    let jails = repair_jails();
+    let mut findings = Vec::new();
+    for p in managed_paths(apps) {
+        match crate::perms::scan(&jails, &p, uid, gid) {
+            Ok(f) => findings.extend(f),
+            Err(e) => ctx::add_issue(format!("Not checked: {e:#}")),
+        }
+    }
+    if !findings.is_empty() {
+        log_warn(&format!("{} restored file(s) are not owned by {} or not writable; repairing...", findings.len(), c.target_user));
+        let r = crate::perms::repair(&findings, uid, gid, false);
+        log_info(&format!("Repaired {} file(s).", r.fixed));
+        for (path, why) in r.failed.iter().take(20) {
+            ctx::add_issue(format!("{} is still not writable by {} ({why}). Fix: sudo kast fix-permissions", path.display(), c.target_user));
+        }
+        if r.failed.len() > 20 {
+            ctx::add_issue(format!("... and {} more; sudo kast fix-permissions lists and fixes them all", r.failed.len() - 20));
         }
     }
     let safety = safety_backup_dir();
     if safety.is_dir() {
-        ctx::chown_r(&safety, &owner);
+        if c.is_root {
+            for (path, why) in crate::perms::fix_tree(&safety, uid, gid) {
+                ctx::add_issue(format!("Safety snapshot {}: {why}", path.display()));
+            }
+        }
         // Model snapshots can contain every user's face model; keep them root-only (all of
-        // them: the chown above just handed earlier snapshots to the user too)
+        // them: handing the folder to the user above covered earlier snapshots too)
         let snapshots = fs::read_dir(&safety).map(|rd| rd.flatten().map(|e| e.path()).collect::<Vec<_>>()).unwrap_or_default();
         for howdy in snapshots.iter().map(|p| p.join("howdy")).chain([rollback.join("howdy")]).filter(|p| p.is_dir()) {
-            ctx::chown_r(&howdy, "root:root");
-            let _ = ok("chmod", &["-R", "go-rwx", &howdy.to_string_lossy()]);
+            for (path, why) in lock_down(&howdy) {
+                ctx::add_issue(format!(
+                    "Face model snapshot {} could not be locked down ({why}): run: sudo chown -R root:root {0:?} && sudo chmod -R go-rwx {0:?}",
+                    path.display()
+                ));
+            }
         }
     }
+}
+
+/// root:root and no group/other access for a whole tree (the Howdy snapshots). Failures are
+/// returned, never dropped.
+fn lock_down(root: &Path) -> Vec<(PathBuf, String)> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut failed = Vec::new();
+    if !ctx().is_root {
+        return failed;
+    }
+    for e in walkdir::WalkDir::new(root).follow_links(false).follow_root_links(false).into_iter().flatten() {
+        if let Err(err) = crate::perms::lchown(e.path(), 0, 0) {
+            failed.push((e.path().to_path_buf(), format!("chown: {err}")));
+        }
+        if !e.file_type().is_symlink()
+            && let Ok(m) = e.path().metadata()
+            && let Err(err) = fs::set_permissions(e.path(), fs::Permissions::from_mode(m.permissions().mode() & !0o077))
+        {
+            failed.push((e.path().to_path_buf(), format!("chmod: {err}")));
+        }
+    }
+    failed
 }
 
 #[cfg(test)]
@@ -687,9 +755,55 @@ mod tests {
         fs::create_dir(&dest).unwrap();
         fs::set_permissions(&src, fs::Permissions::from_mode(0o700)).unwrap();
         fs::set_permissions(&dest, fs::Permissions::from_mode(0o751)).unwrap();
-        rsync_entries(&["--chmod=go-w".into()], &src, &dest).unwrap();
+        rsync_entries(&restore_opts(), &src, &dest).unwrap();
         assert_eq!(fs::read_to_string(dest.join("plasmashellrc")).unwrap(), "[Updates]\n");
         assert!(dest.join("plasma/x").is_file());
         assert_eq!(fs::metadata(&dest).unwrap().permissions().mode() & 0o777, 0o751, "dest keeps its own mode");
+    }
+
+    #[test]
+    fn a_read_only_archived_file_is_restored_writable_for_the_owner() {
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return;
+        }
+        crate::ctx::init_for_tests();
+        let t = tempfile::tempdir().unwrap();
+        let (src, dest) = (t.path().join("src"), t.path().join("dest"));
+        fs::create_dir_all(src.join("kxmlgui6")).unwrap();
+        fs::write(src.join("spectaclerc"), "[General]\n").unwrap();
+        fs::write(src.join("kxmlgui6/x"), "x").unwrap();
+        fs::set_permissions(src.join("spectaclerc"), fs::Permissions::from_mode(0o444)).unwrap();
+        fs::set_permissions(src.join("kxmlgui6/x"), fs::Permissions::from_mode(0o400)).unwrap();
+        fs::set_permissions(src.join("kxmlgui6"), fs::Permissions::from_mode(0o555)).unwrap();
+        fs::create_dir(&dest).unwrap();
+        // the old option left them read-only for their owner
+        let old = t.path().join("old");
+        fs::create_dir(&old).unwrap();
+        rsync_entries(&["--chmod=go-w".into()], &src, &old).unwrap();
+        assert_eq!(fs::metadata(old.join("spectaclerc")).unwrap().permissions().mode() & 0o200, 0);
+        rsync_entries(&restore_opts(), &src, &dest).unwrap();
+        let mode = |p: &str| fs::metadata(dest.join(p)).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode("spectaclerc") & 0o600, 0o600, "{:o}", mode("spectaclerc"));
+        assert_eq!(mode("spectaclerc") & 0o022, 0, "group/other never write");
+        assert_eq!(mode("kxmlgui6/x") & 0o600, 0o600);
+        assert_eq!(mode("kxmlgui6") & 0o700, 0o700);
+    }
+
+    #[test]
+    fn verify_restore_repairs_a_read_only_config_and_reports_nothing_when_fixed() {
+        let _g = crate::perms::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        crate::ctx::init_for_tests();
+        let c = ctx();
+        fs::create_dir_all(&c.config_home).unwrap();
+        let rc = c.config_home.join("spectaclerc");
+        fs::write(&rc, "x").unwrap();
+        fs::set_permissions(&rc, fs::Permissions::from_mode(0o444)).unwrap();
+        ctx::clear_issues();
+        verify_restore(&["kde".to_string()], &c.state_home.join("no-rollback"));
+        assert_eq!(fs::metadata(&rc).unwrap().permissions().mode() & 0o600, 0o600);
+        assert!(ctx::take_issues().is_empty());
+        assert!(managed_paths(&["kde".to_string()]).contains(&rc));
+        assert!(managed_paths(&["howdy".to_string()]).is_empty(), "face models are not user files");
     }
 }

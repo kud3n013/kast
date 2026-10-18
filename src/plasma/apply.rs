@@ -318,7 +318,28 @@ pub fn execute(roots: &Roots, plan: &Plan, snapshot: bool, amb: &Ambient) -> Res
         }
     }
     rep.skipped += plan.notes.len();
+    verify_written(roots, plan, &mut rep);
     Ok(rep)
+}
+
+/// Everything the apply wrote must belong to the user and be writable by them; fix what can
+/// be fixed, report the rest (a failed chown/chmod is never dropped).
+fn verify_written(roots: &Roots, plan: &Plan, rep: &mut ApplyReport) {
+    let (uid, gid) = roots.owner.unwrap_or((nix::unistd::Uid::effective().as_raw(), nix::unistd::Gid::effective().as_raw()));
+    let jails = [roots.home.clone(), roots.config.clone(), roots.share.clone()];
+    let mut findings = Vec::new();
+    for it in plan.items.iter().filter(|i| matches!(i.action, Action::Create | Action::Overwrite)) {
+        match crate::perms::scan(&jails, &it.dest, uid, gid) {
+            Ok(f) => findings.extend(f),
+            Err(e) => rep.failed.push(format!("{e:#}")),
+        }
+    }
+    if findings.is_empty() {
+        return;
+    }
+    for (p, why) in crate::perms::repair(&findings, uid, gid, false).failed {
+        rep.failed.push(format!("{} is not writable by you ({why}); run: sudo kast fix-permissions", p.display()));
+    }
 }
 
 #[cfg(test)]
@@ -469,6 +490,21 @@ mod tests {
         assert!(matches!(&it.action, Action::Skip(m) if m.contains("outside")), "{:?}", it.action);
         execute(&r, &pl, true, &ambient()).unwrap();
         assert!(r.config.join("gtk-3.0/evil").symlink_metadata().is_err());
+    }
+
+    #[test]
+    fn a_read_only_profile_file_is_restored_writable() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, r, cfg) = saved();
+        let p = load(&r, "p").unwrap();
+        let src = p.files_dir().join("windows/kwinrc");
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o444)).unwrap();
+        fs::remove_file(r.config.join("kwinrc")).unwrap();
+        let pl = plan(&r, &cfg, &p, None).unwrap();
+        let rep = execute(&r, &pl, true, &ambient()).unwrap();
+        assert!(rep.failed.is_empty(), "{:?}", rep.failed);
+        let mode = fs::metadata(r.config.join("kwinrc")).unwrap().permissions().mode();
+        assert_eq!(mode & 0o600, 0o600, "{mode:o}");
     }
 
     #[test]
