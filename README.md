@@ -357,7 +357,8 @@ kast fix-permissions --dry-run    # list what is wrong
 sudo kast fix-permissions         # fix it (sudo only to chown root-owned files)
 ```
 
-It checks only the KDE and app settings kast manages, never follows symlinks and never leaves your home.
+It checks the folders themselves (`~`, `~/.config`, `~/.local/share`: an old restore could leave them root-owned)
+and the KDE and app settings kast manages, never follows symlinks and never leaves your home.
 
 ## Undo and uninstall
 

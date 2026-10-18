@@ -7,7 +7,7 @@ use crate::ctx::{ctx, reported};
 use crate::perms::{self, Finding};
 use crate::report::{self, Prompt};
 
-use super::import::{managed_paths, repair_jails};
+use super::import::{destination_folders, managed_paths, repair_jails};
 use super::{ALL_APPS, log_error, log_info, log_step, log_success, log_warn};
 
 /// The entries kast manages that are not as the target user needs them.
@@ -22,6 +22,12 @@ pub fn find_problems() -> (Vec<Finding>, Vec<String>) {
     }
     let jails = repair_jails();
     let (mut found, mut errors) = (Vec::new(), Vec::new());
+    for p in destination_folders() {
+        match perms::scan_shallow(&jails, &p, c.target_uid, c.target_gid) {
+            Ok(f) => found.extend(f),
+            Err(e) => errors.push(format!("{e:#}")),
+        }
+    }
     for p in paths {
         match perms::scan(&jails, &p, c.target_uid, c.target_gid) {
             Ok(f) => found.extend(f),

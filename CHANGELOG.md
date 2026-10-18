@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2
+
+- **`kast fix-permissions` now checks the folders themselves**: `~`, `~/.config`, `~/.local` and
+  `~/.local/share`. An old restore (`rsync -a src/ dest/`) could hand these to root, after which
+  files inside stayed yours but nothing new could be created (`spectaclerc` "not writable"), and
+  the repair command did not see it. The check also runs after every restore.
 ## 0.6.1
 
 - **Fixed: `Configuration file "~/.config/spectaclerc" not writable`** (and the same for other KDE

@@ -635,6 +635,19 @@ pub fn managed_paths(apps: &[String]) -> Vec<PathBuf> {
     v
 }
 
+/// The folders a restore writes into. Their own owner and mode must stay the user's: an old
+/// `rsync -a src/ dest/` copied a root-owned staging folder's owner onto them, after which
+/// nothing new could be created in `~/.config`.
+pub fn destination_folders() -> Vec<PathBuf> {
+    let c = ctx();
+    let mut v = vec![c.target_home.clone(), c.config_home.clone(), c.data_home.clone()];
+    v.extend(c.data_home.parent().map(Path::to_path_buf));
+    v.sort();
+    v.dedup();
+    v.retain(|p| p.starts_with(&c.target_home) && p.symlink_metadata().is_ok());
+    v
+}
+
 /// The folders a repair may look at: the user's home and their XDG folders.
 pub fn repair_jails() -> Vec<PathBuf> {
     let c = ctx();
@@ -675,6 +688,12 @@ fn verify_restore(apps: &[String], rollback: &Path) {
     let (uid, gid) = (c.target_uid, c.target_gid);
     let jails = repair_jails();
     let mut findings = Vec::new();
+    for p in destination_folders() {
+        match crate::perms::scan_shallow(&jails, &p, uid, gid) {
+            Ok(f) => findings.extend(f),
+            Err(e) => ctx::add_issue(format!("Not checked: {e:#}")),
+        }
+    }
     for p in managed_paths(apps) {
         match crate::perms::scan(&jails, &p, uid, gid) {
             Ok(f) => findings.extend(f),

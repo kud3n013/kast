@@ -75,6 +75,15 @@ pub fn scan(jails: &[PathBuf], path: &Path, uid: u32, gid: u32) -> Result<Vec<Fi
     Ok(walk(path, uid, gid))
 }
 
+/// Only `path` itself, not what is inside it: for the folders a restore writes into (`~`,
+/// `~/.config`...), whose owner and mode must stay the user's own.
+pub fn scan_shallow(jails: &[PathBuf], path: &Path, uid: u32, gid: u32) -> Result<Vec<Finding>> {
+    if !jails.iter().any(|j| path.starts_with(j)) || path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        bail!("{} is outside the folders kast may repair", path.display());
+    }
+    Ok(inspect(path, uid, gid).into_iter().collect())
+}
+
 /// What a repair did.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Repaired {
@@ -233,6 +242,21 @@ mod tests {
         if !Uid::effective().is_root() {
             assert_eq!(r.failed.len(), 1);
         }
+    }
+
+    #[test]
+    fn shallow_scan_looks_at_the_folder_only() {
+        let t = tempfile::tempdir().unwrap();
+        let (uid, gid) = me();
+        fs::write(t.path().join("inner"), "x").unwrap();
+        let jails = [t.path().to_path_buf()];
+        // wrong owner: the folder is reported, its content is not
+        let f = scan_shallow(&jails, t.path(), uid + 1, gid).unwrap();
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].path, t.path());
+        assert!(!f[0].owned);
+        assert!(scan_shallow(&jails, t.path(), uid, gid).unwrap().is_empty());
+        assert!(scan_shallow(&jails, Path::new("/"), uid, gid).is_err());
     }
 
     #[test]
