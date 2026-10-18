@@ -324,6 +324,8 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
         log_info(&format!("Auto-detected apps in archive: {C_BOLD}{}{C_RESET}", apps.join(" ")));
     }
 
+    rehome::rehome_staging(&staging, &apps, &manifest, o.dry_run);
+
     if !o.safety_backup && !o.dry_run {
         log_warn(&no_snapshot_warning(&apps));
     }

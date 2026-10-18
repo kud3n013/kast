@@ -284,6 +284,7 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
         "created_at": chrono::Local::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, false),
         "hostname": hostname,
         "user": whoami,
+        "home": c.target_home,
         "target": target,
         "include_media": o.include_media,
         "apps": {}

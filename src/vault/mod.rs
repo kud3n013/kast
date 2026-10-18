@@ -6,6 +6,7 @@ pub mod backup;
 pub mod fix;
 pub mod import;
 pub mod info;
+pub mod rehome;
 pub mod status;
 
 use std::fs;
