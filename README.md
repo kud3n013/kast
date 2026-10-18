@@ -345,6 +345,20 @@ also_local = "/media/data/backups"    # scheduled runs keep a local copy here to
 notify_success = false                # also notify when a scheduled run worked
 ```
 
+### Settings that are "not writable"
+
+KDE says `Configuration file "~/.config/spectaclerc" not writable` when a config file is not owned
+by you or lacks owner write. kast restores KDE settings and app data as your user and always
+leaves owner read/write, then checks every restored entry and reports anything it cannot fix.
+If an older kast (before 0.6.1) already left such files behind, repair them with:
+
+```sh
+kast fix-permissions --dry-run    # list what is wrong
+sudo kast fix-permissions         # fix it (sudo only to chown root-owned files)
+```
+
+It checks only the KDE and app settings kast manages, never follows symlinks and never leaves your home.
+
 ## Undo and uninstall
 
 Everything kast changes on the system is recorded in **`/var/lib/kast/`** (root only: the
