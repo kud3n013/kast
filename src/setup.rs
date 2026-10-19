@@ -205,11 +205,48 @@ pub fn migrate_one(mount: &Path, home: &Path, dir: &str, uid: u32, gid: u32, for
 
 /// New pacman.conf content with the [archrepo] block present, pointing at REPO_URL and
 /// requiring signatures. Older versions wrote `SigLevel = Optional TrustAll`; that line is
-/// upgraded, any other SigLevel the user set is kept.
+/// upgraded, any other SigLevel the user set is kept. The block sits before every other
+/// repository (pacman takes a package from the first repo that has it), so one an older
+/// version appended at the end is moved up.
 pub fn patch_pacman_conf(content: &str) -> String {
-    if !content.contains("[archrepo]") {
-        return format!("{content}\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n");
+    let patched = if content.contains("[archrepo]") {
+        upgrade_repo_block(content)
+    } else {
+        format!("{content}\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n")
+    };
+    repo_first(&patched)
+}
+
+/// Move the [archrepo] block above the first repository section (after `[options]`).
+fn repo_first(content: &str) -> String {
+    let lines: Vec<&str> = content.split_inclusive('\n').collect();
+    let header = |l: &str| {
+        let t = l.trim();
+        t.starts_with('[') && t.ends_with(']')
+    };
+    let Some(start) = lines.iter().position(|l| l.trim() == "[archrepo]") else { return content.to_string() };
+    let end = lines[start + 1..].iter().position(|l| header(l)).map_or(lines.len(), |i| start + 1 + i);
+    let Some(first) = lines.iter().position(|l| header(l) && l.trim() != "[options]") else { return content.to_string() };
+    if first == start {
+        return content.to_string();
     }
+    let mut block: Vec<String> = lines[start..end].iter().map(|l| l.to_string()).collect();
+    if !block.last().is_some_and(|l| l.ends_with('\n')) {
+        block.last_mut().unwrap().push('\n');
+    }
+    if !block.last().is_some_and(|l| l.trim().is_empty()) {
+        block.push("\n".into());
+    }
+    let rest: Vec<&str> = lines[..start].iter().chain(&lines[end..]).copied().collect();
+    let at = rest.iter().position(|l| header(l) && l.trim() != "[options]").unwrap_or(rest.len());
+    let mut out: String = rest[..at].concat();
+    out.push_str(&block.concat());
+    out.push_str(&rest[at..].concat());
+    // the block that was last leaves its separator blank line behind
+    out.trim_end_matches('\n').to_string() + "\n"
+}
+
+fn upgrade_repo_block(content: &str) -> String {
     let mut in_repo = false;
     let mut out = String::with_capacity(content.len());
     for line in content.split_inclusive('\n') {
@@ -996,15 +1033,19 @@ mod tests {
     #[test]
     fn pacman_conf_block() {
         let added = patch_pacman_conf("[core]\nInclude = x\n");
-        assert_eq!(added, format!("[core]\nInclude = x\n\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n"));
+        assert_eq!(added, format!("[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n\n[core]\nInclude = x\n"));
         assert_eq!(patch_pacman_conf(&added), added);
+        // after [options] and its settings, before the first repository
+        let opts = patch_pacman_conf("[options]\nParallelDownloads = 5\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n");
+        assert_eq!(opts, format!("[options]\nParallelDownloads = 5\n\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n"));
+        assert_eq!(patch_pacman_conf(&opts), opts);
         let old = format!("[archrepo]\nServer = {OLD_REPO_URL}\n");
         assert_eq!(patch_pacman_conf(&old), format!("[archrepo]\nServer = {REPO_URL}\n"));
         // the SigLevel older versions wrote is upgraded, only inside [archrepo]
         let trusting = format!("[extra]\nSigLevel = Optional TrustAll\n\n[archrepo]\nSigLevel = Optional  TrustAll\nServer = {REPO_URL}\n[x]\n");
         assert_eq!(
             patch_pacman_conf(&trusting),
-            format!("[extra]\nSigLevel = Optional TrustAll\n\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n[x]\n")
+            format!("[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n\n[extra]\nSigLevel = Optional TrustAll\n\n[x]\n")
         );
         // a SigLevel the user chose is left alone
         let custom = format!("[archrepo]\nSigLevel = Required DatabaseOptional\nServer = {REPO_URL}\n");

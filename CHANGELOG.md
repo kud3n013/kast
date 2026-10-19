@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **`[archrepo]` goes above every other repository in `pacman.conf`**, so pacman takes
+  archrepo's packages over Arch's and CachyOS's. `kast repo` also moves a block that an
+  older version appended at the end.
 - **`kast plasma apply` stops `kglobalacceld` while it restores shortcuts**, then starts it
   again. The daemon owns the global shortcuts and rewrote `kglobalshortcutsrc` from memory,
   so KDE's defaults (Win+L) won over the backup.
