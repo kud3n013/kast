@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **Every package archrepo publishes is offered automatically**, without an entry in
+  `packages.toml`. kast reads archrepo's signed database (verified with `gpgv` against the
+  key it ships) next to the list and adds what the file doesn't mention: as an add-on of a
+  listed package it depends on, otherwise to the kud3n group. They show up marked "from
+  archrepo, not in packages.toml" in the picker and in `kast packages --list` (the source line
+  counts them), install as `archrepo/<name>`, and are never built from the AUR. If the
+  download or signature fails, or you're offline, the list is as before; the reason is shown.
+  - New optional `[archrepo]` table in `packages.toml`: `auto = false` turns it off,
+    `exclude = [...]` keeps packages out. No `schema` bump.
+  - Left out of the picker while `[archrepo]` isn't in `pacman.conf` and the run has no
+    repository step, so kast never installs a package that wasn't shown.
+  - When a retry brings a different list, the picker keeps your checks for the packages both
+    lists have.
+- `packages.toml`: `zed` is now `archrepo/zed-globalmenu` (it replaces `zed`) and
+  `obsidian` is `archrepo/obsidian`, so pacman can't pick Arch's unpatched builds.
+
 ## 0.7.1
 
 - **Restoring a backup made under another account name now works properly.**

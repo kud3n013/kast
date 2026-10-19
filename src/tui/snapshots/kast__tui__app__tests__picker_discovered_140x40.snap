@@ -1,0 +1,44 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Package list ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│✓ Online · kud3n013/kast@main · fetched 04:39 · 36 packages + 2 from archrepo · ⠋ checking what's installed                               │
+│  +1 added / −1 removed vs built-in: +gimp −steam                                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Install packages · 37 of 38 selected ────────────────────────────────────────────────────╮╭ Details ─────────────────────────────────────╮
+│    [x] fcitx5-gtk                                                                        ││archrepo/kdenlive-extras                      │
+│    [x] fcitx5-qt                                                                         ││kdenlive-extras from the database             │
+│    [x] fcitx5-unikey                                                                     ││from archrepo, not in packages.toml           │
+│    [x] vesktop-bin                                                                       ││Group:      Add-ons                           │
+│    [x] valkey                                                                            ││Status:     checking…                         │
+│    [x] kdenlive                                                                          ││Add-on for: kdenlive                          │
+│    [x] zed-globalmenu                                                                    ││Changes:    installs the package (pacman, else│
+│    [x] wine                                                                              ││yay as your user)                             │
+│    [x] wine-gecko                                                                        ││Needs root: yes (kast already runs as root)   │
+│    [x] wine-mono                                                                         ││                                              │
+│    [x] gwenview                                                                          ││List downloaded from kud3n013/kast's main     │
+│    [x] haruna                                                                            ││branch.                                       │
+│    [x] gimp                                                                              ││+1 added / −1 removed vs built-in             │
+│    [x] libreoffice-fresh                                                                 ││  + gimp                                      │
+│    [x] libreoffice-fresh-vi                                                              ││  − steam                                     │
+│  [x] kud3n's repository  7/7                                                             ││                                              │
+│    [x] beeper                                                                            ││                                              │
+│    [x] howdy-next                                                                        ││                                              │
+│    [x] gdlauncher-carbon                                                                 ││                                              │
+│    [x] searxng                                                                           ││                                              │
+│    [x] freedownloadmanager                                                               ││                                              │
+│    [x] sine                                                                              ││                                              │
+│    [x] fresh-app                                                                         ││                                              │
+│  [-] Add-ons  7/8                                                                        ││                                              │
+│    [x] freedownloadmanager-elephant                                                      ││                                              │
+│    [x] zotero-better-bibtex                                                              ││                                              │
+│    [x] zotmoov                                                                           ││                                              │
+│    [x] zotero-better-notes                                                               ││                                              │
+│    [x] zotero-ocr                                                                        ││                                              │
+│    [x] zotero-pdf-translate                                                              ││                                              │
+│    [x] zotero-mcp                                                                        ││                                              │
+│❯   [ ] kdenlive-extras                                                                   ││                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help  a all  n none  i invert

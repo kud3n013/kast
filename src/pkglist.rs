@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
+pub mod discover;
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +53,9 @@ pub struct Pkg {
     /// The package this add-on belongs to
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires: Option<String>,
+    /// Added from archrepo's database, not listed in packages.toml (never read from a file)
+    #[serde(skip)]
+    pub discovered: bool,
 }
 
 impl Pkg {
@@ -76,10 +81,33 @@ struct RawGroup {
     packages: Vec<Pkg>,
 }
 
+/// The file's optional `[archrepo]` table.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ArchrepoOpts {
+    /// Merge the packages archrepo publishes that the file doesn't list
+    #[serde(default = "yes")]
+    pub auto: bool,
+    /// Never added automatically (a package the file lists itself is still installed)
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for ArchrepoOpts {
+    fn default() -> Self {
+        ArchrepoOpts { auto: true, exclude: Vec::new() }
+    }
+}
+
 #[derive(Deserialize)]
 struct RawFile {
     #[serde(default)]
     group: Vec<RawGroup>,
+    #[serde(default)]
+    archrepo: ArchrepoOpts,
 }
 
 /// A parsed and validated list. `warnings` are things skipped (unknown groups).
@@ -88,6 +116,7 @@ pub struct Parsed {
     pub schema: u32,
     pub groups: Vec<Group>,
     pub warnings: Vec<String>,
+    pub archrepo: ArchrepoOpts,
 }
 
 impl Parsed {
@@ -102,6 +131,18 @@ impl Parsed {
 
     pub fn contains(&self, name: &str) -> bool {
         self.packages().any(|p| p.name == name)
+    }
+
+    /// How many packages were added from archrepo's database.
+    pub fn discovered(&self) -> usize {
+        self.packages().filter(|p| p.discovered).count()
+    }
+
+    /// The list without the packages added from archrepo's database (they can't be
+    /// installed while `[archrepo]` isn't in pacman.conf).
+    pub fn without_discovered(&self) -> Parsed {
+        let groups = self.groups.iter().map(|g| Group { packages: g.packages.iter().filter(|p| !p.discovered).cloned().collect(), ..g.clone() }).collect();
+        Parsed { groups, ..self.clone() }
     }
 }
 
@@ -150,6 +191,18 @@ fn valid_text(what: &str, text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// One package's own rules: names, text. (List-wide rules are checked by `parse`.)
+pub(crate) fn check_pkg(p: &Pkg) -> Result<(), String> {
+    valid_name(&p.name)?;
+    for n in [&p.fallback, &p.replaces, &p.requires].into_iter().flatten() {
+        valid_name(n).map_err(|e| format!("{}: {e}", p.name))?;
+    }
+    if let Some(d) = &p.description {
+        valid_text("description", d).map_err(|e| format!("{}: {e}", p.name))?;
+    }
+    Ok(())
+}
+
 pub fn default_group_name(id: &str) -> &'static str {
     match id {
         "official" => "Official repositories",
@@ -191,16 +244,14 @@ pub fn parse(text: &str) -> Result<Parsed, Invalid> {
     // Install order is the known order, whatever order the file lists the groups in
     groups.sort_by_key(|g| GROUPS.iter().position(|k| *k == g.id));
 
-    let parsed = Parsed { schema, groups, warnings };
+    let archrepo = raw.archrepo;
+    for n in &archrepo.exclude {
+        valid_name(n).map_err(|e| rule(format!("[archrepo] exclude: {e}")))?;
+    }
+    let parsed = Parsed { schema, groups, warnings, archrepo };
     let mut seen = HashSet::new();
     for p in parsed.packages() {
-        valid_name(&p.name).map_err(rule)?;
-        for n in [&p.fallback, &p.replaces, &p.requires].into_iter().flatten() {
-            valid_name(n).map_err(|e| rule(format!("{}: {e}", p.name)))?;
-        }
-        if let Some(d) = &p.description {
-            valid_text("description", d).map_err(|e| rule(format!("{}: {e}", p.name)))?;
-        }
+        check_pkg(p).map_err(rule)?;
         // `sine` and `archrepo/sine` are the same package to pacman
         if !seen.insert(p.bare().to_string()) {
             return Err(rule(format!("{} is listed twice", p.name)));
@@ -294,6 +345,8 @@ pub enum Source {
 pub struct PkgList {
     pub source: Source,
     pub list: Parsed,
+    /// Why archrepo's database couldn't be used to add packages (None: it was, or wasn't tried)
+    pub discovery_error: Option<String>,
 }
 
 /// Packages added and removed by a list, compared with the built-in one.
@@ -328,20 +381,25 @@ pub fn build_id() -> String {
 
 impl PkgList {
     pub fn builtin(reason: Reason) -> Self {
-        PkgList { source: Source::BuiltIn(reason), list: builtin() }
+        PkgList { source: Source::BuiltIn(reason), list: builtin(), discovery_error: None }
     }
 
     pub fn is_builtin(&self) -> bool {
         matches!(self.source, Source::BuiltIn(_))
     }
 
-    /// One line naming the source, e.g. "Online · kud3n013/kast@main · fetched 04:39 · 36 packages".
+    /// One line naming the source, e.g. "Online · kud3n013/kast@main · fetched 04:39 · 36 packages
+    /// + 6 from archrepo".
     pub fn source_line(&self) -> String {
-        let n = self.list.count();
+        let (extra, n) = (self.list.discovered(), self.list.count());
+        let count = if extra > 0 { format!("{} packages + {extra} from archrepo", n - extra) } else { format!("{n} packages") };
         match &self.source {
-            Source::Online { fetched } => format!("Online · {ORIGIN} · fetched {fetched} · {n} packages"),
-            Source::BuiltIn(r) => format!("Built-in · {} · {n} packages · {r}", build_id()),
-            Source::Local(p) => format!("Local file · {} · {n} packages", p.display()),
+            Source::Online { fetched } => {
+                let note = self.discovery_error.as_ref().map(|e| format!(" · archrepo: {e}")).unwrap_or_default();
+                format!("Online · {ORIGIN} · fetched {fetched} · {count}{note}")
+            }
+            Source::BuiltIn(r) => format!("Built-in · {} · {count} · {r}", build_id()),
+            Source::Local(p) => format!("Local file · {} · {count}", p.display()),
         }
     }
 
@@ -357,16 +415,24 @@ impl PkgList {
     }
 }
 
+/// What `list` adds to and removes from `base`; packages discovered in archrepo's database
+/// aren't edits of the file, so they don't count.
 pub fn diff(base: &Parsed, list: &Parsed) -> Diff {
     Diff {
-        added: list.packages().filter(|p| !base.contains(&p.name)).map(|p| p.name.clone()).collect(),
+        added: list.packages().filter(|p| !p.discovered && !base.contains(&p.name)).map(|p| p.name.clone()).collect(),
         removed: base.packages().filter(|p| !list.contains(&p.name)).map(|p| p.name.clone()).collect(),
     }
 }
 
 /// curl's arguments for `url`: HTTPS only, bounded in time and size, the body on stdout.
+#[cfg(test)]
 pub fn curl_args(url: &str) -> Vec<String> {
-    let max = MAX_BYTES.to_string();
+    curl_args_max(url, MAX_BYTES)
+}
+
+/// `curl_args` with another size cap.
+pub fn curl_args_max(url: &str, max: usize) -> Vec<String> {
+    let max = max.to_string();
     ["-fsSL", "--proto", "=https", "--tlsv1.2", "--connect-timeout", "5", "--max-time", "15", "--max-filesize", &max, url].map(String::from).to_vec()
 }
 
@@ -389,7 +455,12 @@ pub fn curl_reason(code: Option<i32>, stderr: &str) -> Reason {
 
 /// Download `url` with curl (on Arch it's always there: pacman depends on it).
 pub fn curl_fetch(url: &str) -> Result<Vec<u8>, Reason> {
-    let out = Command::new("curl").args(curl_args(url)).stdin(Stdio::null()).output().map_err(|e| match e.kind() {
+    curl_fetch_max(url, MAX_BYTES)
+}
+
+/// `curl_fetch` with another size cap.
+pub fn curl_fetch_max(url: &str, max: usize) -> Result<Vec<u8>, Reason> {
+    let out = Command::new("curl").args(curl_args_max(url, max)).stdin(Stdio::null()).output().map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => Reason::NoCurl,
         _ => Reason::Download(format!("could not run curl: {e}")),
     })?;
@@ -412,11 +483,52 @@ fn from_body(body: &[u8]) -> Result<Parsed, Reason> {
 pub fn load(offline: bool, fetch: impl FnOnce(&str) -> Result<Vec<u8>, Reason>) -> PkgList {
     let got = if offline { Err(Reason::Offline) } else { fetch(URL).and_then(|b| from_body(&b)) };
     let pl = match got {
-        Ok(list) => PkgList { source: Source::Online { fetched: chrono::Local::now().format("%H:%M").to_string() }, list },
+        Ok(list) => PkgList { source: Source::Online { fetched: chrono::Local::now().format("%H:%M").to_string() }, list, discovery_error: None },
         Err(reason) => PkgList::builtin(reason),
     };
     log_source(&pl);
     pl
+}
+
+/// `load` for real use, plus the packages archrepo publishes that the list doesn't mention.
+/// archrepo's database downloads alongside the list, so the wait is the slower of the two.
+pub fn load_online(offline: bool) -> PkgList {
+    let (mut pl, found) = std::thread::scope(|s| {
+        let found = (!offline).then(|| s.spawn(discover_online));
+        let pl = load(offline, curl_fetch);
+        (pl, found.map(|h| h.join().unwrap_or_else(|_| Err("discovery panicked".into()))))
+    });
+    if let Some(found) = found {
+        add_discovered(&mut pl, found);
+    }
+    pl
+}
+
+/// Download, verify and read archrepo's database.
+fn discover_online() -> Result<Vec<discover::Found>, String> {
+    discover::fetch(&curl_fetch_max, &discover::verify_gpg)
+}
+
+/// Merge what `found` holds into `pl`, or note why there's nothing to merge.
+pub fn add_discovered(pl: &mut PkgList, found: Result<Vec<discover::Found>, String>) {
+    use crate::ctx::log_file_only;
+    if !pl.list.archrepo.auto {
+        log_file_only("INFO", "Package list: [archrepo] auto = false; not adding archrepo's packages");
+        return;
+    }
+    match found {
+        Ok(found) => {
+            let n = discover::merge(&mut pl.list, found);
+            log_file_only("INFO", &format!("Package list: {n} packages added from archrepo's database"));
+            for w in pl.list.warnings.iter().filter(|w| w.starts_with("archrepo:")) {
+                log_file_only("WARN", &format!("Package list: {w}"));
+            }
+        }
+        Err(e) => {
+            log_file_only("WARN", &format!("Package list: archrepo's packages not added: {e}"));
+            pl.discovery_error = Some(e);
+        }
+    }
 }
 
 /// `--packages-file`: a local file, for trying edits before pushing them. Errors are
@@ -432,8 +544,15 @@ pub fn load_local(path: &Path) -> anyhow::Result<PkgList> {
         Err(Reason::Empty) => anyhow::bail!("{} is empty", path.display()),
         Err(r) => anyhow::bail!("{}: {r}", path.display()),
     };
-    let pl = PkgList { source: Source::Local(path.to_path_buf()), list };
+    let pl = PkgList { source: Source::Local(path.to_path_buf()), list, discovery_error: None };
     log_source(&pl);
+    Ok(pl)
+}
+
+/// `load_local`, then add the packages archrepo publishes (the file is only being tried).
+pub fn load_local_discovering(path: &Path) -> anyhow::Result<PkgList> {
+    let mut pl = load_local(path)?;
+    add_discovered(&mut pl, discover_online());
     Ok(pl)
 }
 
@@ -454,6 +573,9 @@ fn log_source(pl: &PkgList) {
 
 // --- kast packages --list ------------------------------------------------------------
 
+/// What marks a package added from archrepo's database.
+pub const NOT_IN_FILE: &str = "from archrepo, not in packages.toml";
+
 /// A package's rules, as `--list` shows them: "→ fallback vesktop · needs zotero".
 pub fn rules(p: &Pkg) -> String {
     let mut r = Vec::new();
@@ -465,6 +587,9 @@ pub fn rules(p: &Pkg) -> String {
     }
     if let Some(x) = &p.requires {
         r.push(format!("needs {x}"));
+    }
+    if p.discovered {
+        r.push(NOT_IN_FILE.to_string());
     }
     r.join(" · ")
 }
@@ -534,6 +659,9 @@ pub fn list_json(pl: &PkgList, installed: Option<&HashSet<String>>) -> serde_jso
                     if let (Some(set), Some(o)) = (installed, v.as_object_mut()) {
                         o.insert("installed".into(), set.contains(p.bare()).into());
                     }
+                    if let (true, Some(o)) = (p.discovered, v.as_object_mut()) {
+                        o.insert("discovered".into(), true.into());
+                    }
                     v
                 })
                 .collect();
@@ -549,6 +677,8 @@ pub fn list_json(pl: &PkgList, installed: Option<&HashSet<String>>) -> serde_jso
         "reason": pl.reason().map(|r| r.to_string()),
         "warnings": pl.list.warnings,
         "count": pl.list.count(),
+        "discovered": pl.list.discovered(),
+        "discovery_error": pl.discovery_error,
         "added": d.added,
         "removed": d.removed,
         "groups": groups,
@@ -816,7 +946,7 @@ mod tests {
     }
 
     fn online(body: &str) -> PkgList {
-        PkgList { source: Source::Online { fetched: "04:39".into() }, list: parse(body).unwrap() }
+        PkgList { source: Source::Online { fetched: "04:39".into() }, list: parse(body).unwrap(), discovery_error: None }
     }
 
     #[test]

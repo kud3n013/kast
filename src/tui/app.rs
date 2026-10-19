@@ -242,6 +242,9 @@ pub struct App {
     /// The package list, fetched in the background when the app opens
     pub packages: PkgState,
     pub installed: Installed,
+    /// Whether /etc/pacman.conf has `[archrepo]` (read once; the picker leaves out
+    /// archrepo's packages that can't be installed without it)
+    pub repo_configured: bool,
     /// The automatic run's choices, kept while the menu shows
     pub wizard: Option<Box<Wizard>>,
     /// What the machine has for snapshots (looked at once, when the automatic run opens)
@@ -280,6 +283,7 @@ impl App {
             toast: None,
             packages: PkgState::Fetching,
             installed: Installed::Unknown,
+            repo_configured: !cfg!(test) && crate::setup::repo_configured(),
             wizard: None,
             snapshots: None,
             drive: None,
@@ -1123,7 +1127,7 @@ pub mod tests {
         let edited = crate::pkglist::BUILTIN_TEXT
             .replace("  { name = \"steam\" },\n", "")
             .replace("  { name = \"haruna\" },", "  { name = \"haruna\" },\n  { name = \"gimp\" },");
-        PkgList { source: Source::Online { fetched: "04:39".into() }, list: crate::pkglist::parse(&edited).unwrap() }
+        PkgList { source: Source::Online { fetched: "04:39".into() }, list: crate::pkglist::parse(&edited).unwrap(), discovery_error: None }
     }
 
     pub fn loaded(a: &mut App, pl: PkgList) -> Option<Command> {
@@ -1212,6 +1216,131 @@ pub mod tests {
         assert!(a.modal.is_none() && a.toast.as_ref().unwrap().kind == ToastKind::Error);
         update(&mut a, key(KeyCode::Esc));
         assert!(matches!(a.screen, Screen::Menu));
+    }
+
+    /// The online list plus two packages found in archrepo's database: a standalone one and an
+    /// add-on of steam.
+    fn discovered_list() -> PkgList {
+        let mut pl = online_list();
+        let found = |name: &str, depends: &[&str]| crate::pkglist::discover::Found {
+            name: name.into(),
+            description: Some(format!("{name} from the database")),
+            depends: depends.iter().map(|d| d.to_string()).collect(),
+        };
+        crate::pkglist::add_discovered(&mut pl, Ok(vec![found("kdenlive-extras", &["kdenlive"]), found("fresh-app", &["glibc"])]));
+        assert_eq!(pl.list.discovered(), 2);
+        pl
+    }
+
+    #[test]
+    fn discovered_packages_are_offered_in_their_group_with_the_add_on_rule() {
+        let mut a = app(80, 24);
+        a.repo_configured = true;
+        update(&mut a, key(KeyCode::Char('4')));
+        let Some(Command::LoadInstalled(names)) = loaded(&mut a, discovered_list()) else { panic!("expected the installed check") };
+        assert_eq!(names.len(), 38);
+        assert!(names.contains(&"archrepo/fresh-app".to_string()) && names.contains(&"archrepo/kdenlive-extras".to_string()));
+        assert_eq!(picker(&a).count(), (38, 38));
+        installed(&mut a, &["fcitx5"]);
+        assert_eq!(picker(&a).item("archrepo/fresh-app").unwrap().label, "fresh-app");
+
+        // Unchecking kdenlive (not installed) greys out its discovered add-on, like any other
+        toggle_pkg(&mut a, "kdenlive");
+        let extras = picker(&a).item("archrepo/kdenlive-extras").unwrap();
+        assert!(!extras.enabled && extras.note.as_deref() == Some("needs kdenlive"));
+        assert_eq!(picker(&a).count(), (36, 38));
+        toggle_pkg(&mut a, "archrepo/fresh-app");
+
+        // The job gets what was checked, and nothing it wasn't shown
+        update(&mut a, key(KeyCode::Enter));
+        let Some(Command::Start(JobKind::Packages(pl, Some(sel)))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a start") };
+        assert_eq!(pl.list.discovered(), 2);
+        assert_eq!(sel.len(), 35);
+        assert!(!sel.contains(&"archrepo/fresh-app".to_string()) && !sel.contains(&"archrepo/kdenlive-extras".to_string()));
+
+        // All checked: no selection, which means exactly the packages that were shown
+        let mut a = app(80, 24);
+        a.repo_configured = true;
+        update(&mut a, key(KeyCode::Char('4')));
+        loaded(&mut a, discovered_list());
+        update(&mut a, key(KeyCode::Enter));
+        let Some(Command::Start(JobKind::Packages(pl, None))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a start with everything") };
+        assert_eq!(pl.list.count(), 38);
+    }
+
+    #[test]
+    fn discovered_packages_are_left_out_while_the_repository_is_not_set_up() {
+        // Menu option 4 with no [archrepo] in pacman.conf
+        let mut a = app(80, 24);
+        update(&mut a, key(KeyCode::Char('4')));
+        let Some(Command::LoadInstalled(names)) = loaded(&mut a, discovered_list()) else { panic!("expected the installed check") };
+        assert_eq!(names.len(), 36);
+        assert!(picker(&a).item("archrepo/fresh-app").is_none());
+        update(&mut a, key(KeyCode::Enter));
+        let Some(Command::Start(JobKind::Packages(pl, None))) = update(&mut a, key(KeyCode::Enter)) else { panic!("expected a start") };
+        assert_eq!(pl.list.count(), 36, "the job's list has none of them either, so None can't install them");
+        assert_eq!(pl.list.discovered(), 0);
+    }
+
+    #[test]
+    fn the_automatic_run_offers_them_only_with_the_repository_step() {
+        let mut a = app(80, 24);
+        update(&mut a, key(KeyCode::Char('1')));
+        loaded(&mut a, discovered_list());
+        let Screen::Auto(w) = &mut a.screen else { panic!("wizard") };
+        assert!(w.chosen().contains(&crate::setup::Step::Repo));
+        // Repo unchecked, [archrepo] not configured: they could not be installed
+        w.steps.item_mut("repo").unwrap().checked = false;
+        w.stage = super::super::screens::wizard::Stage::Apps;
+        packages::sync(&mut a);
+        assert!(picker(&a).item("archrepo/fresh-app").is_none());
+        assert_eq!(picker(&a).count(), (36, 36));
+        toggle_pkg(&mut a, "zotero");
+        // Checking the step brings them back; the other choices stay
+        let Screen::Auto(w) = &mut a.screen else { panic!("wizard") };
+        w.steps.item_mut("repo").unwrap().checked = true;
+        let cmd = packages::sync(&mut a);
+        assert!(matches!(cmd, Some(Command::LoadInstalled(n)) if n.len() == 38), "asks about the names now shown");
+        assert!(picker(&a).item("archrepo/fresh-app").is_some_and(|i| i.checked));
+        assert!(!picker(&a).item("zotero").unwrap().checked);
+        let plan = match &a.screen {
+            Screen::Auto(w) => w.plan(),
+            _ => unreachable!(),
+        };
+        assert_eq!(plan.packages.as_ref().map(Vec::len), Some(31));
+    }
+
+    #[test]
+    fn a_retry_with_another_list_keeps_the_checks() {
+        let mut a = app(80, 24);
+        a.repo_configured = true;
+        update(&mut a, key(KeyCode::Char('4')));
+        loaded(&mut a, PkgList::builtin(Reason::Network("timeout".into())));
+        toggle_pkg(&mut a, "zotero");
+        toggle_pkg(&mut a, "wine");
+        assert_eq!(picker(&a).count(), (28, 36));
+        update(&mut a, key(KeyCode::Char('r')));
+        loaded(&mut a, discovered_list());
+        assert!(!picker(&a).item("zotero").unwrap().checked && !picker(&a).item("wine").unwrap().checked);
+        assert!(picker(&a).item("archrepo/fresh-app").unwrap().checked, "new names start checked");
+        assert!(!picker(&a).item("gimp").is_some_and(|i| !i.checked));
+    }
+
+    #[test]
+    fn snapshot_app_picker_with_discovered_packages() {
+        let mut a = picker_app(140, 40, Some(discovered_list()));
+        a.repo_configured = true;
+        packages::sync(&mut a);
+        toggle_pkg(&mut a, "archrepo/kdenlive-extras");
+        insta::assert_snapshot!("picker_discovered_140x40", render(&a));
+        let mut a = picker_app(80, 24, Some(discovered_list()));
+        a.repo_configured = true;
+        packages::sync(&mut a);
+        update(&mut a, key(KeyCode::End));
+        insta::assert_snapshot!("picker_discovered_80x24", render(&a));
+        // Left out until the repository exists: the details say so
+        let a = picker_app(140, 40, Some(discovered_list()));
+        insta::assert_snapshot!("picker_discovered_hidden_140x40", render(&a));
     }
 
     #[test]

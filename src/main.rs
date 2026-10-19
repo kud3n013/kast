@@ -255,8 +255,8 @@ impl ListSource {
     /// The list when it's known without a download: `--offline` or `--packages-file`.
     fn known(&self) -> Result<Option<pkglist::PkgList>> {
         Ok(match &self.packages_file {
-            Some(p) => Some(pkglist::load_local(p)?),
-            None if self.offline => Some(pkglist::load(true, pkglist::curl_fetch)),
+            Some(p) => Some(pkglist::load_local_discovering(p)?),
+            None if self.offline => Some(pkglist::load_online(true)),
             None => None,
         })
     }
@@ -264,7 +264,7 @@ impl ListSource {
     fn load(&self) -> Result<pkglist::PkgList> {
         Ok(match self.known()? {
             Some(l) => l,
-            None => pkglist::load(false, pkglist::curl_fetch),
+            None => pkglist::load_online(false),
         })
     }
 }
@@ -581,11 +581,15 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         }
         Some(Cmd::Packages(a)) => {
             let pl = announce_list(&a.source.or(top))?;
-            let selection = pl.list.select(&a.only, &a.skip).map_err(|e| anyhow::anyhow!(e))?;
-            if let Some(s) = &selection {
-                println!("Selected: {} of {} packages", s.len(), pl.list.count());
+            let list = setup::installable(&pl.list, setup::repo_configured());
+            if list.count() < pl.list.count() {
+                println!("{} packages from archrepo are left out: [archrepo] isn't in pacman.conf (run kast repo first)", pl.list.count() - list.count());
             }
-            journal::recorded(&["packages"], false, || setup::install_packages(&pl.list, selection.as_deref(), false, 0, 1, 1));
+            let selection = list.select(&a.only, &a.skip).map_err(|e| anyhow::anyhow!(e))?;
+            if let Some(s) = &selection {
+                println!("Selected: {} of {} packages", s.len(), list.count());
+            }
+            journal::recorded(&["packages"], false, || setup::install_packages(&list, selection.as_deref(), false, 0, 1, 1));
             // The dashboard drew over the line above
             println!("Package list: {}", pl.source_line());
             Ok(())

@@ -17,6 +17,15 @@
 #   add-on belongs to; must be in this file).
 # - Names: lowercase package names, optionally prefixed with a known repo (`archrepo/`).
 #   `cargo test` validates this file, and so does kast before using a downloaded copy.
+# - archrepo's own packages need no entry here. kast reads archrepo's signed package database
+#   and adds every package this file doesn't mention: as an add-on of a listed package it
+#   depends on, else to the kud3n group, marked "from archrepo". An entry here is for an
+#   exception or an override (the group, a description, `requires`, `replaces`), and wins
+#   over the automatic one. The optional top-level table below turns that off or keeps
+#   packages out of it; it needs no `schema` bump, older kast versions ignore it:
+#     [archrepo]
+#     auto = true                 # merge archrepo's packages (default true)
+#     exclude = ["some-package"]  # never added automatically (default none)
 
 schema = 1
 
@@ -28,7 +37,6 @@ packages = [
   { name = "proton-vpn-cli" },
   { name = "inkscape" },
   { name = "helium-browser-bin" },
-  { name = "obsidian" },
   { name = "fcitx5" },
   { name = "fcitx5-configtool" },
   { name = "fcitx5-gtk" },
@@ -63,20 +71,17 @@ id = "kud3n"
 name = "kud3n's repository"
 packages = [
   { name = "beeper" },
-  { name = "zed" },
+  { name = "archrepo/zed-globalmenu", replaces = "zed" },
   { name = "zotero" },
   { name = "howdy-next" },
   { name = "gdlauncher-carbon" },
   { name = "searxng" },
   { name = "freedownloadmanager", replaces = "freedownloadmanager-bin" },
   { name = "sine"},
-  { name = "cursor" },
-  { name = "galaxybudsclient" },
+  { name = "archrepo/obsidian" },
+  # Depends on dbusmenu-shortcut-shim, but is an app of its own, not an add-on of it
+  { name = "archrepo/cursor" },
   { name = "kast" },
-  { name = "kwin-scripts-krohnkite" },
-  { name = "millennium" },
-  { name = "proton-drive-cli" },
-  { name = "steam-globalmenu" },
   { name = "dbusmenu-shortcut-shim" },
 ]
 

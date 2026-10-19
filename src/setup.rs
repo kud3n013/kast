@@ -17,8 +17,8 @@ pub const MOUNT_POINT: &str = "/media/data";
 pub const REPO_URL: &str = "https://github.com/kud3n013/archrepo/releases/download/packages";
 const OLD_REPO_URL: &str = "https://kud3n013.github.io/archrepo/x86_64";
 /// archrepo signs its database and packages with this key (see the archrepo README).
-const REPO_KEY: &str = include_str!("../assets/archrepo.asc");
-const REPO_KEY_FPR: &str = "CFB791543B4B2D2821E9127AC012A9476C170A37";
+pub(crate) const REPO_KEY: &str = include_str!("../assets/archrepo.asc");
+pub(crate) const REPO_KEY_FPR: &str = "CFB791543B4B2D2821E9127AC012A9476C170A37";
 const PAM_RULE: &str = "auth      sufficient pam_howdy.so workaround=native";
 const HOWDY_HOOK: &str = "/usr/lib/systemd/system-sleep/howdy-resume.sh";
 pub const USER_DIRS: [&str; 9] = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Public", "Templates", "Videos", "Projects"];
@@ -363,6 +363,22 @@ pub fn pkg_installed(pkg: &str) -> bool {
             })
         }),
         None => ok("pacman", &["-Q", pkg]),
+    }
+}
+
+/// Whether /etc/pacman.conf has an `[archrepo]` section.
+pub fn repo_configured() -> bool {
+    fs::read_to_string(sys_path("/etc/pacman.conf")).is_ok_and(|c| c.lines().any(|l| l.trim() == "[archrepo]"))
+}
+
+/// The packages that can be installed: the ones discovered in archrepo's database need
+/// `[archrepo]` in pacman.conf (`repo_ready`: it is there, or this run adds it first).
+pub fn installable(list: &Parsed, repo_ready: bool) -> std::borrow::Cow<'_, Parsed> {
+    if repo_ready || list.discovered() == 0 {
+        std::borrow::Cow::Borrowed(list)
+    } else {
+        log("WARN", &format!("[archrepo] isn't in pacman.conf: leaving out {} packages found in its database.", list.discovered()));
+        std::borrow::Cow::Owned(list.without_discovered())
     }
 }
 
@@ -808,7 +824,11 @@ fn run_steps(plan: &AutoPlan, list: Option<&PkgList>, out: &mut PlanOutcome) -> 
             Step::Upgrade => out.rollback = crate::snapshot::rollback_hint(&system_upgrade(true, o_start, o_step, o_total, plan.snapshot)?),
             Step::Repo => add_kud3n_repo(true, o_start, o_step, o_total)?,
             Step::Packages => match list {
-                Some(l) => install_packages(&l.list, plan.packages.as_deref(), true, o_start, o_step, o_total),
+                Some(l) => {
+                    // Repo comes before Packages in a run, so a run with it has the repo by then
+                    let ready = plan.has(Step::Repo) || repo_configured();
+                    install_packages(&installable(&l.list, ready), plan.packages.as_deref(), true, o_start, o_step, o_total)
+                }
                 None => add_issue("Packages step skipped: no package list"),
             },
             Step::Services => setup_services(true, o_start, o_step, o_total)?,
