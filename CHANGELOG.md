@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.1
+
+- **Backup and `kast plasma` now include more KDE service settings**: KRunner's and Dolphin's
+  web search keywords (`~/.local/share/kf6/searchproviders`), custom service menus
+  (`kservices5`, `kio/servicemenus`), your own desktop launchers (`applications`), and the
+  time zone, Baloo file-info and Kate external-tools settings. `~/.config/kdeconnect` is left
+  out on purpose: it holds the device's private key.
+
 ## 0.8.0
 
 - **`[archrepo]` goes above every other repository in `pacman.conf`**, so pacman takes

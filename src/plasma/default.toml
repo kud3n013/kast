@@ -95,7 +95,15 @@ entries = [
   "baloofilerc",
   "powerdevilrc",
   "powermanagementprofilesrc",
+  "ktimezonedrc",
+  "baloofileinformationrc",
 ]
+
+[[section]]
+id = "services"
+category = "apps"
+location = "$SHARE_DIR"
+entries = ["kf6/searchproviders", "kservices5", "kio/servicemenus", "applications"]
 
 [[section]]
 id = "gtk"
