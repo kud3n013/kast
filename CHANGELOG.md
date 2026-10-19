@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 - **`[archrepo]` goes above every other repository in `pacman.conf`**, so pacman takes
   archrepo's packages over Arch's and CachyOS's. `kast repo` also moves a block that an
