@@ -57,6 +57,10 @@ packages = [
   { name = "git" },
   { name = "claude-code" },
   { name = "claude-desktop" },
+  { name = "oxygen5" },
+  { name = "oxygen-cursors" },
+  { name = "oxygen-icons" },
+  { name = "oxygen-icons-svg" },
 ]
 
 # Packages only the CachyOS repositories carry. Empty for now: which of the entries above
