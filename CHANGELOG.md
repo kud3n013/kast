@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1
+
+- **Restoring a backup made under another account name now works properly.**
+  - Absolute `/home/<old>` paths in restored KDE, Hyprland and fcitx5 settings are rewritten to
+    this account's home (whole path components only, text files up to 4 MiB, never app databases
+    or browser profiles). Backups now record their source home in the manifest; older archives
+    fall back to `/home/<user>`.
+  - The Howdy restore installs only your own face model, as `<user>.dat`, replacing an existing
+    one. It no longer leaves an orphan `<olduser>.dat` or brings in other users' models from old
+    multi-model archives.
+
 ## 0.7.0
 
 - **The data partition step is back, and it works for any partition**, not just the old NTFS
