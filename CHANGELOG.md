@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **`kast plasma apply` stops `kglobalacceld` while it restores shortcuts**, then starts it
+  again. The daemon owns the global shortcuts and rewrote `kglobalshortcutsrc` from memory,
+  so KDE's defaults (Win+L) won over the backup.
+- **`kast import` starts the apps it closed again**, like `backup` does (`--no-relaunch`
+  leaves them closed). Without `-k` it no longer force-kills an app that ignores the close
+  request: it stops before changing anything.
+
 ## 0.7.2
 
 - **Every package archrepo publishes is offered automatically**, without an entry in

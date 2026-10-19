@@ -25,6 +25,8 @@ pub struct ImportOpts {
     /// The caller already confirmed the overwrite: skip the final "proceed?" question
     pub confirmed: bool,
     pub dry_run: bool,
+    /// Don't start the apps kast closed again afterwards
+    pub no_relaunch: bool,
 }
 
 /// Where a config-directory app lives in an archive (old layouts included) and in ~/.config.
@@ -258,11 +260,14 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
             running_info.push(format!("{app} (PID: {})", pid_list(&pids)));
         }
     }
+    let mut _relaunch = RelaunchAfter(Vec::new());
+    let plan = || if o.no_relaunch || o.dry_run { Vec::new() } else { relaunch_plan(&running) };
     if !running.is_empty() {
         let list = running.join(" ");
         if o.dry_run {
             log_warn(&format!("Notice: Running applications detected ({list}). During a live restore, they will need to be closed."));
         } else if o.kill {
+            _relaunch.0 = plan();
             if !terminate_apps(&running) {
                 log_error("Could not terminate running apps. Restore aborted.");
                 return Err(reported());
@@ -274,7 +279,9 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
             log_warn(&format!("Target application(s) ({list}) are currently running. Overwriting open files will cause crashes or data corruption."));
             let ask = Prompt::yes_no(format!("Close/kill running application(s) ({list}) to proceed with restore?"), true);
             if report::ask(&ask.with_details(running_info)) {
-                if !terminate_apps(&running) {
+                _relaunch.0 = plan();
+                // Only an explicit -k may SIGKILL: a prompt answer closes them gracefully
+                if !terminate_apps_with(&running, false) {
                     log_error("Could not terminate running applications. Restore aborted.");
                     return Err(reported());
                 }

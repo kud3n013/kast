@@ -150,6 +150,7 @@ pub fn import_data() -> Result<()> {
         force,
         confirmed: force,
         dry_run: false,
+        no_relaunch: false,
     };
 
     if target.to_string_lossy().ends_with(".dat") {

@@ -475,11 +475,14 @@ struct ImportArgs {
     /// Show actions without making changes
     #[arg(long)]
     dry_run: bool,
+    /// Don't start the apps -k (or the prompt) closed again after the restore
+    #[arg(long)]
+    no_relaunch: bool,
 }
 
 impl ImportArgs {
     fn is_empty(&self) -> bool {
-        self.file.is_none() && self.app.is_none() && !self.no_safety_backup && !self.kill && !self.force && !self.dry_run
+        self.file.is_none() && self.app.is_none() && !self.no_safety_backup && !self.kill && !self.force && !self.dry_run && !self.no_relaunch
     }
 
     fn into_opts(self) -> Result<ImportOpts> {
@@ -495,6 +498,7 @@ impl ImportArgs {
             force: self.force,
             confirmed: self.force,
             dry_run: self.dry_run,
+            no_relaunch: self.no_relaunch,
         })
     }
 }

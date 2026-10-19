@@ -84,10 +84,11 @@ own user. The Howdy face model lives in root-only `/etc/howdy/models`: when it i
 the job, sudo asks for the password once at the start; without a terminal to ask on, the
 face model is skipped with a warning.
 
-When a backup closes running apps (`-k`, or yes to its question), kast opens them again in the
-background once the archive is made: Vesktop goes to its tray, other apps start minimized on
+When a backup or a restore closes running apps (`-k`, or yes to its question), kast opens them again in the
+background once it is done: Vesktop goes to its tray, other apps start minimized on
 Plasma (`kstart --iconify`) or on a hidden special workspace on Hyprland, and as before
-anywhere else. `--no-relaunch` leaves them closed.
+anywhere else. `--no-relaunch` leaves them closed. A restore only force-kills an app that ignores the
+close request when you pass `-k`; answering yes to the question closes apps gracefully and stops if one stays open.
 
 Scripted use is unchanged: subcommands with arguments never open the full-screen app,
 and their output stays plain text when piped (`kast status | cat`, `kast info x.zip > out.txt`).

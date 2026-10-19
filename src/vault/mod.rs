@@ -541,8 +541,26 @@ pub fn relaunch(list: &[Relaunch]) {
     }
 }
 
+/// Starts the apps a backup or restore closed again when it ends, however it ends (an error
+/// or a canceled job unwinding included).
+pub struct RelaunchAfter(pub Vec<Relaunch>);
+
+impl Drop for RelaunchAfter {
+    fn drop(&mut self) {
+        if !self.0.is_empty() {
+            relaunch(&self.0);
+        }
+    }
+}
+
 /// SIGTERM (so databases commit), wait up to 7s, then SIGKILL. False if any survived.
 pub fn terminate_apps(apps: &[String]) -> bool {
+    terminate_apps_with(apps, true)
+}
+
+/// Like `terminate_apps`; without `sigkill` an app that ignores SIGTERM is left running
+/// (and reported) instead of being killed mid-write.
+pub fn terminate_apps_with(apps: &[String], sigkill: bool) -> bool {
     let mut failed = false;
     for app in apps {
         let mut pids = running_pids(app);
@@ -561,6 +579,11 @@ pub fn terminate_apps(apps: &[String]) -> bool {
                 stopped = true;
                 break;
             }
+        }
+        if !stopped && !sigkill {
+            log_error(&format!("{app} did not close within 7 seconds. Close it yourself, or use -k/--kill to force it."));
+            failed = true;
+            continue;
         }
         if !stopped {
             log_warn(&format!("{app} did not shut down gracefully within 7 seconds. Forcing termination (SIGKILL)..."));

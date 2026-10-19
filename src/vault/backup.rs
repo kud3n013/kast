@@ -29,18 +29,6 @@ pub struct BackupOpts {
     pub no_relaunch: bool,
 }
 
-/// Starts the apps a backup closed again when the backup ends, however it ends (an error
-/// or a canceled job unwinding included).
-struct RelaunchAfter(Vec<Relaunch>);
-
-impl Drop for RelaunchAfter {
-    fn drop(&mut self) {
-        if !self.0.is_empty() {
-            relaunch(&self.0);
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum RunningPolicy {
     /// What kast always did: ask to close them (or kill with -k, go on with -f)
