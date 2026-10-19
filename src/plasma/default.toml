@@ -97,6 +97,7 @@ entries = [
   "powermanagementprofilesrc",
   "ktimezonedrc",
   "baloofileinformationrc",
+  "kuriikwsfilterrc",
 ]
 
 [[section]]
