@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.2
 
 - **Every package archrepo publishes is offered automatically**, without an entry in
   `packages.toml`. kast reads archrepo's signed database (verified with `gpgv` against the
