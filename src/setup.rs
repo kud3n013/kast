@@ -203,16 +203,16 @@ pub fn migrate_one(mount: &Path, home: &Path, dir: &str, uid: u32, gid: u32, for
 
 // --- State 3: kud3n's repository ----------------------------------------------------
 
-/// New pacman.conf content with the [archrepo] block present, pointing at REPO_URL and
-/// requiring signatures. Older versions wrote `SigLevel = Optional TrustAll`; that line is
-/// upgraded, any other SigLevel the user set is kept. The block sits before every other
-/// repository (pacman takes a package from the first repo that has it), so one an older
-/// version appended at the end is moved up.
+/// New pacman.conf content with the [archrepo] block present, pointing at REPO_URL. The block
+/// is written with `SigLevel = Optional TrustAll`. A `SigLevel = Required` that an older
+/// version wrote is upgraded to that; any other SigLevel the user set is kept. The block sits
+/// before every other repository (pacman takes a package from the first repo that has it), so
+/// one an older version appended at the end is moved up.
 pub fn patch_pacman_conf(content: &str) -> String {
     let patched = if content.contains("[archrepo]") {
         upgrade_repo_block(content)
     } else {
-        format!("{content}\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n")
+        format!("{content}\n[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n")
     };
     repo_first(&patched)
 }
@@ -254,8 +254,8 @@ fn upgrade_repo_block(content: &str) -> String {
         if t.starts_with('[') {
             in_repo = t == "[archrepo]";
         }
-        if in_repo && t.split_once('=').is_some_and(|(k, v)| k.trim() == "SigLevel" && v.split_whitespace().eq(["Optional", "TrustAll"])) {
-            out.push_str(&line.replace(t, "SigLevel = Required"));
+        if in_repo && t.split_once('=').is_some_and(|(k, v)| k.trim() == "SigLevel" && v.split_whitespace().eq(["Required"])) {
+            out.push_str(&line.replace(t, "SigLevel = Optional TrustAll"));
         } else if in_repo && t == format!("Server = {OLD_REPO_URL}") {
             out.push_str(&line.replace(t, &format!("Server = {REPO_URL}")));
         } else {
@@ -1033,20 +1033,23 @@ mod tests {
     #[test]
     fn pacman_conf_block() {
         let added = patch_pacman_conf("[core]\nInclude = x\n");
-        assert_eq!(added, format!("[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n\n[core]\nInclude = x\n"));
+        assert_eq!(added, format!("[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n\n[core]\nInclude = x\n"));
         assert_eq!(patch_pacman_conf(&added), added);
         // after [options] and its settings, before the first repository
         let opts = patch_pacman_conf("[options]\nParallelDownloads = 5\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n");
-        assert_eq!(opts, format!("[options]\nParallelDownloads = 5\n\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n"));
+        assert_eq!(opts, format!("[options]\nParallelDownloads = 5\n\n[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n"));
         assert_eq!(patch_pacman_conf(&opts), opts);
         let old = format!("[archrepo]\nServer = {OLD_REPO_URL}\n");
         assert_eq!(patch_pacman_conf(&old), format!("[archrepo]\nServer = {REPO_URL}\n"));
-        // the SigLevel older versions wrote is upgraded, only inside [archrepo]
-        let trusting = format!("[extra]\nSigLevel = Optional TrustAll\n\n[archrepo]\nSigLevel = Optional  TrustAll\nServer = {REPO_URL}\n[x]\n");
+        // the SigLevel an older version wrote is upgraded, only inside [archrepo]
+        let required = format!("[extra]\nSigLevel = Required\n\n[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n[x]\n");
         assert_eq!(
-            patch_pacman_conf(&trusting),
-            format!("[archrepo]\nSigLevel = Required\nServer = {REPO_URL}\n\n[extra]\nSigLevel = Optional TrustAll\n\n[x]\n")
+            patch_pacman_conf(&required),
+            format!("[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n\n[extra]\nSigLevel = Required\n\n[x]\n")
         );
+        // a block that already trusts is left as it is
+        let trusting = format!("[archrepo]\nSigLevel = Optional  TrustAll\nServer = {REPO_URL}\n");
+        assert_eq!(patch_pacman_conf(&trusting), trusting);
         // a SigLevel the user chose is left alone
         let custom = format!("[archrepo]\nSigLevel = Required DatabaseOptional\nServer = {REPO_URL}\n");
         assert_eq!(patch_pacman_conf(&custom), custom);

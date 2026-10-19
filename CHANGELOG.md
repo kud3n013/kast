@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.4
+
+- **`kast repo` writes archrepo's block with `SigLevel = Optional TrustAll`.** A block an
+  older version wrote with `SigLevel = Required` is changed to match; any other SigLevel you
+  set is kept. The repository's signed package database is still checked by kast itself.
+
 ## 0.8.3
 
 - **`kast plasma save/apply` includes the Web Search Keywords settings** (`kuriikwsfilterrc`:
