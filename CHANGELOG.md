@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.3
+
+- **`kast plasma save/apply` includes the Web Search Keywords settings** (`kuriikwsfilterrc`:
+  the delimiter, the default shortcut and the preferred shortcuts).
+
 ## 0.8.1
 
 - **Backup and `kast plasma` now include more KDE service settings**: KRunner's and Dolphin's
