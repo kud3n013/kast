@@ -1,0 +1,28 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Package list ────────────────────────────────────────────────────────────────╮
+│✓ Online · kud3n013/kast@main · fetched 04:39 · 36 packages + 2 from archrepo…│
+│  +1 added / −1 removed vs built-in: +gimp −steam                             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Install packages · 38 of 38 selected ────────────────────────────────────────╮
+│  [x] Add-ons  8/8                                                            │
+│    [x] freedownloadmanager-elephant                                          │
+│    [x] zotero-better-bibtex                                                  │
+│    [x] zotmoov                                                               │
+│    [x] zotero-better-notes                                                   │
+│    [x] zotero-ocr                                                            │
+│    [x] zotero-pdf-translate                                                  │
+│    [x] zotero-mcp                                                            │
+│❯   [x] kdenlive-extras                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭ Details ─────────────────────────────────────────────────────────────────────╮
+│archrepo/kdenlive-extras                                                      │
+│kdenlive-extras from the database                                             │
+│from archrepo, not in packages.toml                                           │
+│Group:      Add-ons                                                           │
+│Status:     checking…                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help  a all  n none  i invert

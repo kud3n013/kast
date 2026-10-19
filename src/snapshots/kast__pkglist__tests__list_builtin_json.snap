@@ -11,6 +11,8 @@ expression: "serde_json::to_string_pretty(&list_json(&pl, Some(&installed))).unw
   "reason": "offline: could not reach raw.githubusercontent.com (timeout)",
   "warnings": [],
   "count": 36,
+  "discovered": 0,
+  "discovery_error": null,
   "added": [],
   "removed": [],
   "groups": [

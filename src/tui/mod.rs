@@ -550,7 +550,7 @@ fn execute_command(cmd: Command, tx: &Sender<Event>, replies: &Arc<Replies>, mar
         Command::FetchPackages => {
             let tx = tx.clone();
             std::thread::spawn(move || {
-                let pl = crate::pkglist::load(false, crate::pkglist::curl_fetch);
+                let pl = crate::pkglist::load_online(false);
                 let _ = tx.send(Event::Loaded(event::Loaded::PackageList(Box::new(pl))));
             });
         }

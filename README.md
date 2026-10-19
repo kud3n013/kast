@@ -114,6 +114,25 @@ each with optional rules (`fallback`, `replaces`, `requires`, `description`).
 - **Always shown first.** The app shows the source (online, built-in and why, or a local
   file), the full list and what differs from the built-in list before anything is
   installed. The CLI prints the source line before installing.
+- **archrepo's packages need no entry.** kast also downloads archrepo's signed package
+  database (`archrepo.db` and its signature, in the same job as the list) and adds every
+  package the file doesn't mention. One that depends on a listed package becomes an add-on
+  of it; any other goes to the kud3n group. They are marked "from archrepo, not in
+  packages.toml" in the app and in `--list`, and the source line counts them ("36 packages
+  + 6 from archrepo"). The signature is checked with `gpgv` against the key kast ships, in
+  a temporary keyring; if the download, the signature or the data is bad, or you're
+  offline, nothing is added and the list is as the file gives it. They're installed as
+  `archrepo/<name>`, are never built from the AUR, and are left out of the picker while
+  `[archrepo]` isn't in `pacman.conf` and the run has no repository step. An entry in the
+  file overrides the automatic one (group, `description`, `requires`, `replaces`).
+  Opt out with an optional top-level table, which needs no `schema` bump:
+
+  ```toml
+  [archrepo]
+  auto = true                  # merge archrepo's packages (default true)
+  exclude = ["some-package"]   # never added automatically; explicit entries still count
+  ```
+
 - **AUR builds stay pinned.** When pacman can't install a package, kast retries it with
   yay, but only for packages in the built-in list. A package that only the downloaded list
   names is never built from the AUR.

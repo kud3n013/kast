@@ -1,0 +1,44 @@
+---
+source: src/tui/app.rs
+expression: render(&a)
+---
+ kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
+╭ Package list ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│✓ Online · kud3n013/kast@main · fetched 04:39 · 36 packages + 2 from archrepo                                                             │
+│  +1 added / −1 removed vs built-in: +gimp −steam                                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Install packages · 36 of 36 selected ────────────────────────────────────────────────────╮╭ Details ─────────────────────────────────────╮
+│❯ [x] Official repositories  23/23                                                        ││Official repositories                         │
+│    [x] zen-browser-bin                                                                   ││Space checks or unchecks the whole group.     │
+│    [x] zotero  installed                                                                 ││                                              │
+│    [x] proton-vpn-cli                                                                    ││List downloaded from kud3n013/kast's main     │
+│    [x] inkscape                                                                          ││branch.                                       │
+│    [x] chromium                                                                          ││⚠ 2 packages from archrepo aren't offered:    │
+│    [x] obsidian                                                                          ││[archrepo] isn't in pacman.conf. Check the    │
+│    [x] fcitx5  installed                                                                 ││repository step to get them.                  │
+│    [x] fcitx5-configtool                                                                 ││+1 added / −1 removed vs built-in             │
+│    [x] fcitx5-gtk                                                                        ││  + gimp                                      │
+│    [x] fcitx5-qt                                                                         ││  − steam                                     │
+│    [x] fcitx5-unikey                                                                     ││                                              │
+│    [x] vesktop-bin                                                                       ││                                              │
+│    [x] valkey                                                                            ││                                              │
+│    [x] kdenlive                                                                          ││                                              │
+│    [x] zed-globalmenu                                                                    ││                                              │
+│    [x] wine                                                                              ││                                              │
+│    [x] wine-gecko                                                                        ││                                              │
+│    [x] wine-mono                                                                         ││                                              │
+│    [x] gwenview                                                                          ││                                              │
+│    [x] haruna                                                                            ││                                              │
+│    [x] gimp                                                                              ││                                              │
+│    [x] libreoffice-fresh                                                                 ││                                              │
+│    [x] libreoffice-fresh-vi                                                              ││                                              │
+│  [x] kud3n's repository  6/6                                                             ││                                              │
+│    [x] beeper  installed                                                                 ││                                              │
+│    [x] howdy-next                                                                        ││                                              │
+│    [x] gdlauncher-carbon                                                                 ││                                              │
+│    [x] searxng                                                                           ││                                              │
+│    [x] freedownloadmanager                                                               ││                                              │
+│    [x] sine                                                                              ││                                              │
+│  [x] Add-ons  7/7                                                                        ││                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────╯╰──────────────────────────────────────────────╯
+ Space toggle  Enter continue  Esc back  ? help  a all  n none  i invert

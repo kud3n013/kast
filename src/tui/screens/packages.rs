@@ -48,8 +48,13 @@ pub struct PackagesState {
     pub auto: bool,
     /// The checkboxes, built once the list is here
     pub picker: Option<Checklist>,
-    /// The list `picker` was built from (rebuilt when a retry brings another one)
+    /// The list as loaded, which `picker` was built from (rebuilt when a retry brings another one)
+    pub source: Option<Arc<PkgList>>,
+    /// What the picker offers, and so what a job installs: `source`, without the packages
+    /// found in archrepo's database while `[archrepo]` isn't in pacman.conf and no step adds it
     pub for_list: Option<Arc<PkgList>>,
+    /// Whether those packages are left out
+    pub hidden: bool,
 }
 
 impl PackagesState {
@@ -102,6 +107,21 @@ pub fn build(pl: &PkgList) -> Checklist {
     Checklist::new(rows)
 }
 
+/// A rebuilt picker keeps the user's choices for the packages it has in common with the old one.
+fn carry_choices(old: &Checklist, new: &mut Checklist) {
+    for it in old.items() {
+        if let Some(n) = new.item_mut(&it.key) {
+            n.checked = it.checked;
+        }
+    }
+}
+
+/// Whether packages from archrepo's database can be installed: `[archrepo]` is in
+/// pacman.conf, or the automatic run's repository step is checked (it runs first).
+fn repo_ready(app: &App) -> bool {
+    app.repo_configured || matches!(&app.screen, Screen::Auto(w) if w.chosen().contains(&crate::setup::Step::Repo))
+}
+
 /// The "installed" tags and the add-on rule: an add-on can only be picked while its parent
 /// app is picked or already installed. Otherwise it's unchecked in effect and greyed out
 /// ("needs zotero"); checking the parent again brings back its own choice.
@@ -128,19 +148,30 @@ fn state(app: &mut App) -> Option<&mut PackagesState> {
 /// set when it isn't known yet. Called when the screen opens and when either arrives.
 pub fn sync(app: &mut App) -> Option<Command> {
     let PkgState::Ready(pl) = app.packages.clone() else { return None };
+    let hide = pl.list.discovered() > 0 && !repo_ready(app);
     let installed = app.installed.clone();
-    let want_installed = installed == Installed::Unknown;
+    let mut want_installed = installed == Installed::Unknown;
     let st = state(app)?;
-    if !st.for_list.as_ref().is_some_and(|l| Arc::ptr_eq(l, &pl)) {
-        st.picker = Some(build(&pl));
-        st.for_list = Some(pl.clone());
+    if !st.source.as_ref().is_some_and(|l| Arc::ptr_eq(l, &pl)) || st.hidden != hide {
+        let shown = if hide { Arc::new(PkgList { list: pl.list.without_discovered(), ..(*pl).clone() }) } else { pl.clone() };
+        let mut picker = build(&shown);
+        if let Some(old) = &st.picker {
+            carry_choices(old, &mut picker);
+            // The installed set was asked for other names
+            want_installed |= st.hidden != hide;
+        }
+        st.picker = Some(picker);
+        st.source = Some(pl);
+        st.for_list = Some(shown);
+        st.hidden = hide;
     }
+    let shown = st.for_list.clone()?;
     if let Some(p) = &mut st.picker {
-        apply(p, &pl, &installed);
+        apply(p, &shown, &installed);
     }
     if want_installed {
         app.installed = Installed::Loading;
-        return Some(Command::LoadInstalled(pl.list.packages().map(|p| p.name.clone()).collect()));
+        return Some(Command::LoadInstalled(shown.list.packages().map(|p| p.name.clone()).collect()));
     }
     None
 }
@@ -170,6 +201,9 @@ fn details_lines(theme: &Theme, app: &App, st: &PackagesState, pl: &PkgList) -> 
             lines.push(Line::styled(p.name.clone(), theme.title()));
             if let Some(d) = &p.description {
                 lines.push(Line::raw(d.clone()));
+            }
+            if p.discovered {
+                lines.push(Line::styled(crate::pkglist::NOT_IN_FILE, theme.info()));
             }
             let group = pl.list.groups.iter().find(|g| g.packages.iter().any(|x| x.name == p.name)).map(|g| g.name.clone()).unwrap_or_default();
             lines.push(field("Group:", group));
@@ -214,6 +248,19 @@ fn details_lines(theme: &Theme, app: &App, st: &PackagesState, pl: &PkgList) -> 
             lines.push(Line::styled(format!("  {}", sep(theme, &r.to_string())), theme.warn()));
         }
         Source::Local(p) => lines.push(Line::styled(format!("List read from {} (--packages-file).", p.display()), theme.dim())),
+    }
+    if st.hidden {
+        lines.push(Line::styled(
+            format!(
+                "{} {} packages from archrepo aren't offered: [archrepo] isn't in pacman.conf. Check the repository step to get them.",
+                theme.sym.warn,
+                pl.list.discovered()
+            ),
+            theme.warn(),
+        ));
+    }
+    if let Some(e) = &pl.discovery_error {
+        lines.push(Line::styled(format!("{} archrepo's packages weren't added: {}", theme.sym.warn, sep(theme, e)), theme.warn()));
     }
     for w in &pl.list.warnings {
         lines.push(Line::styled(format!("{} {w}", theme.sym.warn), theme.warn()));
@@ -303,9 +350,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
 
 /// Re-apply the add-on rule after a toggle.
 fn resync(app: &mut App) {
-    let PkgState::Ready(pl) = app.packages.clone() else { return };
     let installed = app.installed.clone();
-    if let Some(p) = state(app).and_then(|s| s.picker.as_mut()) {
+    let Some(st) = state(app) else { return };
+    let Some(pl) = st.for_list.clone() else { return };
+    if let Some(p) = st.picker.as_mut() {
         apply(p, &pl, &installed);
     }
 }
@@ -320,10 +368,11 @@ fn back(app: &mut App, auto: bool) -> Option<Command> {
 }
 
 fn confirm(app: &mut App) -> Option<Command> {
-    let PkgState::Ready(pl) = app.packages.clone() else { return None };
     let installed = app.installed.clone();
     let theme = app.theme.clone();
     let st = state(app)?;
+    // The list the picker shows, so "all checked" means the packages on screen
+    let pl = st.for_list.clone()?;
     if st.auto {
         return super::wizard::next(app);
     }
