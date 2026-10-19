@@ -79,6 +79,11 @@ impl Plan {
         c
     }
 
+    /// Does the plan write anything of this category?
+    pub fn writes(&self, cat: Category) -> bool {
+        self.items.iter().any(|i| i.category == cat && matches!(i.action, Action::Create | Action::Overwrite))
+    }
+
     pub fn has_changes(&self) -> bool {
         let c = self.counts();
         c.create + c.overwrite > 0

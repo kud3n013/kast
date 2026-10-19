@@ -18,9 +18,9 @@ expression: render(&a)
 │                                  ││be overwritten again. Restarting the shell│
 │                                  ││around the apply avoids that; a full log  │
 │                                  ││out and in is the most reliable. KWin     │
-│                                  ││(window manager) settings need a log out  │
-│                                  ││or a KWin reconfigure.                    │
-│                                  ││                                          │
+│                                  ││(window manager) settings, including      │
+│                                  ││KWin's own shortcuts, need a log out or a │
+│                                  ││KWin reconfigure.                         │
 │                                  ││              ╭───────────────────────────╮
 │                                  ││              │ ✓ Saved "work": 12 files. │
 │                                  ││              ╰───────────────────────────╯

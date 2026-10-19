@@ -53,7 +53,7 @@ pub fn detect_tools(version: Option<&str>, have: &dyn Fn(&str) -> bool) -> Optio
 }
 
 pub const WARNING: &str = "Plasma rewrites its settings when it quits, so files restored while it runs can be overwritten again. \
-Restarting the shell around the apply avoids that; a full log out and in is the most reliable. KWin (window manager) settings need a log out or a KWin reconfigure.";
+Restarting the shell around the apply avoids that; a full log out and in is the most reliable. KWin (window manager) settings, including KWin's own shortcuts, need a log out or a KWin reconfigure.";
 
 fn user_command(program: &str, args: &[&str]) -> Command {
     let c = crate::ctx::ctx();
@@ -100,6 +100,53 @@ pub fn start_shell(t: &Tools) -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("{} plasmashell: {e}", t.start))
+}
+
+const SHORTCUT_UNIT: &str = "plasma-kglobalaccel.service";
+
+fn shortcut_daemon_running() -> bool {
+    Command::new("pgrep").args(["-x", "kglobalacceld"]).stdout(Stdio::null()).status().is_ok_and(|s| s.success())
+}
+
+fn user_ok(program: &str, args: &[&str]) -> bool {
+    user_command(program, args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
+}
+
+/// Quit `kglobalacceld`, which owns the global shortcuts and rewrites `kglobalshortcutsrc`
+/// from memory when it exits or syncs. Restoring that file while it runs leaves the old
+/// shortcuts (KDE's defaults, e.g. Meta+L) in charge. Returns true when it was stopped and
+/// must be started again with [`start_shortcut_daemon`].
+pub fn stop_shortcut_daemon() -> Result<bool, String> {
+    if !shortcut_daemon_running() {
+        return Ok(false);
+    }
+    if !user_ok("systemctl", &["--user", "stop", SHORTCUT_UNIT]) {
+        let have = |n: &str| crate::ctx::have(n);
+        let quit = ["kquitapp6", "kquitapp5"].into_iter().find(|n| have(n)).ok_or("could not stop kglobalacceld")?;
+        if !user_ok(quit, &["kglobalaccel"]) {
+            return Err(format!("{quit} kglobalaccel failed"));
+        }
+    }
+    let start = Instant::now();
+    while shortcut_daemon_running() {
+        if start.elapsed() > Duration::from_secs(10) {
+            return Err("kglobalacceld did not quit within 10 seconds".into());
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    Ok(true)
+}
+
+/// Start `kglobalacceld` again so it reads the restored `kglobalshortcutsrc`.
+pub fn start_shortcut_daemon() -> Result<(), String> {
+    if shortcut_daemon_running() || user_ok("systemctl", &["--user", "start", SHORTCUT_UNIT]) {
+        return Ok(());
+    }
+    let bin = ["/usr/lib/kf6/kglobalacceld", "/usr/lib/kglobalacceld", "/usr/libexec/kglobalacceld"]
+        .into_iter()
+        .find(|p| std::path::Path::new(p).is_file())
+        .ok_or("could not start kglobalacceld; log out and in to load the shortcuts")?;
+    user_command(bin, &[]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ()).map_err(|e| format!("{bin}: {e}"))
 }
 
 #[cfg(test)]

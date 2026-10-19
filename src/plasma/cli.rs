@@ -227,7 +227,19 @@ pub fn run(cmd: PlasmaCmd) -> Result<()> {
                 println!("Quitting plasmashell...");
                 reload::quit_shell(t).map_err(anyhow::Error::msg)?;
             }
+            let stopped_shortcuts = if plan.writes(Category::Shortcuts) {
+                println!("Stopping kglobalacceld (it owns the shortcuts)...");
+                reload::stop_shortcut_daemon().map_err(anyhow::Error::msg)?
+            } else {
+                false
+            };
             let rep = apply::execute(&roots, &plan, true, &amb);
+            if stopped_shortcuts {
+                println!("Starting kglobalacceld...");
+                if let Err(e) = reload::start_shortcut_daemon() {
+                    println!("Warning: {e}");
+                }
+            }
             if let Some(t) = &tools {
                 println!("Starting plasmashell...");
                 if let Err(e) = reload::start_shell(t) {

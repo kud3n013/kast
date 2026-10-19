@@ -130,7 +130,11 @@ pub fn run(roots: &Roots, amb: &Ambient, req: PlasmaReq) -> PlasmaResp {
                 if let Some(t) = &tools {
                     reload::quit_shell(t)?;
                 }
+                let stopped_shortcuts = plan.writes(Category::Shortcuts) && reload::stop_shortcut_daemon()?;
                 let rep = apply::execute(roots, &plan, true, amb);
+                if stopped_shortcuts && let Err(e) = reload::start_shortcut_daemon() {
+                    lines.push(format!("Warning: {e}"));
+                }
                 if let Some(t) = &tools
                     && let Err(e) = reload::start_shell(t)
                 {
