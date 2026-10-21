@@ -52,9 +52,9 @@ impl Category {
     pub fn describe(self) -> &'static str {
         match self {
             Category::Appearance => "themes, colors, icons, fonts, splash, lock screen",
-            Category::Shortcuts => "global keyboard shortcuts",
+            Category::Shortcuts => "global and per-app shortcuts, their launchers and commands",
             Category::Panels => "panels, widgets, desktop layout, plasmoids",
-            Category::Windows => "KWin, window rules, screens, session",
+            Category::Windows => "KWin, window rules, screens, session, KWin scripts",
             Category::Input => "mouse, touchpad, keyboard layout",
             Category::Apps => "Dolphin, Konsole, Kate, Klipper, KRunner, ...",
             Category::Gtk => "GTK 2/3/4 settings",
@@ -183,7 +183,7 @@ mod tests {
         }
         assert!(c.sections.iter().any(|s| s.kind == Kind::Export));
         let all: Vec<&str> = c.sections.iter().flat_map(|s| s.entries.iter().map(String::as_str)).collect();
-        for must in ["kdeglobals", "kglobalshortcutsrc", "plasma-org.kde.plasma.desktop-appletsrc", "kwinrc", "plasma/plasmoids", "color-schemes", "konsole"] {
+        for must in ["kdeglobals", "kglobalshortcutsrc", "applications", "kxmlgui5", "kwin/scripts", "plasma-org.kde.plasma.desktop-appletsrc", "kwinrc", "plasma/plasmoids", "color-schemes", "konsole"] {
             assert!(all.contains(&must), "{must}");
         }
     }

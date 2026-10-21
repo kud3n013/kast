@@ -45,6 +45,21 @@ category = "shortcuts"
 location = "$CONFIG_DIR"
 entries = ["kglobalshortcutsrc", "khotkeysrc"]
 
+# Shortcuts that launch an app or run a command ("Add New > Command or Script" writes a
+# net.local.*.desktop here) only work with their .desktop file, so it restores with them.
+[[section]]
+id = "launchers"
+category = "shortcuts"
+location = "$SHARE_DIR"
+entries = ["applications"]
+
+# Per-application shortcuts and toolbars (Settings > Configure Keyboard Shortcuts in an app)
+[[section]]
+id = "app-shortcuts"
+category = "shortcuts"
+location = "$SHARE_DIR"
+entries = ["kxmlgui5", "kxmlgui6"]
+
 [[section]]
 id = "panels"
 category = "panels"
@@ -65,6 +80,13 @@ id = "windows"
 category = "windows"
 location = "$CONFIG_DIR"
 entries = ["kwinrc", "kwinrulesrc", "kwinoutputconfig.json", "ksmserverrc", "kactivitymanagerdrc"]
+
+# KWin scripts and effects you installed (their shortcuts are in kglobalshortcutsrc)
+[[section]]
+id = "kwin-addons"
+category = "windows"
+location = "$SHARE_DIR"
+entries = ["kwin/scripts", "kwin/effects", "kwin/tabbox"]
 
 [[section]]
 id = "input"
@@ -104,7 +126,7 @@ entries = [
 id = "services"
 category = "apps"
 location = "$SHARE_DIR"
-entries = ["kf6/searchproviders", "kservices5", "kio/servicemenus", "applications"]
+entries = ["kf6/searchproviders", "kservices5", "kio/servicemenus"]
 
 [[section]]
 id = "gtk"
@@ -147,4 +169,4 @@ id = "app-assets"
 category = "apps"
 kind = "export"
 location = "$SHARE_DIR"
-entries = ["konsole", "kxmlgui6", "yakuake"]
+entries = ["konsole", "yakuake"]

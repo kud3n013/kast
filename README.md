@@ -240,8 +240,9 @@ kast plasma remove work
 ```
 
 **Categories** (for `--only` and the checkboxes in the app): `appearance` (themes, colors,
-icons, splash, lock screen), `shortcuts`, `panels` (panels, widgets, plasmoids), `windows`
-(KWin, rules, screens), `input`, `apps` (Dolphin, Konsole, Kate, KRunner...), `gtk`, `autostart`.
+icons, splash, lock screen), `shortcuts` (global and per-app shortcuts, with the launchers and
+commands they run), `panels` (panels, widgets, plasmoids), `windows` (KWin, rules, screens,
+your KWin scripts and effects), `input`, `apps` (Dolphin, Konsole, Kate, KRunner...), `gtk`, `autostart`.
 
 **Safety**
 
