@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.5
+
+- **`kast plasma apply --only shortcuts` restores every shortcut in System Settings >
+  Shortcuts.** The `.desktop` files that "Add Application" and "Add Command or Script"
+  shortcuts launch (`~/.local/share/applications`) moved from `apps` to `shortcuts`, so a
+  command shortcut no longer comes back without its command. Profiles saved by 0.8.1-0.8.4
+  restore them the same way.
+- **Per-app shortcuts are saved** (`~/.local/share/kxmlgui5` and `kxmlgui6`, under
+  `shortcuts`); `kxmlgui6` was only exported before.
+- **Your KWin scripts and effects are saved** (`~/.local/share/kwin/scripts`, `effects`,
+  `tabbox`, under `windows`), so the shortcuts they register keep working.
+
 ## 0.8.4
 
 - **`kast repo` writes archrepo's block with `SigLevel = Optional TrustAll`.** A block an

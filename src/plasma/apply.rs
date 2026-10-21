@@ -17,7 +17,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-use super::config::{Category, Config, Kind};
+use super::config::{Category, Config, Kind, Section};
 use super::fsops;
 use super::paths::{Roots, entry_covers, expand_location, safe_rel};
 use super::profile::{self, Ambient, Manifest, Profile, ProfileKind, StoredSection};
@@ -175,22 +175,35 @@ fn classify(loc: &Path, dest: &Path, kind: &ItemKind, src: &Path) -> Action {
     }
 }
 
+/// The local section that restores `entry` of a stored section: the section with the stored id when it still lists the entry, else one at the same place
+/// that took it over (entries move between sections: `applications` went from "services"
+/// to "launchers"), so older profiles keep restoring it under its new category.
+fn local_section<'a>(roots: &Roots, cfg: &'a Config, own: &'a Section, own_loc: &Path, entry: &Path) -> Option<&'a Section> {
+    let lists = |s: &Section| s.entries.iter().any(|p| entry_covers(p, entry));
+    if lists(own) {
+        return Some(own);
+    }
+    cfg.sections.iter().filter(|s| s.id != own.id && lists(s)).find(|s| expand_location(&s.location, roots).is_ok_and(|e| e.path == own_loc))
+}
+
 /// Plan the apply of `profile`, optionally only for some categories.
 pub fn plan(roots: &Roots, cfg: &Config, profile: &Profile, only: Option<&[Category]>) -> Result<Plan> {
     let mut plan = Plan::default();
     let files = profile.files_dir();
     for stored in &profile.manifest.sections {
-        if only.is_some_and(|o| !o.contains(&stored.category)) {
-            continue;
-        }
-        let Some(sec) = cfg.section(&stored.id).filter(|s| s.kind == stored.kind) else {
-            plan.notes.push(format!("section {:?}: not in your Plasma list, so kast will not write it", stored.id));
+        let shown = only.is_none_or(|o| o.contains(&stored.category));
+        let Some(own) = cfg.section(&stored.id).filter(|s| s.kind == stored.kind) else {
+            if shown {
+                plan.notes.push(format!("section {:?}: not in your Plasma list, so kast will not write it", stored.id));
+            }
             continue;
         };
-        let loc = match expand_location(&sec.location, roots) {
+        let own_loc = match expand_location(&own.location, roots) {
             Ok(e) => e.path,
             Err(e) => {
-                plan.notes.push(format!("section {:?}: {e:#}", stored.id));
+                if shown {
+                    plan.notes.push(format!("section {:?}: {e:#}", stored.id));
+                }
                 continue;
             }
         };
@@ -199,14 +212,19 @@ pub fn plan(roots: &Roots, cfg: &Config, profile: &Profile, only: Option<&[Categ
                 plan.notes.push(format!("{}/{entry}: unsafe path", stored.id));
                 continue;
             };
-            if !sec.entries.iter().any(|p| entry_covers(p, &rel_entry)) {
-                plan.notes.push(format!("{}/{entry}: not an entry of your Plasma list", stored.id));
+            let Some(sec) = local_section(roots, cfg, own, &own_loc, &rel_entry) else {
+                if shown {
+                    plan.notes.push(format!("{}/{entry}: not an entry of your Plasma list", stored.id));
+                }
+                continue;
+            };
+            if only.is_some_and(|o| !o.contains(&sec.category)) {
                 continue;
             }
             let sec_dir = files.join(&stored.id);
             for rel in fsops::list_files(&sec_dir, &rel_entry) {
                 let src = sec_dir.join(&rel);
-                let dest = loc.join(&rel);
+                let dest = own_loc.join(&rel);
                 let Ok(m) = src.symlink_metadata() else { continue };
                 let kind = if m.file_type().is_symlink() {
                     let t = fs::read_link(&src)?;
@@ -215,9 +233,9 @@ pub fn plan(roots: &Roots, cfg: &Config, profile: &Profile, only: Option<&[Categ
                     ItemKind::File
                 } else {
                     plan.items.push(PlanItem {
-                        section: stored.id.clone(),
-                        category: stored.category,
-                        section_kind: stored.kind,
+                        section: sec.id.clone(),
+                        category: sec.category,
+                        section_kind: sec.kind,
                         rel,
                         src,
                         dest,
@@ -227,10 +245,10 @@ pub fn plan(roots: &Roots, cfg: &Config, profile: &Profile, only: Option<&[Categ
                     continue;
                 };
                 let action = match &kind {
-                    ItemKind::Link(t) if !link_stays_inside(&loc, &dest, t) => Action::Skip(format!("link to {} points outside", t.display())),
-                    _ => classify(&loc, &dest, &kind, &src),
+                    ItemKind::Link(t) if !link_stays_inside(&own_loc, &dest, t) => Action::Skip(format!("link to {} points outside", t.display())),
+                    _ => classify(&own_loc, &dest, &kind, &src),
                 };
-                plan.items.push(PlanItem { section: stored.id.clone(), category: stored.category, section_kind: stored.kind, rel, src, dest, kind, action });
+                plan.items.push(PlanItem { section: sec.id.clone(), category: sec.category, section_kind: sec.kind, rel, src, dest, kind, action });
             }
             if fsops::list_files(&sec_dir, &rel_entry).is_empty() && !sec_dir.join(&rel_entry).is_dir() {
                 plan.notes.push(format!("{}/{entry}: listed in the profile but its files are missing", stored.id));
@@ -439,6 +457,25 @@ mod tests {
         assert_eq!(pl.counts().overwrite, 1);
         execute(&r, &pl, true, &ambient()).unwrap();
         assert_eq!(fs::read_to_string(r.config.join("kwinrc")).unwrap(), "x", "other categories untouched");
+    }
+
+    #[test]
+    fn an_entry_that_moved_section_restores_under_its_new_category() {
+        let (_d, r, cfg) = saved();
+        let mut p = load(&r, "p").unwrap();
+        // A 0.8.x profile: `applications` was stored in "services" (category apps)
+        fs::create_dir_all(p.files_dir().join("services/applications")).unwrap();
+        fs::write(p.files_dir().join("services/applications/net.local.x.desktop"), "[Desktop Entry]\nExec=x\n").unwrap();
+        p.manifest.sections.retain(|s| s.id != "launchers");
+        p.manifest.sections.push(StoredSection { id: "services".into(), category: Category::Apps, kind: Kind::Save, entries: vec!["applications".into()] });
+        let only = [Category::Shortcuts];
+        let pl = plan(&r, &cfg, &p, Some(&only)).unwrap();
+        let it = pl.items.iter().find(|i| i.rel.ends_with("net.local.x.desktop")).expect("restored with the shortcuts");
+        assert_eq!((it.section.as_str(), it.category), ("launchers", Category::Shortcuts));
+        assert_eq!(it.dest, r.share.join("applications/net.local.x.desktop"));
+        assert!(pl.notes.is_empty(), "{:?}", pl.notes);
+        let apps = plan(&r, &cfg, &p, Some(&[Category::Apps])).unwrap();
+        assert!(apps.items.iter().all(|i| !i.rel.starts_with("applications")));
     }
 
     #[test]
