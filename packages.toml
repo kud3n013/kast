@@ -87,7 +87,8 @@ packages = [
   { name = "howdy-next" },
   { name = "gdlauncher-carbon" },
   { name = "searxng" },
-  { name = "freedownloadmanager", replaces = "freedownloadmanager-bin" },
+  # extra/fdm is an unrelated mail fetcher, so the archrepo/ prefix is needed
+  { name = "archrepo/fdm", replaces = "freedownloadmanager-bin" },
   { name = "sine"},
   { name = "archrepo/obsidian" },
   # Depends on dbusmenu-shortcut-shim, but is an app of its own, not an add-on of it
@@ -100,7 +101,7 @@ packages = [
 id = "addons"
 name = "Add-ons"
 packages = [
-  { name = "freedownloadmanager-elephant", requires = "freedownloadmanager" },
+  { name = "fdm-elephant", requires = "archrepo/fdm" },
   { name = "zotero-better-bibtex", requires = "zotero" },
   { name = "zotmoov", requires = "zotero" },
   { name = "zotero-better-notes", requires = "zotero" },
