@@ -35,7 +35,6 @@ name = "Official repositories"
 packages = [
   { name = "zen-browser-bin" },
   { name = "proton-vpn-cli" },
-  { name = "proton-pass" },
   { name = "inkscape" },
   { name = "helium-browser-bin" },
   { name = "fcitx5" },
@@ -90,6 +89,8 @@ packages = [
   { name = "freedownloadmanager", replaces = "freedownloadmanager-bin" },
   { name = "sine"},
   { name = "archrepo/obsidian" },
+  # CachyOS carries it too, but updates it late
+  { name = "archrepo/proton-pass" },
   # Depends on dbusmenu-shortcut-shim, but is an app of its own, not an add-on of it
   { name = "archrepo/cursor" },
   { name = "kast" },
