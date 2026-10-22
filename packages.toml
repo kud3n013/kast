@@ -54,6 +54,7 @@ packages = [
   { name = "libreoffice-fresh" },
   { name = "libreoffice-fresh-vi" },
   { name = "github-cli" },
+  { name = "github-copilot-cli" },
   { name = "git" },
   { name = "deno" },
   { name = "asar" },
