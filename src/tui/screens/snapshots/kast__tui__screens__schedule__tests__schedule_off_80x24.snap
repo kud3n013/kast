@@ -16,8 +16,8 @@ expression: "render(&opened(80, 24, info(false)))"
 │  [ ] Free Download Manager (~/.config/Softdeluxe)                            │
 │  [ ] fish (~/.config/fish)                                                   │
 │  [ ] fastfetch (~/.config/fastfetch)                                         │
+│  [ ] Scripts (~/.scripts)                                                    │
 │  [ ] KDE Plasma settings (curated)                                           │
-│  [ ] Hyprland settings (~/.config/hypr)                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Status ──────────────────────────────────────────────────────────────────────╮
 │Status     off (not set up)                                                   │

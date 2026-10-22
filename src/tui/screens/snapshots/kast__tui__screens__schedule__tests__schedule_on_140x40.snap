@@ -16,15 +16,15 @@ expression: "render(&opened(140, 40, info(true)))"
 │  [ ] Free Download Manager (~/.config/Softdeluxe)                  ││Runs as you, while you're logged in (your keyring is unlocked then).│
 │  [ ] fish (~/.config/fish)                                         ││A run missed while the computer was off happens at your next login. │
 │  [ ] fastfetch (~/.config/fastfetch)                               ││Apps that are running are left out, never closed: their data may be │
-│  [ ] KDE Plasma settings (curated)                                 ││mid-write. Each skip shows here.                                    │
-│  [ ] Hyprland settings (~/.config/hypr)                            ││The Howdy face model isn't included: it needs sudo.                 │
-│  How often:  daily  (Space switches)                               ││Nothing is uploaded when nothing changed. A failure shows a         │
-│  Keep on Drive:  ‹ 5 ›  per kind (←/→)                             ││notification.                                                       │
+│  [ ] Scripts (~/.scripts)                                          ││mid-write. Each skip shows here.                                    │
+│  [ ] KDE Plasma settings (curated)                                 ││The Howdy face model isn't included: it needs sudo.                 │
+│  [ ] Hyprland settings (~/.config/hypr)                            ││Nothing is uploaded when nothing changed. A failure shows a         │
+│  How often:  daily  (Space switches)                               ││notification.                                                       │
+│  Keep on Drive:  ‹ 5 ›  per kind (←/→)                             ││                                                                    │
 │  [ ] Also keep a copy in /media/data/backups                       ││                                                                    │
 │  ▶ Save and keep it on                                             ││                                                                    │
 │  ■ Turn it off                                                     ││                                                                    │
 │  ▷ Run a backup now                                                ││                                                                    │
-│                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │

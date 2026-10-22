@@ -16,14 +16,14 @@ expression: "render(&proton(140, 40))"
 │  ( ) Free Download Manager (~/.config/Softdeluxe)  not found              ││this kind; older ones go to Proton Drive's trash.            │
 │  ( ) fish (~/.config/fish)  not found                                     ││                                                             │
 │  ( ) fastfetch (~/.config/fastfetch)  not found                           ││Built in a private folder (0700) and removed after the upload│
-│  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                         ││unless you keep a copy.                                      │
+│  ( ) Scripts (~/.scripts)  not found                                      ││unless you keep a copy.                                      │
+│  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                         ││                                                             │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
 │  [x] Include large media (attachments, site data)                         ││                                                             │
 │  [x] Close running apps first (reopened in the background)                ││                                                             │
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

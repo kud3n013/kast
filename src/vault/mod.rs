@@ -52,8 +52,8 @@ pub fn require_vault_tools() -> Result<()> {
     Ok(())
 }
 
-pub const ALL_APPS: [&str; 14] =
-    ["beeper", "zalo", "vesktop", "zen", "helium", "obsidian", "fcitx5", "antigravity", "fdm", "fish", "fastfetch", "howdy", "kde", "hypr"];
+pub const ALL_APPS: [&str; 15] =
+    ["beeper", "zalo", "vesktop", "zen", "helium", "obsidian", "fcitx5", "antigravity", "fdm", "fish", "fastfetch", "scripts", "howdy", "kde", "hypr"];
 
 pub fn normalize_app(app: &str) -> String {
     match app {
@@ -90,10 +90,18 @@ pub fn find_config(app: &str) -> Option<PathBuf> {
         "vesktop" | "obsidian" | "fcitx5" | "hypr" | "fish" | "fastfetch" => first_dir(cfg, &[app]),
         "helium" => first_dir(cfg, &["net.imput.helium"]),
         "fdm" => first_dir(cfg, &["Softdeluxe"]),
+        "scripts" => first_dir(&c.target_home, &[".scripts"]),
         "zen" => first_dir(cfg, &["zen"]).or_else(|| first_dir(&c.target_home, &[".zen"])),
         "antigravity" => first_dir(cfg, &["Antigravity", "antigravity"]),
         _ => None,
     }
+}
+
+/// The folder an app's restore folder (`RestoreSpec::folder`) is in: ~/.config, except for
+/// ~/.scripts.
+pub fn restore_base(app: &str) -> PathBuf {
+    let c = ctx();
+    if app == "scripts" { c.target_home.clone() } else { c.config_home.clone() }
 }
 
 /// A second folder of an app, under ~/.local/share (archived as `<app>-share`): FDM keeps

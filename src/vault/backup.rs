@@ -108,6 +108,7 @@ fn app_spec(app: &str) -> Option<AppSpec> {
         "antigravity" => s("Antigravity", "Antigravity (~/.config/Antigravity)", "Antigravity config not found", &["crashes", "DevToolsActivePort"], None),
         "fdm" => s("Softdeluxe", "Free Download Manager (~/.config/Softdeluxe)", "Free Download Manager config not found", &["logs", "cache", "backup"], None),
         "fish" => s("fish", "fish (~/.config/fish)", "fish config not found", &[], None),
+        "scripts" => s("scripts", "Scripts (~/.scripts)", "~/.scripts not found", &[], None),
         "fastfetch" => s("fastfetch", "fastfetch (~/.config/fastfetch)", "fastfetch config not found", &[], None),
         "hypr" => s("hypr", "Hyprland (~/.config/hypr)", "Hyprland config directory (~/.config/hypr) not found", &[], None),
         _ => return None,

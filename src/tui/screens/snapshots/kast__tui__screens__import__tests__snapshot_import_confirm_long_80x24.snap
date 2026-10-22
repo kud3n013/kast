@@ -8,7 +8,7 @@ expression: out
 ││                                                                            ││
 ││  Archive:  /media/data/backups/all_backup_2026-10-16_210400.zip            ││
 ││  Restores: beeper zalo vesktop zen helium obsidian fcitx5 antigravity fdm  ││
-││fish fastfetch howdy kde hypr                                               ││
+││fish fastfetch scripts howdy kde hypr                                       ││
 ││                                                                            ││
 ││  Overwrites:                                                               ││
 ││    /home/p3ter/.config/beeper                                              ││
@@ -22,7 +22,7 @@ expression: out
 ││    /home/p3ter/.config/fdm                                                 ││
 ││    /home/p3ter/.config/fish                                                ││
 ││    /home/p3ter/.config/fastfetch                                           ││
-││    /home/p3ter/.config/howdy                                               ││
+││    /home/p3ter/.config/scripts                                             ││
 ││                              Restore     Back                              ││
 ╰╰────────────────────────────────────────────────────────────────────────────╯╯
  y/n answer  ←/→ choose  Enter confirm  Esc no

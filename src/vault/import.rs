@@ -50,6 +50,7 @@ fn restore_spec(app: &str) -> Option<RestoreSpec> {
         "fdm" => s(&["Softdeluxe"], "Softdeluxe", "Free Download Manager data"),
         "fish" => s(&["fish"], "fish", "fish config"),
         "fastfetch" => s(&["fastfetch"], "fastfetch", "fastfetch config"),
+        "scripts" => s(&["scripts"], ".scripts", "scripts"),
         "hypr" => s(&["hypr", "hypr/config"], "hypr", "Hyprland config"),
         _ => return None,
     })
@@ -68,7 +69,7 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
         ],
         other => match restore_spec(other) {
             Some(spec) => {
-                let mut v = vec![format!("{cfg}/{}", spec.folder)];
+                let mut v = vec![restore_base(other).join(spec.folder).display().to_string()];
                 if other == "zalo" {
                     v.push(format!("{cfg}/zalo-flags.conf"));
                 }
@@ -92,7 +93,7 @@ pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
             "kde" => out.extend(crate::vault::kde_existing_paths()),
             other => {
                 if let Some(spec) = restore_spec(other) {
-                    out.push(c.config_home.join(spec.folder));
+                    out.push(restore_base(other).join(spec.folder));
                 }
                 out.extend(share_folder(other).map(|f| c.data_home.join(f)));
             }
@@ -323,7 +324,7 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
 
     if apps.is_empty() {
         let has = |names: &[&str]| names.iter().any(|n| staging.join(n).is_dir());
-        let detect: [(&str, &[&str]); 14] = [
+        let detect: [(&str, &[&str]); 15] = [
             ("beeper", &["BeeperTexts", "beeper"]),
             ("zalo", &["ZaloData", "zalo"]),
             ("vesktop", &["vesktop"]),
@@ -335,6 +336,7 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
             ("fdm", &["Softdeluxe", "fdm-share"]),
             ("fish", &["fish", "fish-share"]),
             ("fastfetch", &["fastfetch"]),
+            ("scripts", &["scripts"]),
             ("howdy", &["howdy"]),
             ("kde", &["kde"]),
             ("hypr", &["hypr"]),
@@ -393,7 +395,7 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
     let c = ctx();
     restore_share_dir(app, staging, rollback, o)?;
     let Some(src) = spec.sources.iter().map(|s| staging.join(s)).find(|p| p.is_dir()) else { return Ok(()) };
-    let dest = c.config_home.join(spec.folder);
+    let dest = restore_base(app).join(spec.folder);
     if o.dry_run {
         log_info(&format!("  [Dry-run] Would restore {} to: {}", spec.label, dest.display()));
         return Ok(());
@@ -650,7 +652,13 @@ pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>)
                 if let Some(spec) = restore_spec(other) {
                     let src = snapshot.join(spec.folder);
                     if src.is_dir() {
-                        copy(&src, &c.config_home.join(spec.folder), true)?;
+                        copy(&src, &restore_base(other).join(spec.folder), true)?;
+                    }
+                }
+                if let Some(folder) = share_folder(other) {
+                    let src = snapshot.join(format!("{other}-share"));
+                    if src.is_dir() {
+                        copy(&src, &c.data_home.join(folder), true)?;
                     }
                 }
             }
@@ -674,7 +682,7 @@ pub fn managed_paths(apps: &[String]) -> Vec<PathBuf> {
             }
             other => {
                 if let Some(spec) = restore_spec(other) {
-                    v.push(c.config_home.join(spec.folder));
+                    v.push(restore_base(other).join(spec.folder));
                 }
                 if other == "zalo" {
                     v.push(c.config_home.join("zalo-flags.conf"));
@@ -876,5 +884,40 @@ mod tests {
         assert!(ctx::take_issues().is_empty());
         assert!(managed_paths(&["kde".to_string()]).contains(&rc));
         assert!(managed_paths(&["howdy".to_string()]).is_empty(), "face models are not user files");
+    }
+
+    #[test]
+    fn home_and_share_folders_come_back_where_they_were() {
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return;
+        }
+        let _g = crate::perms::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _staging = ctx::staging_test_lock();
+        let c = crate::ctx::init_for_tests();
+        let (scripts, history) = (c.target_home.join(".scripts"), c.data_home.join("fish/fish_history"));
+        fs::create_dir_all(&scripts).unwrap();
+        fs::write(scripts.join("hello.sh"), "#!/bin/sh\necho hi\n").unwrap();
+        fs::set_permissions(scripts.join("hello.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::create_dir_all(c.config_home.join("fish")).unwrap();
+        fs::write(c.config_home.join("fish/config.fish"), "set -x A 1\n").unwrap();
+        fs::create_dir_all(history.parent().unwrap()).unwrap();
+        fs::write(&history, "- cmd: ls\n").unwrap();
+
+        let t = tempfile::tempdir().unwrap();
+        for app in ["scripts", "fish"] {
+            let zip = t.path().join(format!("{app}.zip"));
+            let o = super::super::backup::BackupOpts { target: app.into(), output: Some(zip.clone()), force: true, ..Default::default() };
+            super::super::backup::cmd_backup(o).unwrap();
+            assert_eq!(snapshot_paths(&[app.to_string()]).len(), if app == "fish" { 2 } else { 1 });
+            for p in snapshot_paths(&[app.to_string()]) {
+                fs::remove_dir_all(p).unwrap();
+            }
+            let o = ImportOpts { file: zip, app: None, safety_backup: false, kill: false, force: true, confirmed: true, dry_run: false, no_relaunch: true };
+            cmd_import(o).unwrap();
+        }
+        assert_eq!(fs::metadata(scripts.join("hello.sh")).unwrap().permissions().mode() & 0o755, 0o755, "still executable");
+        assert_eq!(fs::read_to_string(c.config_home.join("fish/config.fish")).unwrap(), "set -x A 1\n");
+        assert_eq!(fs::read_to_string(&history).unwrap(), "- cmd: ls\n");
     }
 }
