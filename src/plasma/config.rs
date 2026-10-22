@@ -182,6 +182,8 @@ mod tests {
             assert!(c.sections.iter().any(|s| s.category == cat), "no section for {}", cat.name());
         }
         assert!(c.sections.iter().any(|s| s.kind == Kind::Export));
+        let saved = |e: &str| c.sections.iter().any(|s| s.kind == Kind::Save && s.entries.iter().any(|x| x == e));
+        assert!(saved("konsole") && saved("konsolesshconfig"), "Konsole profiles are settings, not assets");
         let all: Vec<&str> = c.sections.iter().flat_map(|s| s.entries.iter().map(String::as_str)).collect();
         for must in ["kdeglobals", "kglobalshortcutsrc", "applications", "kxmlgui5", "kwin/scripts", "plasma-org.kde.plasma.desktop-appletsrc", "kwinrc", "plasma/plasmoids", "color-schemes", "konsole"] {
             assert!(all.contains(&must), "{must}");

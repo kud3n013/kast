@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.6
+
+- **`kast plasma save` stores Konsole's profiles, color schemes and key tabs**
+  (`~/.local/share/konsole`) and its SSH manager settings (`konsolesshconfig`). Profiles were
+  only stored with `--assets` or `export`, so `konsolerc` came back naming a default profile
+  that wasn't there. Older exports still restore them.
+
 ## 0.8.5
 
 - **`kast plasma apply --only shortcuts` restores every shortcut in System Settings >
