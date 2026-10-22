@@ -35,6 +35,7 @@ name = "Official repositories"
 packages = [
   { name = "zen-browser-bin" },
   { name = "proton-vpn-cli" },
+  { name = "proton-pass" },
   { name = "inkscape" },
   { name = "helium-browser-bin" },
   { name = "fcitx5" },
