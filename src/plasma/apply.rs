@@ -479,6 +479,21 @@ mod tests {
     }
 
     #[test]
+    fn an_asset_that_became_a_setting_still_restores() {
+        let (_d, r, cfg) = saved();
+        let mut p = load(&r, "p").unwrap();
+        // A 0.8.5 export: Konsole profiles were an asset in "app-assets"
+        fs::create_dir_all(p.files_dir().join("app-assets/konsole")).unwrap();
+        fs::write(p.files_dir().join("app-assets/konsole/Work.profile"), "[General]\nName=Work\n").unwrap();
+        p.manifest.sections.retain(|s| s.id != "app-data");
+        p.manifest.sections.push(StoredSection { id: "app-assets".into(), category: Category::Apps, kind: Kind::Export, entries: vec!["konsole".into()] });
+        let pl = plan(&r, &cfg, &p, None).unwrap();
+        let it = pl.items.iter().find(|i| i.rel.ends_with("Work.profile")).expect("restored");
+        assert_eq!((it.section.as_str(), it.section_kind), ("app-data", Kind::Save));
+        assert_eq!(it.dest, r.share.join("konsole/Work.profile"));
+    }
+
+    #[test]
     fn profile_cannot_write_outside_the_local_list() {
         let (_d, r, cfg) = saved();
         let mut p = load(&r, "p").unwrap();

@@ -101,6 +101,7 @@ location = "$CONFIG_DIR"
 entries = [
   "dolphinrc",
   "konsolerc",
+  "konsolesshconfig",
   "klipperrc",
   "krunnerrc",
   "katerc",
@@ -127,6 +128,13 @@ id = "services"
 category = "apps"
 location = "$SHARE_DIR"
 entries = ["kf6/searchproviders", "kservices5", "kio/servicemenus"]
+
+# Konsole profiles, color schemes and key tabs: small, and konsolerc names the default profile
+[[section]]
+id = "app-data"
+category = "apps"
+location = "$SHARE_DIR"
+entries = ["konsole"]
 
 [[section]]
 id = "gtk"
@@ -169,4 +177,4 @@ id = "app-assets"
 category = "apps"
 kind = "export"
 location = "$SHARE_DIR"
-entries = ["konsole", "yakuake"]
+entries = ["yakuake"]
