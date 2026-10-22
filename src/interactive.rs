@@ -244,6 +244,7 @@ pub fn export_data() -> Result<()> {
         ("fdm", "Free Download Manager (~/.config/Softdeluxe + ~/.local/share)"),
         ("fish", "fish (~/.config/fish + history)"),
         ("fastfetch", "fastfetch (~/.config/fastfetch)"),
+        ("scripts", "Scripts (~/.scripts)"),
         ("howdy", "Howdy Face Recognition Model (/etc/howdy/models)"),
         ("kde", "KDE Plasma settings (curated ~/.config + ~/.local/share)"),
         ("hypr", "Hyprland settings (~/.config/hypr)"),
@@ -252,7 +253,7 @@ pub fn export_data() -> Result<()> {
         println!("  {}) {label}", i + 1);
     }
     println!("  q) Cancel\n");
-    let choice = read_choice("Choose target [1-15, q]: ");
+    let choice = read_choice("Choose target [1-16, q]: ");
     let target = match choice.parse::<usize>() {
         Ok(n) if (1..=targets.len()).contains(&n) => targets[n - 1].0,
         _ if choice.is_empty() || choice.eq_ignore_ascii_case("q") => {

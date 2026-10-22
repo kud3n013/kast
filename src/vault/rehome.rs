@@ -12,7 +12,7 @@ use super::*;
 
 /// Apps whose archived files are plain-text settings. Databases and browser or Electron
 /// profiles are left alone: a byte-level edit could corrupt them.
-pub const REHOME_APPS: &[&str] = &["kde", "hypr", "fcitx5", "fish", "fastfetch"];
+pub const REHOME_APPS: &[&str] = &["kde", "hypr", "fcitx5", "fish", "fastfetch", "scripts"];
 
 const MAX_FILE: u64 = 4 * 1024 * 1024;
 

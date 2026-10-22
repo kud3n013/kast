@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.8
+
+- **Export / Import data covers `~/.scripts`** (part of `all` and of scheduled backups;
+  home paths in the scripts are adjusted when restoring on an account with another name).
+- **Undoing an import puts back the `~/.local/share` folders** of FDM and fish too.
+
 ## 0.8.7
 
 - **Export / Import data covers Helium, Free Download Manager, fish and fastfetch.**

@@ -92,6 +92,10 @@ pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
                 fields.push(("Folder:      ".into(), format!("~/.config/{key}")));
                 source(&mut fields, "Source:      ", "config_path");
             }
+            "SCRIPTS" => {
+                fields.push(("Folder:      ".into(), "~/.scripts".into()));
+                source(&mut fields, "Source:      ", "config_path");
+            }
             "HELIUM" => {
                 fields.push(("Folder:      ".into(), "~/.config/net.imput.helium".into()));
                 source(&mut fields, "Source:      ", "config_path");
