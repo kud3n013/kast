@@ -43,9 +43,13 @@ fn restore_spec(app: &str) -> Option<RestoreSpec> {
         "zalo" => s(&["ZaloData", "zalo/config", "zalo"], "ZaloData", "ZaloData"),
         "vesktop" => s(&["vesktop", "vesktop/config"], "vesktop", "Vesktop data"),
         "zen" => s(&["zen", "zen/config"], "zen", "Zen Browser data"),
+        "helium" => s(&["net.imput.helium"], "net.imput.helium", "Helium data"),
         "obsidian" => s(&["obsidian", "obsidian/config"], "obsidian", "Obsidian config"),
         "fcitx5" => s(&["fcitx5", "fcitx5/config"], "fcitx5", "Fcitx5 config"),
         "antigravity" => s(&["Antigravity", "antigravity/config", "antigravity"], "Antigravity", "Antigravity config"),
+        "fdm" => s(&["Softdeluxe"], "Softdeluxe", "Free Download Manager data"),
+        "fish" => s(&["fish"], "fish", "fish config"),
+        "fastfetch" => s(&["fastfetch"], "fastfetch", "fastfetch config"),
         "hypr" => s(&["hypr", "hypr/config"], "hypr", "Hyprland config"),
         _ => return None,
     })
@@ -68,6 +72,9 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
                 if other == "zalo" {
                     v.push(format!("{cfg}/zalo-flags.conf"));
                 }
+                if let Some(share) = share_folder(other) {
+                    v.push(format!("{}/{share}", c.data_home.display()));
+                }
                 v
             }
             None => vec![],
@@ -87,6 +94,7 @@ pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
                 if let Some(spec) = restore_spec(other) {
                     out.push(c.config_home.join(spec.folder));
                 }
+                out.extend(share_folder(other).map(|f| c.data_home.join(f)));
             }
         }
     }
@@ -315,14 +323,18 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
 
     if apps.is_empty() {
         let has = |names: &[&str]| names.iter().any(|n| staging.join(n).is_dir());
-        let detect: [(&str, &[&str]); 10] = [
+        let detect: [(&str, &[&str]); 14] = [
             ("beeper", &["BeeperTexts", "beeper"]),
             ("zalo", &["ZaloData", "zalo"]),
             ("vesktop", &["vesktop"]),
             ("zen", &["zen"]),
+            ("helium", &["net.imput.helium"]),
             ("obsidian", &["obsidian"]),
             ("fcitx5", &["fcitx5"]),
             ("antigravity", &["Antigravity", "antigravity"]),
+            ("fdm", &["Softdeluxe", "fdm-share"]),
+            ("fish", &["fish", "fish-share"]),
+            ("fastfetch", &["fastfetch"]),
             ("howdy", &["howdy"]),
             ("kde", &["kde"]),
             ("hypr", &["hypr"]),
@@ -379,6 +391,7 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
 
 fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
     let c = ctx();
+    restore_share_dir(app, staging, rollback, o)?;
     let Some(src) = spec.sources.iter().map(|s| staging.join(s)).find(|p| p.is_dir()) else { return Ok(()) };
     let dest = c.config_home.join(spec.folder);
     if o.dry_run {
@@ -411,6 +424,27 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
         log_success("Hyprland configuration restored successfully!");
     }
     Ok(())
+}
+
+/// The app's folder under ~/.local/share (`share_folder`), archived as `<app>-share`.
+fn restore_share_dir(app: &str, staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
+    let Some(folder) = share_folder(app) else { return Ok(()) };
+    let src = staging.join(format!("{app}-share"));
+    if !src.is_dir() {
+        return Ok(());
+    }
+    let dest = ctx().data_home.join(folder);
+    if o.dry_run {
+        log_info(&format!("  [Dry-run] Would restore {app} data to: {}", dest.display()));
+        return Ok(());
+    }
+    if o.safety_backup && dest.is_dir() {
+        let snap = rollback.join(format!("{app}-share"));
+        fs::create_dir_all(&snap)?;
+        rsync_dir(&[], &dest, &snap)?;
+    }
+    ctx::mkdir_user(&dest)?;
+    rsync_dir_as(as_user(), &restore_opts(), &src, &dest)
 }
 
 /// Restored data is written by the target user (rsync runs through `sudo -u` when kast is
@@ -645,6 +679,7 @@ pub fn managed_paths(apps: &[String]) -> Vec<PathBuf> {
                 if other == "zalo" {
                     v.push(c.config_home.join("zalo-flags.conf"));
                 }
+                v.extend(share_folder(other).map(|f| c.data_home.join(f)));
             }
         }
     }

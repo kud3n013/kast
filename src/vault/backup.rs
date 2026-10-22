@@ -86,9 +86,29 @@ fn app_spec(app: &str) -> Option<AppSpec> {
             &["lock", ".parentlock", "crashes", "datareporting", "shader-cache", "startupCache", "storage/temporary"],
             Some("storage/default/https+++*"),
         ),
+        "helium" => s(
+            "net.imput.helium",
+            "Helium (~/.config/net.imput.helium)",
+            "Helium config not found",
+            &[
+                "GPUPersistentCache",
+                "GrShaderCache",
+                "ShaderCache",
+                "BrowserMetrics*",
+                "Crash Reports",
+                "component_crx_cache",
+                "segmentation_platform",
+                "optimization_guide*",
+                "Service Worker/CacheStorage",
+            ],
+            None,
+        ),
         "obsidian" => s("obsidian", "Obsidian (~/.config/obsidian)", "Obsidian config not found", &[], None),
         "fcitx5" => s("fcitx5", "Fcitx5 (~/.config/fcitx5)", "Fcitx5 config not found", &[], None),
         "antigravity" => s("Antigravity", "Antigravity (~/.config/Antigravity)", "Antigravity config not found", &["crashes", "DevToolsActivePort"], None),
+        "fdm" => s("Softdeluxe", "Free Download Manager (~/.config/Softdeluxe)", "Free Download Manager config not found", &["logs", "cache", "backup"], None),
+        "fish" => s("fish", "fish (~/.config/fish)", "fish config not found", &[], None),
+        "fastfetch" => s("fastfetch", "fastfetch (~/.config/fastfetch)", "fastfetch config not found", &[], None),
         "hypr" => s("hypr", "Hyprland (~/.config/hypr)", "Hyprland config directory (~/.config/hypr) not found", &[], None),
         _ => return None,
     })
@@ -350,6 +370,17 @@ fn backup_app_dir(app: &str, spec: &AppSpec, staging: &Path, o: &BackupOpts) -> 
     }
 
     let mut entry = json!({"included": true, "folder": spec.folder, "config_path": cfg.to_string_lossy()});
+    if let Some(share) = share_dir(app) {
+        let staged = format!("{app}-share");
+        if o.dry_run {
+            log_info(&format!("  [Dry-run] Would sync: {} -> {staged}", share.display()));
+        } else {
+            let dest = staging.join(&staged);
+            fs::create_dir_all(&dest)?;
+            rsync_dir(&excludes, &share, &dest)?;
+        }
+        entry["share_path"] = json!(share.to_string_lossy());
+    }
     if app == "zalo" {
         let flags = find_zalo_flags();
         if let Some(f) = &flags {

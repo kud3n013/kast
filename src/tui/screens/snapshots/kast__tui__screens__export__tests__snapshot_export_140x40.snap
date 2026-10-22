@@ -9,9 +9,13 @@ expression: render(&a)
 │  ( ) ZaloData (~/.config/ZaloData)  not found                             ││Found:   /home/p3ter/.config/beeper                          │
 │  ( ) Vesktop (~/.config/vesktop)  not found                               ││Size:    2.1G                                                │
 │  ( ) Zen Browser (~/.config/zen)  ✓ 512M                                  ││                                                             │
-│  ( ) Obsidian (~/.config/obsidian)  not found                             ││The archive holds logins and cookies: it is created readable │
-│  ( ) Fcitx5 (~/.config/fcitx5)  not found                                 ││by you only (0600).                                          │
+│  ( ) Helium (~/.config/net.imput.helium)  not found                       ││The archive holds logins and cookies: it is created readable │
+│  ( ) Obsidian (~/.config/obsidian)  not found                             ││by you only (0600).                                          │
+│  ( ) Fcitx5 (~/.config/fcitx5)  not found                                 ││                                                             │
 │  ( ) Antigravity (~/.config/Antigravity)  not found                       ││                                                             │
+│  ( ) Free Download Manager (~/.config/Softdeluxe)  not found              ││                                                             │
+│  ( ) fish (~/.config/fish)  not found                                     ││                                                             │
+│  ( ) fastfetch (~/.config/fastfetch)  not found                           ││                                                             │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                         ││                                                             │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
@@ -19,10 +23,6 @@ expression: render(&a)
 │  [x] Close running apps first (reopened in the background)                ││                                                             │
 │  File name: beeper_backup_2026-10-17_101500.zip                           ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

@@ -6,24 +6,24 @@ expression: out
 ╭ Back up to Proton Drive /my-files/kast-backups/archbox ───────────────────╮╭ Details ────────────────────────────────────────────────────╮
 │❯ (•) All detected apps & Howdy face model  ✓                              ││All detected apps & Howdy face model                         │
 │  ( ) BeeperTexts (~/.config/BeeperTexts)  ✓                               ││                                                             │
-│  ( ) ZaloData (~/.config/ZaloData)  ✓                                     ││Includes: beeper, zalo, vesktop, zen, obsidian, fcitx5,      │
-│  ( ) Vesktop (~/.config/vesktop)  ✓                                       ││antigravity, howdy, kde, hypr                                │
+│  ( ) ZaloData (~/.config/ZaloData)  ✓                                     ││Includes: beeper, zalo, vesktop, zen, helium, obsidian,      │
+│  ( ) Vesktop (~/.config/vesktop)  ✓                                       ││fcitx5, antigravity, fdm, fish, fastfetch, howdy, kde, hypr  │
 │  ( ) Zen Browser (~/.config/zen)  ✓                                       ││                                                             │
-│  ( ) Obsidian (~/.config/obsidian)  ✓                                     ││Uploads:                                                     │
-│  ( ) Fcitx5 (~/.config/fcitx5)  ✓                                         ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
-│  ( ) Antigravity (~/.config/Antigravity)  ✓                               ││ip                                                           │
-│  ( ) Howdy face model (/etc/howdy/models)  ✓                              ││With a sidecar listing its contents. Keeps the newest 5 of   │
-│  ( ) KDE Plasma settings (curated)  ✓                                     ││this kind; older ones go to Proton Drive's trash.            │
+│  ( ) Helium (~/.config/net.imput.helium)  ✓                               ││Uploads:                                                     │
+│  ( ) Obsidian (~/.config/obsidian)  ✓                                     ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
+│  ( ) Fcitx5 (~/.config/fcitx5)  ✓                                         ││ip                                                           │
+│  ( ) Antigravity (~/.config/Antigravity)  ✓                               ││With a sidecar listing its contents. Keeps the newest 5 of   │
+│  ( ) Free Download Manager (~/.config/Softdeluxe)  ✓                      ││this kind; older ones go to Proton Drive's trash.            │
+│  ( ) fish (~/.config/fish)  ✓                                             ││                                                             │
+│  ( ) fastfetch (~/.config/fastfetch)  ✓                                   ││Built in a private folder (0700) and removed after the upload│
+│  ( ) Howdy face model (/etc/howdy/models)  ✓                              ││unless you keep a copy.                                      │
+│  ( ) KDE Plasma settings (curated)  ✓                                     ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  ✓                                ││                                                             │
-│  [x] Include large media (attachments, site data)                         ││Built in a private folder (0700) and removed after the upload│
-│  [x] Close running apps first (reopened in the background)                ││unless you keep a copy.                                      │
+│  [x] Include large media (attachments, site data)                         ││                                                             │
+│  [x] Close running apps first (reopened in the background)                ││                                                             │
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  [x] Skip the upload if nothing changed since the last one                ││                                                             │
 │  ▶ Use this backup                                                        ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

@@ -52,7 +52,8 @@ pub fn require_vault_tools() -> Result<()> {
     Ok(())
 }
 
-pub const ALL_APPS: [&str; 10] = ["beeper", "zalo", "vesktop", "zen", "obsidian", "fcitx5", "antigravity", "howdy", "kde", "hypr"];
+pub const ALL_APPS: [&str; 14] =
+    ["beeper", "zalo", "vesktop", "zen", "helium", "obsidian", "fcitx5", "antigravity", "fdm", "fish", "fastfetch", "howdy", "kde", "hypr"];
 
 pub fn normalize_app(app: &str) -> String {
     match app {
@@ -60,6 +61,8 @@ pub fn normalize_app(app: &str) -> String {
         "zalodata" => "zalo",
         "plasma" | "kde-plasma" => "kde",
         "hyprland" => "hypr",
+        "helium-browser" => "helium",
+        "freedownloadmanager" | "free-download-manager" => "fdm",
         a => a,
     }
     .to_string()
@@ -84,11 +87,27 @@ pub fn find_config(app: &str) -> Option<PathBuf> {
     match app {
         "beeper" => first_dir(cfg, &["BeeperTexts", "Beeper", "beeper"]),
         "zalo" => first_dir(cfg, &["ZaloData", "Zalo"]),
-        "vesktop" | "obsidian" | "fcitx5" | "hypr" => first_dir(cfg, &[app]),
+        "vesktop" | "obsidian" | "fcitx5" | "hypr" | "fish" | "fastfetch" => first_dir(cfg, &[app]),
+        "helium" => first_dir(cfg, &["net.imput.helium"]),
+        "fdm" => first_dir(cfg, &["Softdeluxe"]),
         "zen" => first_dir(cfg, &["zen"]).or_else(|| first_dir(&c.target_home, &[".zen"])),
         "antigravity" => first_dir(cfg, &["Antigravity", "antigravity"]),
         _ => None,
     }
+}
+
+/// A second folder of an app, under ~/.local/share (archived as `<app>-share`): FDM keeps
+/// its settings.ini and download list there, fish its history.
+pub fn share_folder(app: &str) -> Option<&'static str> {
+    match app {
+        "fdm" => Some("Softdeluxe/Free Download Manager"),
+        "fish" => Some("fish"),
+        _ => None,
+    }
+}
+
+pub fn share_dir(app: &str) -> Option<PathBuf> {
+    share_folder(app).map(|f| ctx().data_home.join(f)).filter(|p| p.is_dir())
 }
 
 pub fn find_zalo_flags() -> Option<PathBuf> {
@@ -402,10 +421,12 @@ fn pgrep_specs(app: &str) -> Vec<Vec<&'static str>> {
         "vesktop" => vec![vec!["-x", "vesktop"], vec!["-f", "/(usr|opt)/[^ ]*/vesktop(/| |$)"]],
         "zen" => vec![vec!["-x", "zen-bin"], vec!["-x", "zen"], vec!["-x", "zen-browser"], vec!["-f", "/(usr|opt)/([^ ]*/)?zen[^ /]*/zen[^ /]*( |$)"]],
         "obsidian" => vec![vec!["-x", "obsidian"], vec!["-f", "/(usr|opt)/(lib|bin|share)/obsidian"]],
+        "helium" => vec![vec!["-x", "helium"], vec!["-f", "^/opt/helium[^ /]*/helium( |$)"]],
+        "fdm" => vec![vec!["-x", "fdm"], vec!["-f", "^/opt/freedownloadmanager/fdm( |$)"]],
         "fcitx5" => vec![vec!["-x", "fcitx5"], vec!["-x", "fcitx5-daemon"]],
         "antigravity" => vec![vec!["-x", "antigravity"], vec!["-f", "/(usr|opt)/[^ ]*/antigravity(/| |$)"]],
         "howdy" => vec![vec!["-x", "howdy"], vec!["-x", "howdy_compare"]],
-        // Never kill the Plasma or Hyprland session
+        // Never kill the Plasma or Hyprland session, or the shell kast runs in (fish)
         _ => vec![],
     }
 }

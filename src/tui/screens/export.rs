@@ -18,15 +18,19 @@ use crate::tui::job::JobKind;
 use crate::tui::widgets::{Input, block, popup};
 use crate::vault::backup::BackupOpts;
 
-pub const TARGETS: [(&str, &str); 11] = [
+pub const TARGETS: [(&str, &str); 15] = [
     ("all", "All detected apps & Howdy face model"),
     ("beeper", "BeeperTexts (~/.config/BeeperTexts)"),
     ("zalo", "ZaloData (~/.config/ZaloData)"),
     ("vesktop", "Vesktop (~/.config/vesktop)"),
     ("zen", "Zen Browser (~/.config/zen)"),
+    ("helium", "Helium (~/.config/net.imput.helium)"),
     ("obsidian", "Obsidian (~/.config/obsidian)"),
     ("fcitx5", "Fcitx5 (~/.config/fcitx5)"),
     ("antigravity", "Antigravity (~/.config/Antigravity)"),
+    ("fdm", "Free Download Manager (~/.config/Softdeluxe)"),
+    ("fish", "fish (~/.config/fish)"),
+    ("fastfetch", "fastfetch (~/.config/fastfetch)"),
     ("howdy", "Howdy face model (/etc/howdy/models)"),
     ("kde", "KDE Plasma settings (curated)"),
     ("hypr", "Hyprland settings (~/.config/hypr)"),
@@ -724,7 +728,7 @@ mod tests {
         s.stage = Stage::What;
         let mut targets: Vec<TargetInfo> =
             TARGETS.iter().map(|(k, _)| TargetInfo { key: k, detected: false, size: String::new(), location: String::new() }).collect();
-        for (i, size) in [(0, ""), (1, "2.1G"), (4, "512M"), (8, "8.0K"), (9, "96M")] {
+        for (i, size) in [(0, ""), (1, "2.1G"), (4, "512M"), (12, "8.0K"), (13, "96M")] {
             targets[i].detected = true;
             targets[i].size = size.into();
             targets[i].location = format!("/home/p3ter/.config/{}", targets[i].key);
@@ -798,7 +802,7 @@ mod tests {
         let mut a = loaded(80, 24);
         assert_eq!(st(&a).dest.value, "all_backup_2026-10-17_101500.zip");
         // howdy: .dat by default, no media option
-        for _ in 0..8 {
+        for _ in 0..12 {
             update(&mut a, key(KeyCode::Down));
         }
         update(&mut a, key(KeyCode::Char(' ')));

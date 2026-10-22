@@ -9,20 +9,20 @@ expression: "render(&proton(140, 40))"
 │  ( ) ZaloData (~/.config/ZaloData)  not found                             ││Found:   /home/p3ter/.config/all                             │
 │  ( ) Vesktop (~/.config/vesktop)  not found                               ││Includes: beeper, zen, howdy, kde                            │
 │  ( ) Zen Browser (~/.config/zen)  ✓ 512M                                  ││                                                             │
-│  ( ) Obsidian (~/.config/obsidian)  not found                             ││Uploads:                                                     │
-│  ( ) Fcitx5 (~/.config/fcitx5)  not found                                 ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
-│  ( ) Antigravity (~/.config/Antigravity)  not found                       ││ip                                                           │
-│  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                         ││With a sidecar listing its contents. Keeps the newest 5 of   │
-│  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││this kind; older ones go to Proton Drive's trash.            │
+│  ( ) Helium (~/.config/net.imput.helium)  not found                       ││Uploads:                                                     │
+│  ( ) Obsidian (~/.config/obsidian)  not found                             ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
+│  ( ) Fcitx5 (~/.config/fcitx5)  not found                                 ││ip                                                           │
+│  ( ) Antigravity (~/.config/Antigravity)  not found                       ││With a sidecar listing its contents. Keeps the newest 5 of   │
+│  ( ) Free Download Manager (~/.config/Softdeluxe)  not found              ││this kind; older ones go to Proton Drive's trash.            │
+│  ( ) fish (~/.config/fish)  not found                                     ││                                                             │
+│  ( ) fastfetch (~/.config/fastfetch)  not found                           ││Built in a private folder (0700) and removed after the upload│
+│  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                         ││unless you keep a copy.                                      │
+│  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
-│  [x] Include large media (attachments, site data)                         ││Built in a private folder (0700) and removed after the upload│
-│  [x] Close running apps first (reopened in the background)                ││unless you keep a copy.                                      │
+│  [x] Include large media (attachments, site data)                         ││                                                             │
+│  [x] Close running apps first (reopened in the background)                ││                                                             │
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

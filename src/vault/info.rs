@@ -88,9 +88,20 @@ pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
                 fields.push(("Folder:      ".into(), format!("~/.config/{}", field("folder", default))));
                 source(&mut fields, "Source:      ", "config_path");
             }
-            "VESKTOP" | "ZEN" | "OBSIDIAN" | "FCITX5" | "HYPR" => {
+            "VESKTOP" | "ZEN" | "OBSIDIAN" | "FCITX5" | "HYPR" | "FASTFETCH" => {
                 fields.push(("Folder:      ".into(), format!("~/.config/{key}")));
                 source(&mut fields, "Source:      ", "config_path");
+            }
+            "HELIUM" => {
+                fields.push(("Folder:      ".into(), "~/.config/net.imput.helium".into()));
+                source(&mut fields, "Source:      ", "config_path");
+            }
+            "FDM" | "FISH" => {
+                let (cfg, share) = if name == "FDM" { ("Softdeluxe", "Softdeluxe/Free Download Manager") } else { ("fish", "fish") };
+                fields.push(("Config:      ".into(), format!("~/.config/{cfg}")));
+                fields.push(("Share:       ".into(), format!("~/.local/share/{share}")));
+                source(&mut fields, "Source cfg:  ", "config_path");
+                source(&mut fields, "Source data: ", "share_path");
             }
             "HOWDY" => {
                 let user = field("user", "");
