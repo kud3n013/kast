@@ -9,21 +9,21 @@ expression: "render(&opened(140, 40, info(true)))"
 │  [ ] ZaloData (~/.config/ZaloData)                                 ││Next run   Sun 2026-10-18 00:21:07 CEST                             │
 │  [ ] Vesktop (~/.config/vesktop)                                   ││Last run   2026-10-17 00:12 · uploaded                              │
 │  [ ] Zen Browser (~/.config/zen)                                   ││           apps_backup_2026-10-17_001203.zip                        │
-│  [ ] Obsidian (~/.config/obsidian)                                 ││Left out   zen, beeper (were running)                               │
-│  [ ] Fcitx5 (~/.config/fcitx5)                                     ││                                                                    │
-│  [ ] Antigravity (~/.config/Antigravity)                           ││Uploads to /my-files/kast-backups/archbox on Proton Drive (signed   │
-│  [ ] KDE Plasma settings (curated)                                 ││in).                                                                │
-│  [ ] Hyprland settings (~/.config/hypr)                            ││Runs as you, while you're logged in (your keyring is unlocked then).│
-│  How often:  daily  (Space switches)                               ││A run missed while the computer was off happens at your next login. │
-│  Keep on Drive:  ‹ 5 ›  per kind (←/→)                             ││Apps that are running are left out, never closed: their data may be │
-│  [ ] Also keep a copy in /media/data/backups                       ││mid-write. Each skip shows here.                                    │
-│  ▶ Save and keep it on                                             ││The Howdy face model isn't included: it needs sudo.                 │
-│  ■ Turn it off                                                     ││Nothing is uploaded when nothing changed. A failure shows a         │
-│  ▷ Run a backup now                                                ││notification.                                                       │
-│                                                                    ││                                                                    │
-│                                                                    ││                                                                    │
-│                                                                    ││                                                                    │
-│                                                                    ││                                                                    │
+│  [ ] Helium (~/.config/net.imput.helium)                           ││Left out   zen, beeper (were running)                               │
+│  [ ] Obsidian (~/.config/obsidian)                                 ││                                                                    │
+│  [ ] Fcitx5 (~/.config/fcitx5)                                     ││Uploads to /my-files/kast-backups/archbox on Proton Drive (signed   │
+│  [ ] Antigravity (~/.config/Antigravity)                           ││in).                                                                │
+│  [ ] Free Download Manager (~/.config/Softdeluxe)                  ││Runs as you, while you're logged in (your keyring is unlocked then).│
+│  [ ] fish (~/.config/fish)                                         ││A run missed while the computer was off happens at your next login. │
+│  [ ] fastfetch (~/.config/fastfetch)                               ││Apps that are running are left out, never closed: their data may be │
+│  [ ] KDE Plasma settings (curated)                                 ││mid-write. Each skip shows here.                                    │
+│  [ ] Hyprland settings (~/.config/hypr)                            ││The Howdy face model isn't included: it needs sudo.                 │
+│  How often:  daily  (Space switches)                               ││Nothing is uploaded when nothing changed. A failure shows a         │
+│  Keep on Drive:  ‹ 5 ›  per kind (←/→)                             ││notification.                                                       │
+│  [ ] Also keep a copy in /media/data/backups                       ││                                                                    │
+│  ▶ Save and keep it on                                             ││                                                                    │
+│  ■ Turn it off                                                     ││                                                                    │
+│  ▷ Run a backup now                                                ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │

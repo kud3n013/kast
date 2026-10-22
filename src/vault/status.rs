@@ -112,9 +112,13 @@ pub fn collect_status() -> StatusReport {
         app_status(2, "ZaloData (~/.config/ZaloData)", "zalo"),
         app_status(3, "Vesktop (~/.config/vesktop)", "vesktop"),
         app_status(4, "Zen Browser (~/.config/zen)", "zen"),
-        app_status(5, "Obsidian (~/.config/obsidian)", "obsidian"),
-        app_status(6, "Fcitx5 (~/.config/fcitx5)", "fcitx5"),
-        app_status(7, "Antigravity (~/.config/Antigravity)", "antigravity"),
+        app_status(5, "Helium (~/.config/net.imput.helium)", "helium"),
+        app_status(6, "Obsidian (~/.config/obsidian)", "obsidian"),
+        app_status(7, "Fcitx5 (~/.config/fcitx5)", "fcitx5"),
+        app_status(8, "Antigravity (~/.config/Antigravity)", "antigravity"),
+        app_status(9, "Free Download Manager (~/.config/Softdeluxe)", "fdm"),
+        app_status(10, "fish (~/.config/fish)", "fish"),
+        app_status(11, "fastfetch (~/.config/fastfetch)", "fastfetch"),
     ];
 
     let package = ["howdy-next", "howdy-next-bin", "howdy"]

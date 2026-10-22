@@ -9,15 +9,15 @@ expression: "render(&opened(80, 24, info(false)))"
 │  [ ] ZaloData (~/.config/ZaloData)                                           │
 │  [ ] Vesktop (~/.config/vesktop)                                             │
 │  [ ] Zen Browser (~/.config/zen)                                             │
+│  [ ] Helium (~/.config/net.imput.helium)                                     │
 │  [ ] Obsidian (~/.config/obsidian)                                           │
 │  [ ] Fcitx5 (~/.config/fcitx5)                                               │
 │  [ ] Antigravity (~/.config/Antigravity)                                     │
+│  [ ] Free Download Manager (~/.config/Softdeluxe)                            │
+│  [ ] fish (~/.config/fish)                                                   │
+│  [ ] fastfetch (~/.config/fastfetch)                                         │
 │  [ ] KDE Plasma settings (curated)                                           │
 │  [ ] Hyprland settings (~/.config/hypr)                                      │
-│  How often:  daily  (Space switches)                                         │
-│  Keep on Drive:  ‹ 5 ›  per kind (←/→)                                       │
-│  [ ] Also keep a copy in /media/data/backups                                 │
-│  ▶ Turn it on                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭ Status ──────────────────────────────────────────────────────────────────────╮
 │Status     off (not set up)                                                   │

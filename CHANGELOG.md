@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.7
+
+- **Export / Import data covers Helium, Free Download Manager, fish and fastfetch.**
+  Helium's profile (`~/.config/net.imput.helium`, without its caches), FDM's settings and
+  download list (`~/.config/Softdeluxe` and `~/.local/share/Softdeluxe/Free Download
+  Manager`, without logs and cache), fish's config and history (`~/.config/fish`,
+  `~/.local/share/fish`) and `~/.config/fastfetch`. They are part of `all` and of scheduled
+  backups. A running fish shell is never closed for a backup.
+
 ## 0.8.6
 
 - **`kast plasma save` stores Konsole's profiles, color schemes and key tabs**

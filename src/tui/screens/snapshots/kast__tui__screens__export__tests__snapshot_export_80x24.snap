@@ -9,9 +9,13 @@ expression: "render(&loaded(80, 24))"
 │  ( ) ZaloData (~/.config/ZaloData)  not found                                │
 │  ( ) Vesktop (~/.config/vesktop)  not found                                  │
 │  ( ) Zen Browser (~/.config/zen)  ✓ 512M                                     │
+│  ( ) Helium (~/.config/net.imput.helium)  not found                          │
 │  ( ) Obsidian (~/.config/obsidian)  not found                                │
 │  ( ) Fcitx5 (~/.config/fcitx5)  not found                                    │
 │  ( ) Antigravity (~/.config/Antigravity)  not found                          │
+│  ( ) Free Download Manager (~/.config/Softdeluxe)  not found                 │
+│  ( ) fish (~/.config/fish)  not found                                        │
+│  ( ) fastfetch (~/.config/fastfetch)  not found                              │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                            │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                    │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                           │
@@ -19,10 +23,6 @@ expression: "render(&loaded(80, 24))"
 │  [x] Close running apps first (reopened in the background)                   │
 │  File name: all_backup_2026-10-17_101500.zip                                 │
 │  ▶ Start backup                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Space select/toggle  s start  Esc folder  ? help

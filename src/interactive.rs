@@ -237,9 +237,13 @@ pub fn export_data() -> Result<()> {
         ("zalo", "ZaloData (~/.config/ZaloData)"),
         ("vesktop", "Vesktop (~/.config/vesktop)"),
         ("zen", "Zen Browser (~/.config/zen)"),
+        ("helium", "Helium (~/.config/net.imput.helium)"),
         ("obsidian", "Obsidian (~/.config/obsidian)"),
         ("fcitx5", "Fcitx5 (~/.config/fcitx5)"),
         ("antigravity", "Antigravity (~/.config/Antigravity)"),
+        ("fdm", "Free Download Manager (~/.config/Softdeluxe + ~/.local/share)"),
+        ("fish", "fish (~/.config/fish + history)"),
+        ("fastfetch", "fastfetch (~/.config/fastfetch)"),
         ("howdy", "Howdy Face Recognition Model (/etc/howdy/models)"),
         ("kde", "KDE Plasma settings (curated ~/.config + ~/.local/share)"),
         ("hypr", "Hyprland settings (~/.config/hypr)"),
@@ -248,7 +252,7 @@ pub fn export_data() -> Result<()> {
         println!("  {}) {label}", i + 1);
     }
     println!("  q) Cancel\n");
-    let choice = read_choice("Choose target [1-11, q]: ");
+    let choice = read_choice("Choose target [1-15, q]: ");
     let target = match choice.parse::<usize>() {
         Ok(n) if (1..=targets.len()).contains(&n) => targets[n - 1].0,
         _ if choice.is_empty() || choice.eq_ignore_ascii_case("q") => {
