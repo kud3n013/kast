@@ -1,5 +1,6 @@
 ---
 source: src/tui/screens/status.rs
+assertion_line: 228
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -15,6 +16,8 @@ expression: render(&a)
 │  Face model  ✓ enrolled (/etc/howdy/models/p3ter.dat, 8.0K)                                                                              │
 │  Permissions 644 root:root (expected 600 root:root)                                                                                      │
 │  Profiles    2 face profile(s)                                                                                                           │
+│  IR emitter  supported (alternate), switched on before Howdy by PAM                                                                      │
+│  Models recorded before the IR emitter worked were captured in the dark; add a fresh one: sudo kast ir-emitter run -- howdy -U p3ter add │
 │  Process     idle                                                                                                                        │
 │                                                                                                                                          │
 │KDE Plasma                                                                                                                                │
@@ -26,8 +29,6 @@ expression: render(&a)
 │Hyprland                                                                                                                                  │
 │  Config      not found                                                                                                                   │
 │  Session     Hyprland not running                                                                                                        │
-│                                                                                                                                          │
-│                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │

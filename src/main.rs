@@ -4,6 +4,7 @@
 mod ctx;
 mod drive;
 mod interactive;
+mod ir;
 mod journal;
 mod logio;
 mod partition;
@@ -73,7 +74,7 @@ enum Cmd {
                       downloaded or isn't valid, kast uses the copy built into it and says why."
     )]
     Packages(PackagesArgs),
-    /// Set up services (ProtonVPN & Fcitx5 packages, Howdy, Valkey/SearXNG)
+    /// Set up services (ProtonVPN & Fcitx5 packages, Howdy with the camera's IR emitter, Valkey/SearXNG)
     Services,
     /// Restore app data, KDE Plasma settings & face model (interactive without arguments)
     #[command(visible_alias = "restore")]
@@ -131,6 +132,19 @@ enum Cmd {
     },
     /// Show detected applications & Howdy status, paths & sizes
     Status,
+    /// The IR emitter of a Windows Hello camera: probe it, switch it on for Howdy (no root needed)
+    #[command(
+        name = "ir-emitter",
+        visible_alias = "ir",
+        after_help = "Cameras whose IR function has Microsoft's camera extension unit with the face-authentication\n\
+                      control (UVC 1.5) qualify; the Services step adds `enable` above Howdy in PAM. Exit status:\n\
+                      3 no qualifying camera, 4 the camera's answers rule a write out, 5 a request failed.\n\
+                      Examples:\n  kast ir-emitter probe\n  sudo kast ir-emitter run -- howdy -U $USER add"
+    )]
+    IrEmitter {
+        #[command(subcommand)]
+        cmd: IrCmd,
+    },
     /// Inspect a backup archive's manifest
     #[command(visible_alias = "inspect")]
     Info { file: Option<PathBuf> },
@@ -177,6 +191,47 @@ enum DriveCmd {
         #[arg(value_parser = ["keychain", "pass"])]
         store: String,
     },
+}
+
+#[derive(Subcommand)]
+enum IrCmd {
+    /// Show the camera's extension units and face-authentication control (GET requests only)
+    Probe {
+        /// IR capture node (default: the camera that qualifies)
+        #[arg(long, value_name = "PATH")]
+        device: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Switch the emitter on for the next stream (what PAM runs before Howdy)
+    Enable {
+        #[arg(long, value_name = "PATH")]
+        device: Option<PathBuf>,
+    },
+    /// Write the camera's default (GET_DEF) back
+    Restore {
+        #[arg(long, value_name = "PATH")]
+        device: Option<PathBuf>,
+    },
+    /// Switch the emitter on, then run a command (howdy add / howdy test) and exit with its status
+    Run {
+        #[arg(long, value_name = "PATH")]
+        device: Option<PathBuf>,
+        /// The command and its arguments, after --
+        #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true, value_name = "COMMAND")]
+        command: Vec<std::ffi::OsString>,
+    },
+}
+
+/// `kast ir-emitter`: no sudo re-exec, no log, no journal (PAM runs `enable` as the caller,
+/// and re-running through sudo would recurse into PAM).
+fn run_ir(cmd: IrCmd) -> u8 {
+    match cmd {
+        IrCmd::Probe { device, json } => ir::cmd_probe(device.as_deref(), json),
+        IrCmd::Enable { device } => ir::cmd_enable(device.as_deref()),
+        IrCmd::Restore { device } => ir::cmd_restore(device.as_deref()),
+        IrCmd::Run { device, command } => ir::cmd_run(device.as_deref(), &command),
+    }
 }
 
 #[derive(Subcommand)]
@@ -606,7 +661,12 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
             println!("Package list: {}", pl.source_line());
             Ok(())
         }
-        Some(Cmd::Services) => journal::recorded(&["services"], false, || setup::setup_services(false, 0, 1, 1)),
+        Some(Cmd::Services) => {
+            journal::recorded(&["services"], false, || setup::setup_services(false, 0, 1, 1))?;
+            // The dashboard drew over the log lines
+            setup::services_footer();
+            Ok(())
+        }
         Some(Cmd::Import(a)) if a.is_empty() && interactive_terminal() => tui::run(tui::Start::Import, top.known()?),
         Some(Cmd::Import(a)) if a.is_empty() => journal::recorded(&["import"], false, interactive::import_data),
         Some(Cmd::Import(a)) => recorded_import(a.into_opts()?),
@@ -651,6 +711,7 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         Some(Cmd::Uninstall { pkgs, dry_run }) => undo::cmd_uninstall(&pkgs, dry_run),
         Some(Cmd::Plasma { cmd }) => plasma::cli::run(cmd),
         Some(Cmd::FixPermissions { dry_run, yes }) => vault::fix::cmd_fix_permissions(dry_run, yes),
+        Some(Cmd::IrEmitter { cmd }) => std::process::exit(run_ir(cmd).into()),
         Some(Cmd::Test) => Ok(()),
     }
 }
@@ -707,7 +768,13 @@ fn interactive_terminal() -> bool {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+
+    // Before anything that needs a terminal, root, the log or the journal
+    cli.cmd = match cli.cmd {
+        Some(Cmd::IrEmitter { cmd }) => return ExitCode::from(run_ir(cmd)),
+        c => c,
+    };
 
     if cli.cmd.is_none() && !interactive_terminal() {
         // No terminal for the menu (piped, cron, ...): show what can be scripted instead

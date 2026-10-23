@@ -50,6 +50,10 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
     if !left_out.is_empty() {
         lines.push(field("Skipped steps", Span::styled(left_out.join(", "), theme.dim())));
     }
+    if let Some(ir) = &s.ir_emitter {
+        let style = if ir.starts_with("switched on") { theme.ok() } else { theme.dim() };
+        lines.push(field("IR emitter", Span::styled(ir.clone(), style)));
+    }
     if s.howdy_enrolled {
         lines.push(field("Howdy face model", Span::styled(format!("{} enrolled for {}", theme.sym.ok, s.user), theme.ok())));
     }
@@ -63,8 +67,12 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
     if !s.howdy_enrolled {
         lines.push(Line::raw(""));
         lines.push(Line::styled("  Howdy: no face model enrolled yet. Run:", theme.warn()));
-        lines.push(Line::raw(format!("    sudo howdy -U {} add", s.user)));
+        lines.push(Line::raw(format!("    {}", crate::ir::enroll_command(&s.user, s.ir_supported))));
         lines.push(Line::styled(format!("    {HOWDY_RESTORE_HINT}"), theme.dim()));
+    }
+    if s.howdy_enrolled && s.ir_supported {
+        lines.push(Line::raw(""));
+        lines.push(Line::styled(format!("  {}", crate::ir::reenroll_note(&s.user)), theme.warn()));
     }
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(block(theme, " Summary ")), body);
 }

@@ -120,8 +120,18 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &StatusState) {
         }
         ModelStatus::NeedsSudo => lines.push(field("Face model", Span::styled("run kast with sudo to inspect /etc/howdy/models", theme.dim()))),
         ModelStatus::NotEnrolled { path } => {
-            lines.push(field("Face model", Span::styled(format!("{} not enrolled for {} ({path})", theme.sym.warn, r.user), theme.warn())))
+            lines.push(field("Face model", Span::styled(format!("{} not enrolled for {} ({path})", theme.sym.warn, r.user), theme.warn())));
+            lines.push(field("Add one", Span::raw(crate::ir::enroll_command(&r.user, h.ir.supported()))));
         }
+    }
+    let ir_style = match &h.ir {
+        crate::ir::IrState::Supported { pam: true, .. } => theme.ok(),
+        crate::ir::IrState::Supported { .. } | crate::ir::IrState::Unusable { .. } => theme.warn(),
+        _ => theme.dim(),
+    };
+    lines.push(field("IR emitter", Span::styled(crate::vault::status::ir_text(&h.ir), ir_style)));
+    if h.ir.supported() && matches!(h.model, ModelStatus::Enrolled { .. }) {
+        lines.push(Line::styled(format!("  {}", crate::ir::reenroll_note(&r.user)), theme.warn()));
     }
     lines.push(field("Process", process(theme, &h.pids, "idle")));
     lines.push(Line::raw(""));
@@ -185,6 +195,11 @@ mod tests {
                 model: ModelStatus::Enrolled { path: "/etc/howdy/models/p3ter.dat".into(), size: "8.0K".into(), perms: "644 root:root".into() },
                 faces: Some("2".into()),
                 pids: vec![],
+                ir: crate::ir::IrState::Supported {
+                    device: "/dev/v4l/by-path/pci-0000:63:00.4-usb-0:1:1.2-video-index0".into(),
+                    mode: crate::ir::Mode::Alternate,
+                    pam: true,
+                },
             },
             kde: KdeStatus {
                 detected: true,

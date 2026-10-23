@@ -82,7 +82,7 @@ pub const ITEMS: [Item; 14] = [
         action: Action::Services,
         key: '5',
         label: "Set up services",
-        about: "Installs ProtonVPN and Fcitx5, finds the IR camera and configures Howdy (PAM rules and resume hook), \
+        about: "Installs ProtonVPN and Fcitx5, finds the IR camera and configures Howdy (PAM rules, IR emitter, resume hook), \
                 then enables valkey and searxng.",
         changes: "/etc/pam.d files (backups kept), Howdy config, sleep hook, systemd services",
         root: true,

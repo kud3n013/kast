@@ -1,6 +1,6 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1254
+assertion_line: 1749
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -14,10 +14,10 @@ expression: render(&a)
 │  kud3n repository  configured in /etc/pacman.conf                                                                                        │
 │  Log file          /var/log/kast.log                                                                                                     │
 │  Package list      Online · kud3n013/kast@main · fetched 04:39 · 36 packages                                                             │
+│  IR emitter        switched on before Howdy (alternate)                                                                                  │
 │  Howdy face model  ✓ enrolled for p3ter                                                                                                  │
 │                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
+│  Models recorded before the IR emitter worked were captured in the dark; add a fresh one: sudo kast ir-emitter run -- howdy -U p3ter add │
 │                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │
