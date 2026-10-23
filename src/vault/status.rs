@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::ctx::{ctx, have, ok, output, which};
+use crate::ir::{self, IrState};
 use crate::ui::{C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RESET, C_YELLOW};
 
 use super::{find_config, find_zalo_flags, format_bytes, howdy_model_path, kde_format_total_size, kde_has_settings, pid_list, process_running, running_pids};
@@ -47,6 +48,7 @@ pub struct HowdyStatus {
     /// Face profiles in the model (only when the howdy binary exists)
     pub faces: Option<String>,
     pub pids: Vec<i32>,
+    pub ir: IrState,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -155,7 +157,9 @@ pub fn collect_status() -> StatusReport {
     } else {
         ModelStatus::NotEnrolled { path: model_s }
     };
-    let howdy = HowdyStatus { package, model: model_status, faces, pids: running_pids("howdy") };
+    let device = std::fs::read_to_string("/etc/howdy/config.ini").ok().and_then(|ini| crate::setup::ini_value(&ini, "device_path"));
+    let ir = ir::status(device.as_deref(), std::fs::read_to_string("/etc/pam.d/sudo").ok().as_deref());
+    let howdy = HowdyStatus { package, model: model_status, faces, pids: running_pids("howdy"), ir };
 
     let detected = kde_has_settings();
     let kde = KdeStatus {
@@ -172,6 +176,17 @@ pub fn collect_status() -> StatusReport {
 
 pub fn cmd_status() {
     print_status(&collect_status());
+}
+
+/// The IR emitter line of `kast status` (without colors).
+pub fn ir_text(s: &IrState) -> String {
+    match s {
+        IrState::Supported { mode, pam: true, .. } => format!("supported ({}), switched on before Howdy by PAM", mode.name()),
+        IrState::Supported { mode, pam: false, .. } => format!("supported ({}), PAM line not installed (sudo kast services)", mode.name()),
+        IrState::Unusable { device, why } => format!("not usable on {device}: {why}"),
+        IrState::NotSupported { device } => format!("not supported by this camera ({device})"),
+        IrState::NoCamera => "no IR camera found".into(),
+    }
 }
 
 fn print_status(r: &StatusReport) {
@@ -212,7 +227,14 @@ fn print_status(r: &StatusReport) {
             }
         }
         ModelStatus::NeedsSudo => println!("  Face Model:  {C_GRAY}Run with sudo to inspect /etc/howdy/models{C_RESET}"),
-        ModelStatus::NotEnrolled { path } => println!("  Face Model:  {C_YELLOW}Not enrolled for {}{C_RESET} ({path})", r.user),
+        ModelStatus::NotEnrolled { path } => {
+            println!("  Face Model:  {C_YELLOW}Not enrolled for {}{C_RESET} ({path})", r.user);
+            println!("  Add one:     {}", ir::enroll_command(&r.user, h.ir.supported()));
+        }
+    }
+    println!("  IR Emitter:  {}", ir_text(&h.ir));
+    if h.ir.supported() && matches!(h.model, ModelStatus::Enrolled { .. }) {
+        println!("  {C_YELLOW}Note:{C_RESET}       {}", ir::reenroll_note(&r.user));
     }
     if h.pids.is_empty() {
         println!("  Process:     {C_GRAY}Idle / Standby{C_RESET}");

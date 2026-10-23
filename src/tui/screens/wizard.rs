@@ -84,7 +84,7 @@ pub fn step_text(s: Step) -> (&'static str, &'static str, &'static str) {
         ),
         Step::Services => (
             "Services (VPN, IME, Howdy, Valkey/SearXNG)",
-            "Installs ProtonVPN and Fcitx5, configures Howdy for the IR camera, enables valkey and searxng.",
+            "Installs ProtonVPN and Fcitx5, configures Howdy for the IR camera and its emitter, enables valkey and searxng.",
             "/etc/pam.d files (backups kept), Howdy config, systemd services",
         ),
         Step::Import => (

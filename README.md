@@ -65,7 +65,8 @@ kast repo | packages | services
 kast packages --list  # what would be installed, and from which list (no root needed)
 kast undo --list      # what kast changed, run by run; kast undo <run> / --last undoes it
 kast uninstall steam  # remove apps of the list (keeps what something else needs)
-kast status           # detected apps, Howdy, KDE, Hyprland
+kast status           # detected apps, Howdy and the IR emitter, KDE, Hyprland
+kast ir-emitter probe # the IR camera's face-authentication control (read-only; see below)
 kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
 kast backup all --upload proton   # back up to Proton Drive (see "Proton Drive" below)
@@ -219,6 +220,57 @@ them install everything, as before.
 
 Checking the system upgrade adds a stage that says plainly that upgrades can't be undone by
 kast, and offers a snapshot first when the machine can take one (see below).
+
+## Face recognition: IR emitter
+
+Many Windows Hello laptop cameras keep their IR emitter (the red LED) off on Linux, so Howdy
+sees dark frames. Windows switches it on through the face-authentication control of
+Microsoft's camera extension unit ([UVC 1.5 extensions](https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/uvc-extensions-1-5))
+right before the IR stream starts; the camera's firmware then strobes the emitter. kast does
+the same, natively, through uvcvideo.
+
+The **Services** step (`kast services`, `kast auto`, the app's step 6) does it as part of the
+Howdy setup:
+
+- it checks the IR camera it finds (read-only) and sets Howdy's `device_path` to the camera's
+  stable `/dev/v4l/by-path/...` name;
+- when the camera qualifies, every PAM file kast gives Howdy (sudo, polkit-1, system-local-login,
+  plasmalogin, sddm, gdm-password, hyprlock, swaylock) gets this line directly above Howdy's:
+
+  ```
+  auth      optional   pam_exec.so quiet /usr/local/bin/kast ir-emitter enable --device /dev/v4l/by-path/...
+  ```
+
+  so the emitter is on for every sudo, login, polkit prompt and unlock. It is `optional`:
+  if it fails, Howdy just runs as before and the password still works. A hand-written
+  `pam_exec` line running `ir-msxu`, or an older kast line, is replaced, never doubled;
+- the summary says "IR emitter: switched on before Howdy (alternate)", "not supported by this
+  camera", or why it wasn't set up.
+
+PAM runs that command as root, so kast only adds the line when its binary and every folder
+above it belong to root and no one else can write them (`/usr/local/bin` from `install.sh`
+is fine, `~/.local/bin` isn't: the summary says so and how to fix it).
+
+**Which cameras qualify:** a USB (UVC) camera whose IR function has the Microsoft extension
+unit with the face-authentication control, that the camera lets kast write and that
+advertises a mode (alternate frame illumination, else background subtraction). kast only
+sends a mode the camera lists and never touches other bits; nothing is hardcoded per model.
+
+```sh
+kast ir-emitter probe            # what the camera says and what enable would do (--json too)
+sudo kast ir-emitter run -- howdy -U $USER add   # add a face model with the emitter on
+sudo kast ir-emitter run -- howdy -U $USER test
+kast ir-emitter restore          # write the camera's default back
+```
+
+`run` is for Howdy commands that don't go through PAM; the camera switches the emitter off
+by itself a few seconds after the stream stops. **Face models added before the emitter
+worked were recorded in the dark**: add a fresh one with the `run` command above (`howdy
+add` adds a model next to the old ones; `howdy remove` / `howdy clear` drop old ones).
+`kast status` shows the emitter's state.
+
+Undo (`sudo kast undo --last --step services`, or Undo changes in the menu) puts the PAM
+files and `device_path` back as they were, like the rest of the Howdy setup.
 
 ## KDE Plasma settings
 

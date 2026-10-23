@@ -9,6 +9,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 
 use crate::ctx::{self, add_issue, ctx, have, log, ok, ok_logged, output, run_as_user};
+use crate::ir;
 use crate::journal::{self, sys_path};
 use crate::pkglist::{Parsed, Pkg, PkgList};
 use crate::ui::{self, C_BOLD, C_GRAY, C_GREEN, C_RED, C_RESET, C_YELLOW, Dash};
@@ -20,6 +21,8 @@ const OLD_REPO_URL: &str = "https://kud3n013.github.io/archrepo/x86_64";
 pub(crate) const REPO_KEY: &str = include_str!("../assets/archrepo.asc");
 pub(crate) const REPO_KEY_FPR: &str = "CFB791543B4B2D2821E9127AC012A9476C170A37";
 const PAM_RULE: &str = "auth      sufficient pam_howdy.so workaround=native";
+/// Directly above PAM_RULE, aligned with it: `{kast} ir-emitter enable --device {device}`.
+const EMITTER_RULE: &str = "auth      optional   pam_exec.so quiet";
 const HOWDY_HOOK: &str = "/usr/lib/systemd/system-sleep/howdy-resume.sh";
 pub const USER_DIRS: [&str; 9] = ["Desktop", "Documents", "Downloads", "Music", "Pictures", "Public", "Templates", "Videos", "Projects"];
 
@@ -507,31 +510,76 @@ pub fn install_packages(list: &Parsed, selection: Option<&[String]>, auto: bool,
 
 // --- State 5: Services ---------------------------------------------------------------
 
-/// Insert the Howdy rule after the `#%PAM-1.0` header (or at the top). None if already present.
-pub fn patch_pam_content(content: &str) -> Option<String> {
-    if content.contains("pam_howdy.so") {
-        return None;
-    }
-    if !content.lines().any(|l| l.starts_with("#%PAM-1.0")) {
-        return Some(format!("{PAM_RULE}\n{content}"));
-    }
-    let mut res = String::with_capacity(content.len() + PAM_RULE.len() + 1);
-    for line in content.split_inclusive('\n') {
-        res.push_str(line);
-        if line.starts_with("#%PAM-1.0") {
-            if !line.ends_with('\n') {
+/// Insert the Howdy rule after the `#%PAM-1.0` header (or at the top), unless a file mentions
+/// pam_howdy.so already. With `emitter` (a whole PAM line), also make it the one emitter line,
+/// directly above the first pam_howdy.so rule: older kast lines and hand-written `ir-msxu`
+/// lines go. Every other byte stays. None when nothing changes.
+pub fn patch_pam_content(content: &str, emitter: Option<&str>) -> Option<String> {
+    let with_howdy = if content.contains("pam_howdy.so") {
+        content.to_string()
+    } else if !content.lines().any(|l| l.starts_with("#%PAM-1.0")) {
+        format!("{PAM_RULE}\n{content}")
+    } else {
+        let mut res = String::with_capacity(content.len() + PAM_RULE.len() + 1);
+        for line in content.split_inclusive('\n') {
+            res.push_str(line);
+            if line.starts_with("#%PAM-1.0") {
+                if !line.ends_with('\n') {
+                    res.push('\n');
+                }
+                res.push_str(PAM_RULE);
                 res.push('\n');
             }
-            res.push_str(PAM_RULE);
-            res.push('\n');
         }
-    }
-    Some(res)
+        res
+    };
+    let is_howdy = |l: &str| !l.trim_start().starts_with('#') && l.split_whitespace().any(|w| w == "pam_howdy.so" || w.ends_with("/pam_howdy.so"));
+    let res = match emitter {
+        Some(rule) if with_howdy.lines().any(is_howdy) => {
+            let mut res = String::with_capacity(with_howdy.len() + rule.len() + 1);
+            let mut placed = false;
+            for line in with_howdy.split_inclusive('\n') {
+                if ir::emitter_line(line).is_some() {
+                    continue;
+                }
+                if !placed && is_howdy(line) {
+                    res.push_str(rule);
+                    res.push('\n');
+                    placed = true;
+                }
+                res.push_str(line);
+            }
+            res
+        }
+        _ => with_howdy,
+    };
+    (res != content).then_some(res)
 }
 
-/// Add the Howdy rule to a PAM file (recorded for undo). A file only the distribution's
-/// `fallback` has is created from it.
-fn patch_pam(pfile: &str, fallback: Option<&str>) -> Result<()> {
+/// The PAM line that switches the IR emitter on, or why kast can't add it. PAM runs `kast` as
+/// root, so it and every folder above it must be root's and writable by no one else.
+pub fn emitter_rule(kast: &Path, device: &str) -> Result<String, String> {
+    use std::os::unix::fs::MetadataExt;
+    let exe = fs::canonicalize(kast).map_err(|e| format!("{}: {e}", kast.display()))?;
+    for p in exe.ancestors() {
+        let m = fs::metadata(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        if m.uid() != 0 {
+            return Err(format!("{} is owned by uid {}, not root", p.display(), m.uid()));
+        }
+        if m.mode() & 0o022 != 0 {
+            return Err(format!("{} can be written by other users (mode {:o})", p.display(), m.mode() & 0o777));
+        }
+    }
+    let exe = exe.display().to_string();
+    if exe.contains(char::is_whitespace) || device.contains(char::is_whitespace) || device.is_empty() {
+        return Err(format!("a PAM argument can't contain spaces ({exe}, {device})"));
+    }
+    Ok(format!("{EMITTER_RULE} {exe} ir-emitter enable --device {device}"))
+}
+
+/// Add the Howdy rule (and `emitter`, see patch_pam_content) to a PAM file (recorded for
+/// undo). A file only the distribution's `fallback` has is created from it.
+fn patch_pam(pfile: &str, fallback: Option<&str>, emitter: Option<&str>) -> Result<()> {
     let p = sys_path(pfile);
     let content = match fs::read_to_string(&p) {
         Ok(c) => Some(c),
@@ -542,12 +590,12 @@ fn patch_pam(pfile: &str, fallback: Option<&str>) -> Result<()> {
             .transpose()?,
     };
     let Some(content) = content else { return Ok(()) };
-    if let Some(new) = patch_pam_content(&content) {
+    if let Some(new) = patch_pam_content(&content, emitter) {
         if p.is_file() {
             fs::copy(&p, format!("{}.bak.{}", p.display(), ctx::now_str("%Y%m%d%H%M%S")))?;
         }
         journal::write_file(&p, new.as_bytes(), Some(0o644)).with_context(|| format!("writing {pfile}"))?;
-        log("INFO", &format!("Patched PAM file {pfile} for Howdy"));
+        log("INFO", &format!("Patched PAM file {pfile} for Howdy{}", if emitter.is_some() { " and the IR emitter" } else { "" }));
     }
     Ok(())
 }
@@ -602,6 +650,33 @@ fn find_ir_camera() -> String {
         .unwrap_or_else(|| "/dev/video2".into())
 }
 
+/// How the Services step left the IR emitter (the summary's line), and whether the camera has
+/// one kast can switch on.
+static IR_OUTCOME: std::sync::Mutex<Option<(String, bool)>> = std::sync::Mutex::new(None);
+
+fn ir_outcome(line: String, emitter: bool) {
+    log("INFO", &format!("IR emitter: {line}"));
+    *IR_OUTCOME.lock().unwrap_or_else(|e| e.into_inner()) = Some((line, emitter));
+}
+
+fn take_ir_outcome() -> Option<(String, bool)> {
+    IR_OUTCOME.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
+/// `kast services` has no summary: what to know about the IR emitter and the face model.
+pub fn services_footer() {
+    let c = ctx();
+    let Some((line, emitter)) = take_ir_outcome() else { return };
+    println!("IR emitter: {line}");
+    if Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file() {
+        if emitter {
+            println!("{}", ir::reenroll_note(&c.target_user));
+        }
+    } else if Path::new("/usr/share/howdy").is_dir() {
+        println!("No face model enrolled yet. Run: {}", ir::enroll_command(&c.target_user, emitter));
+    }
+}
+
 pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Result<()> {
     let c = ctx();
     let d = Dash::new(auto, o_start, o_step, o_total, "Setup Services");
@@ -619,13 +694,17 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
     d.exec_monitored(2, s_total, "Installing Fcitx5 typing packages", pacman(&[&["-S", "--needed", "--noconfirm"][..], &fcitx[..]].concat()));
     record_installed(before, &fcitx);
 
-    d.step("Services", 3, s_total, "Face Recognition (Howdy)", "Detecting sensor, models & PAM rules...");
+    d.step("Services", 3, s_total, "Face Recognition (Howdy)", "Detecting sensor & IR emitter, models & PAM rules...");
     let before = before_install();
     d.exec_monitored(3, s_total, "Installing v4l-utils for camera detection", pacman(&["-S", "--needed", "--noconfirm", "v4l-utils"]));
     record_installed(before, &["v4l-utils"]);
 
-    let device = find_ir_camera();
-    log("INFO", &format!("Howdy device node resolved to {device}"));
+    let node = find_ir_camera();
+    log("INFO", &format!("Howdy device node resolved to {node}"));
+    // Read-only: whether the camera can light its IR emitter, and the node's stable name
+    let ir_check = ir::check(Path::new(&node));
+    let device = ir_check.device.clone();
+    log("INFO", &format!("IR emitter of {device}: {}", ir_check.verdict_text()));
 
     let models = Path::new("/usr/share/howdy/models");
     if Path::new("/usr/share/howdy").is_dir()
@@ -650,11 +729,39 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
         log("WARN", "pam_howdy.so not found (howdy-next not installed?). Skipping PAM patching and resume hook.");
         add_issue("Howdy not installed; face authentication was not configured");
     } else {
-        patch_pam("/etc/pam.d/sudo", None)?;
+        let rule = match &ir_check.verdict {
+            ir::Verdict::Usable(_) => match std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| emitter_rule(&exe, &device)) {
+                Ok(rule) => Some(rule),
+                Err(why) => {
+                    log("WARN", &format!("Not adding the IR emitter to PAM: {why}"));
+                    add_issue(format!(
+                        "IR emitter not added to PAM: {why}. PAM runs kast as root, so it has to be a root-owned file no one else \
+                         can change: install kast to /usr/local/bin (install.sh) and run `sudo kast services` again"
+                    ));
+                    ir_outcome(format!("not set up: {why}"), true);
+                    None
+                }
+            },
+            ir::Verdict::NotSupported => {
+                ir_outcome("not supported by this camera".into(), false);
+                None
+            }
+            ir::Verdict::Unusable(why) => {
+                ir_outcome(format!("not set up: {why}"), false);
+                None
+            }
+        };
+        patch_pam("/etc/pam.d/sudo", None, rule.as_deref())?;
         for name in ["polkit-1", "system-local-login", "plasmalogin", "sddm", "gdm-password", "hyprlock", "swaylock"] {
-            patch_pam(&format!("/etc/pam.d/{name}"), Some(&format!("/usr/lib/pam.d/{name}")))?;
+            patch_pam(&format!("/etc/pam.d/{name}"), Some(&format!("/usr/lib/pam.d/{name}")), rule.as_deref())?;
+        }
+        if let (Some(_), ir::Verdict::Usable(mode)) = (&rule, &ir_check.verdict) {
+            ir_outcome(format!("switched on before Howdy ({})", mode.name()), true);
         }
         write_hook(&device)?;
+    }
+    if module.is_none() {
+        ir_outcome("not set up: Howdy isn't installed".into(), ir_check.verdict.usable());
     }
 
     d.step("Services", 4, s_total, "Search Services", "Enabling and starting valkey & searxng...");
@@ -695,6 +802,10 @@ pub struct Summary {
     pub rollback: Option<String>,
     pub issues: Vec<String>,
     pub howdy_enrolled: bool,
+    /// How the Services step left the IR emitter, when it ran
+    pub ir_emitter: Option<String>,
+    /// The camera has an IR emitter kast can switch on (face models are added with it on)
+    pub ir_supported: bool,
 }
 
 /// `kast auto`: the default steps, with a snapshot before the upgrade unless `snapshot` is false.
@@ -948,6 +1059,7 @@ pub fn plan_summary(plan: &AutoPlan, out: &PlanOutcome, list: Option<&PkgList>) 
 /// The state after the automatic run (takes the recorded issues).
 pub fn collect_summary(o_start: i64, list: Option<&PkgList>) -> Summary {
     let c = ctx();
+    let ir_outcome = take_ir_outcome();
     let partition = is_mounted(MOUNT_POINT).then(|| {
         let mut p = format!("{MOUNT_POINT} mounted");
         if c.target_home.join("Documents").is_symlink() {
@@ -970,6 +1082,8 @@ pub fn collect_summary(o_start: i64, list: Option<&PkgList>) -> Summary {
         rollback: None,
         issues: ctx::take_issues(),
         howdy_enrolled: Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file(),
+        ir_supported: ir_outcome.as_ref().map_or_else(ir::any_candidate, |o| o.1),
+        ir_emitter: ir_outcome.map(|o| o.0),
     }
 }
 
@@ -1016,11 +1130,17 @@ fn print_summary(s: &Summary) {
         }
     }
     println!();
+    if let Some(ir) = &s.ir_emitter {
+        println!("  • IR Emitter:         {ir}");
+    }
     if s.howdy_enrolled {
         println!("  • Howdy Face Model:   {C_GREEN}Enrolled / Restored for {}{C_RESET}", s.user);
+        if s.ir_supported {
+            println!("{C_YELLOW}Note:{C_RESET} {}", ir::reenroll_note(&s.user));
+        }
     } else {
         println!("{C_YELLOW}Note:{C_RESET} If you have not enrolled your face in Howdy yet, run:");
-        println!("  sudo howdy -U {} add", s.user);
+        println!("  {}", ir::enroll_command(&s.user, s.ir_supported));
         println!("  {HOWDY_RESTORE_HINT}");
     }
     println!();
@@ -1037,7 +1157,12 @@ mod tests {
         assert_eq!(patch_pacman_conf(&added), added);
         // after [options] and its settings, before the first repository
         let opts = patch_pacman_conf("[options]\nParallelDownloads = 5\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n");
-        assert_eq!(opts, format!("[options]\nParallelDownloads = 5\n\n[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n"));
+        assert_eq!(
+            opts,
+            format!(
+                "[options]\nParallelDownloads = 5\n\n[archrepo]\nSigLevel = Optional TrustAll\nServer = {REPO_URL}\n\n[core]\nInclude = x\n\n[extra]\nInclude = y\n"
+            )
+        );
         assert_eq!(patch_pacman_conf(&opts), opts);
         let old = format!("[archrepo]\nServer = {OLD_REPO_URL}\n");
         assert_eq!(patch_pacman_conf(&old), format!("[archrepo]\nServer = {REPO_URL}\n"));
@@ -1063,9 +1188,69 @@ mod tests {
 
     #[test]
     fn pam_rule_placement() {
-        assert_eq!(patch_pam_content("#%PAM-1.0\nauth include system-auth\n").unwrap(), format!("#%PAM-1.0\n{PAM_RULE}\nauth include system-auth\n"));
-        assert_eq!(patch_pam_content("auth include x\n").unwrap(), format!("{PAM_RULE}\nauth include x\n"));
-        assert_eq!(patch_pam_content(&format!("{PAM_RULE}\n")), None);
+        assert_eq!(patch_pam_content("#%PAM-1.0\nauth include system-auth\n", None).unwrap(), format!("#%PAM-1.0\n{PAM_RULE}\nauth include system-auth\n"));
+        assert_eq!(patch_pam_content("auth include x\n", None).unwrap(), format!("{PAM_RULE}\nauth include x\n"));
+        assert_eq!(patch_pam_content(&format!("{PAM_RULE}\n"), None), None);
+    }
+
+    const BY_PATH: &str = "/dev/v4l/by-path/pci-0000:63:00.4-usb-0:1:1.2-video-index0";
+
+    fn kast_rule(exe: &str) -> String {
+        format!("{EMITTER_RULE} {exe} ir-emitter enable --device {BY_PATH}")
+    }
+
+    #[test]
+    fn pam_emitter_line() {
+        let rule = kast_rule("/usr/local/bin/kast");
+        assert_eq!(rule, format!("auth      optional   pam_exec.so quiet /usr/local/bin/kast ir-emitter enable --device {BY_PATH}"));
+        let once = |c: &str| patch_pam_content(c, Some(&rule)).unwrap_or_else(|| c.to_string());
+
+        // /etc/pam.d/sudo as it is on the laptop: the hand-written ir-msxu line goes
+        let laptop = format!(
+            "#%PAM-1.0\nauth      optional   pam_exec.so log=/tmp/ir-pam.log /usr/local/bin/ir-msxu --device {BY_PATH} set --mode alternate --yes\n\
+             {PAM_RULE}\nauth\t\tinclude\t\tsystem-auth\naccount\t\tinclude\t\tsystem-auth\nsession\t\tinclude\t\tsystem-auth\n\
+             session\t\toptional\tpam_systemd.so class=none\n"
+        );
+        let want = format!(
+            "#%PAM-1.0\n{rule}\n{PAM_RULE}\nauth\t\tinclude\t\tsystem-auth\naccount\t\tinclude\t\tsystem-auth\nsession\t\tinclude\t\tsystem-auth\n\
+             session\t\toptional\tpam_systemd.so class=none\n"
+        );
+        assert_eq!(once(&laptop), want);
+        assert_eq!(want.lines().filter(|l| ir::emitter_line(l).is_some()).count(), 1);
+        // fresh, and patched by an older kast
+        assert_eq!(once("#%PAM-1.0\nauth include system-auth\n"), format!("#%PAM-1.0\n{rule}\n{PAM_RULE}\nauth include system-auth\n"));
+        assert_eq!(once(&format!("#%PAM-1.0\n{PAM_RULE}\nauth include system-auth\n")), format!("#%PAM-1.0\n{rule}\n{PAM_RULE}\nauth include system-auth\n"));
+        assert_eq!(once("auth include x"), format!("{rule}\n{PAM_RULE}\nauth include x"));
+        // a stale kast line (another path, another device, elsewhere in the file) is replaced
+        let stale = format!(
+            "#%PAM-1.0\n{PAM_RULE}\nauth optional pam_exec.so quiet /home/p3ter/.local/bin/kast ir-emitter enable --device /dev/video2\nauth include x\n"
+        );
+        assert_eq!(once(&stale), format!("#%PAM-1.0\n{rule}\n{PAM_RULE}\nauth include x\n"));
+        // the second run changes nothing
+        for c in [&laptop, &stale, &format!("{PAM_RULE}\n")] {
+            assert_eq!(patch_pam_content(&once(c), Some(&rule)), None);
+        }
+        // comments are left alone; only a commented-out Howdy rule: no emitter line either
+        let commented = format!("#%PAM-1.0\n# {rule}\n{PAM_RULE}\n");
+        assert_eq!(once(&commented), format!("#%PAM-1.0\n# {rule}\n{rule}\n{PAM_RULE}\n"));
+        assert_eq!(patch_pam_content(&format!("#{PAM_RULE}\nauth include x\n"), Some(&rule)), None);
+        // without a rule to add, hand-written lines stay
+        assert_eq!(patch_pam_content(&laptop, None), None);
+    }
+
+    #[test]
+    fn emitter_rule_needs_a_root_owned_kast() {
+        let t = tempfile::tempdir().unwrap();
+        let exe = t.path().join("kast");
+        fs::write(&exe, "").unwrap();
+        // not root's, or (tests running as root) in a folder others can write
+        assert!(emitter_rule(&exe, BY_PATH).is_err());
+        let env = Path::new("/usr/bin/env");
+        if fs::metadata(env).is_ok_and(|m| std::os::unix::fs::MetadataExt::uid(&m) == 0) {
+            let real = fs::canonicalize(env).unwrap().display().to_string();
+            assert_eq!(emitter_rule(env, BY_PATH).unwrap(), kast_rule(&real));
+            assert!(emitter_rule(env, "/dev/v4l/by-path/a b").is_err());
+        }
     }
 
     #[test]
@@ -1136,9 +1321,16 @@ mod tests {
             journal::begin_run(&["repo", "services"], "p3ter").unwrap();
             assert!(!configure_pacman_conf().unwrap());
             assert!(configure_pacman_conf().unwrap(), "the second time nothing changes");
-            patch_pam("/etc/pam.d/sudo", None).unwrap();
-            patch_pam("/etc/pam.d/sddm", Some("/usr/lib/pam.d/sddm")).unwrap();
-            patch_pam("/etc/pam.d/missing", Some("/usr/lib/pam.d/missing")).unwrap();
+            // a kast that isn't root-owned gets no emitter line
+            let unsafe_rule = emitter_rule(&t.path().join("etc/pacman.conf"), "/dev/video2").ok();
+            assert_eq!(unsafe_rule, None);
+            patch_pam("/etc/pam.d/sudo", None, unsafe_rule.as_deref()).unwrap();
+            assert_eq!(fs::read_to_string(sys_path("/etc/pam.d/sudo")).unwrap(), format!("#%PAM-1.0\n{PAM_RULE}\nauth include system-auth\n"));
+            let rule = kast_rule("/usr/local/bin/kast");
+            patch_pam("/etc/pam.d/sudo", None, Some(&rule)).unwrap();
+            patch_pam("/etc/pam.d/sudo", None, Some(&rule)).unwrap();
+            patch_pam("/etc/pam.d/sddm", Some("/usr/lib/pam.d/sddm"), Some(&rule)).unwrap();
+            patch_pam("/etc/pam.d/missing", Some("/usr/lib/pam.d/missing"), Some(&rule)).unwrap();
             write_hook("/dev/video2").unwrap();
             journal::end_run();
 
@@ -1151,6 +1343,7 @@ mod tests {
                 [
                     ("file_write".into(), p("/etc/pacman.conf")),
                     ("file_write".into(), p("/etc/pam.d/sudo")),
+                    ("file_write".into(), p("/etc/pam.d/sudo")),
                     ("file_create".into(), p("/etc/pam.d/sddm")),
                     ("file_create".into(), p(HOWDY_HOOK)),
                 ]
@@ -1158,6 +1351,7 @@ mod tests {
             assert!(r.changes.iter().all(|c| c.status == Status::Done));
             assert!(fs::read_to_string(sys_path("/etc/pacman.conf")).unwrap().contains("[archrepo]"));
             assert!(fs::read_to_string(sys_path("/etc/pam.d/sddm")).unwrap().contains("pam_howdy.so"));
+            assert_eq!(fs::read_to_string(sys_path("/etc/pam.d/sudo")).unwrap(), format!("#%PAM-1.0\n{rule}\n{PAM_RULE}\nauth include system-auth\n"));
             assert_eq!(fs::metadata(sys_path(HOWDY_HOOK)).unwrap().permissions().mode() & 0o111, 0o111);
         });
     }

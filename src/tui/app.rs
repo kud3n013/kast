@@ -1589,6 +1589,8 @@ pub mod tests {
             rollback: None,
             issues,
             howdy_enrolled: howdy,
+            ir_emitter: Some("switched on before Howdy (alternate)".into()),
+            ir_supported: true,
         }
     }
 

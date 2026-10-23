@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.0
+
+- **Howdy uses the IR emitter of Windows Hello cameras.** Many of them keep the emitter off
+  on Linux, so Howdy got dark frames. The Services step now checks the IR camera for
+  Microsoft's face-authentication control (UVC 1.5) and, when it has one, adds `kast
+  ir-emitter enable` directly above Howdy in every PAM file kast patches, so the emitter
+  flashes for sudo, login, polkit and unlock. A hand-written `ir-msxu` line is replaced. The
+  line is only added when the kast binary is root-owned (PAM runs it as root); the summary
+  says what happened.
+- **Howdy's `device_path` is the camera's `/dev/v4l/by-path` name**, which doesn't change
+  when the nodes are renumbered.
+- **New `kast ir-emitter` (`kast ir`)**: `probe` (read-only, `--json`), `enable`, `restore`,
+  and `run -- howdy -U $USER add` to add a face model with the emitter on. Where kast tells
+  you to add a face model, it gives that command when the camera has an emitter; `kast
+  status` shows the emitter's state.
+
 ## 0.8.8
 
 - **Export / Import data covers `~/.scripts`** (part of `all` and of scheduled backups;
