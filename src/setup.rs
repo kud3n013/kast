@@ -590,6 +590,10 @@ fn patch_pam(pfile: &str, fallback: Option<&str>, emitter: Option<&str>) -> Resu
             .transpose()?,
     };
     let Some(content) = content else { return Ok(()) };
+    if !content.contains("pam_howdy.so") && includes_howdy(&content, 0) {
+        log("INFO", &format!("{pfile} already reaches Howdy through an include; left alone"));
+        return Ok(());
+    }
     if let Some(new) = patch_pam_content(&content, emitter) {
         if p.is_file() {
             fs::copy(&p, format!("{}.bak.{}", p.display(), ctx::now_str("%Y%m%d%H%M%S")))?;
@@ -598,6 +602,53 @@ fn patch_pam(pfile: &str, fallback: Option<&str>, emitter: Option<&str>) -> Resu
         log("INFO", &format!("Patched PAM file {pfile} for Howdy{}", if emitter.is_some() { " and the IR emitter" } else { "" }));
     }
     Ok(())
+}
+
+/// Whether an auth include (or substack) of this PAM text leads to a file with pam_howdy.so,
+/// looked up like libpam does: /etc/pam.d first, then the distribution's /usr/lib/pam.d.
+/// Patching such a file too would run Howdy twice (KDE's lock screen, `kde`, includes
+/// system-local-login).
+fn includes_howdy(content: &str, depth: u8) -> bool {
+    depth < 8
+        && content.lines().filter_map(|l| crate::undo::pam_line(l).ok().flatten()).any(|(ty, control, module)| {
+            let include = (ty == "auth" && matches!(control.as_str(), "include" | "substack")) || ty == "@include";
+            include
+                && !module.contains('/')
+                && ["/etc/pam.d", "/usr/lib/pam.d"].iter().find_map(|d| fs::read_to_string(sys_path(d).join(&module)).ok()).is_some_and(|text| {
+                    text.lines().any(|l| crate::undo::pam_line(l).ok().flatten().is_some_and(|(_, _, m)| m == "pam_howdy.so" || m.ends_with("/pam_howdy.so")))
+                        || includes_howdy(&text, depth + 1)
+                })
+        })
+}
+
+/// Howdy's config folder and file as Howdy installs them (0750, 0640). When other users can
+/// read config.ini, pam_howdy reads it directly instead of through its setuid helper, and a
+/// lock screen (which authenticates as the user) then can't open the root-only face model.
+const HOWDY_CONFIG: [&str; 2] = ["/etc/howdy", "/etc/howdy/config.ini"];
+
+/// The Howdy config paths other users can get at: their mode, and the one that closes them
+/// (the other users' bits off, and the group's too when the group isn't root's).
+pub fn howdy_config_open() -> Vec<(PathBuf, u32, u32)> {
+    use std::os::unix::fs::MetadataExt;
+    HOWDY_CONFIG
+        .iter()
+        .map(sys_path)
+        .filter_map(|p| fs::symlink_metadata(&p).ok().filter(|m| !m.file_type().is_symlink()).map(|m| (p, m.mode() & 0o7777, m.gid())))
+        .map(|(p, mode, gid)| (p, mode, mode & if gid == 0 { !0o007 } else { !0o077 }))
+        .filter(|(_, mode, after)| mode != after)
+        .collect()
+}
+
+/// Close Howdy's config folder and file to other users (recorded for undo).
+fn lock_howdy_config() {
+    for (p, mode, after) in howdy_config_open() {
+        let done = journal::mode_change(&p, mode, after, || fs::set_permissions(&p, fs::Permissions::from_mode(after)).is_ok());
+        if done {
+            log("INFO", &format!("{}: mode {mode:04o} -> {after:04o} (lock screens use Howdy's helper)", p.display()));
+        } else {
+            add_issue(format!("Could not change the mode of {} to {after:04o}; lock screens can't use Howdy", p.display()));
+        }
+    }
 }
 
 /// The resume hook that reloads the IR camera after sleep (recorded for undo).
@@ -733,6 +784,8 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
             journal::howdy_set("dark_threshold", dark.as_deref(), &value, || ok_logged("howdy", &["set", "dark_threshold", &value]));
         }
     }
+    // After `howdy set`, which rewrites config.ini
+    lock_howdy_config();
 
     // Referencing a PAM module that does not exist breaks the whole auth stack
     // (sudo/login fail with "Module is unknown"), so only patch PAM once Howdy is installed.
@@ -765,7 +818,7 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
             }
         };
         patch_pam("/etc/pam.d/sudo", None, rule.as_deref())?;
-        for name in ["polkit-1", "system-local-login", "plasmalogin", "sddm", "gdm-password", "hyprlock", "swaylock"] {
+        for name in ["polkit-1", "system-local-login", "plasmalogin", "sddm", "gdm-password", "hyprlock", "swaylock", "kde"] {
             patch_pam(&format!("/etc/pam.d/{name}"), Some(&format!("/usr/lib/pam.d/{name}")), rule.as_deref())?;
         }
         if let (Some(_), ir::Verdict::Usable(mode)) = (&rule, &ir_check.verdict) {
@@ -1366,6 +1419,69 @@ mod tests {
             assert!(fs::read_to_string(sys_path("/etc/pam.d/sddm")).unwrap().contains("pam_howdy.so"));
             assert_eq!(fs::read_to_string(sys_path("/etc/pam.d/sudo")).unwrap(), format!("#%PAM-1.0\n{rule}\n{PAM_RULE}\nauth include system-auth\n"));
             assert_eq!(fs::metadata(sys_path(HOWDY_HOOK)).unwrap().permissions().mode() & 0o111, 0o111);
+        });
+    }
+
+    #[test]
+    fn pam_file_reaching_howdy_by_include_is_left_alone() {
+        use crate::journal::{sys_path, with_root};
+        let t = tempfile::tempdir().unwrap();
+        with_root(t.path(), || {
+            fs::create_dir_all(sys_path("/etc/pam.d")).unwrap();
+            fs::create_dir_all(sys_path("/usr/lib/pam.d")).unwrap();
+            let rule = kast_rule("/usr/local/bin/kast");
+            fs::write(sys_path("/etc/pam.d/system-local-login"), "#%PAM-1.0\nauth include system-login\n").unwrap();
+            fs::write(sys_path("/usr/lib/pam.d/kde"), "#%PAM-1.0\n\nauth       include                     system-local-login\n").unwrap();
+            fs::write(sys_path("/usr/lib/pam.d/kde-other"), "#%PAM-1.0\nauth include system-login\n").unwrap();
+            assert!(!includes_howdy(&fs::read_to_string(sys_path("/usr/lib/pam.d/kde")).unwrap(), 0));
+            patch_pam("/etc/pam.d/system-local-login", None, Some(&rule)).unwrap();
+            // kde gets Howdy through system-local-login: a copy with its own rule would scan twice
+            assert!(includes_howdy(&fs::read_to_string(sys_path("/usr/lib/pam.d/kde")).unwrap(), 0));
+            patch_pam("/etc/pam.d/kde", Some("/usr/lib/pam.d/kde"), Some(&rule)).unwrap();
+            assert!(!sys_path("/etc/pam.d/kde").exists());
+            // one that doesn't reach it is patched as before
+            patch_pam("/etc/pam.d/kde-other", Some("/usr/lib/pam.d/kde-other"), Some(&rule)).unwrap();
+            assert!(fs::read_to_string(sys_path("/etc/pam.d/kde-other")).unwrap().contains("pam_howdy.so"));
+            // a commented-out rule doesn't count
+            fs::write(sys_path("/etc/pam.d/x"), format!("#{PAM_RULE}\n")).unwrap();
+            assert!(!includes_howdy("auth include x\n", 0));
+            // include loops end
+            fs::write(sys_path("/etc/pam.d/a"), "auth include b\n").unwrap();
+            fs::write(sys_path("/etc/pam.d/b"), "auth include a\n").unwrap();
+            assert!(!includes_howdy("auth include a\n", 0));
+        });
+    }
+
+    #[test]
+    fn howdy_config_is_closed_to_other_users_and_undoable() {
+        use crate::journal::{self, state_dir, sys_path, with_root};
+        use std::os::unix::fs::MetadataExt;
+        let t = tempfile::tempdir().unwrap();
+        with_root(t.path(), || {
+            let (dir, ini) = (sys_path("/etc/howdy"), sys_path("/etc/howdy/config.ini"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(&ini, "[core]\n").unwrap();
+            fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&ini, fs::Permissions::from_mode(0o644)).unwrap();
+            // the test's files belong to the user's group, not root's: the group bits go too
+            let g = if fs::metadata(&dir).unwrap().gid() == 0 { (0o750, 0o640) } else { (0o700, 0o600) };
+            assert_eq!(howdy_config_open(), [(dir.clone(), 0o755, g.0), (ini.clone(), 0o644, g.1)]);
+            journal::begin_run(&["services"], "p3ter").unwrap();
+            lock_howdy_config();
+            lock_howdy_config();
+            journal::end_run();
+            let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+            assert_eq!((mode(&dir), mode(&ini)), g);
+            assert!(howdy_config_open().is_empty());
+
+            let runs = journal::runs(&journal::load(&state_dir()).unwrap().entries);
+            let kinds: Vec<&str> = runs[0].changes.iter().map(|c| c.kind.as_str()).collect();
+            assert_eq!(kinds, ["mode_change", "mode_change"], "the second time nothing changes");
+            let items = crate::undo::plan(&runs[0], &crate::undo::View::default());
+            let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+            assert_eq!(labels, [format!("Give {} its mode 0644 back", ini.display()), format!("Give {} its mode 0755 back", dir.display())]);
+            crate::undo::execute(&items, &state_dir(), "p3ter", &mut |_, _| {}).unwrap();
+            assert_eq!((mode(&dir), mode(&ini)), (0o755, 0o644));
         });
     }
 

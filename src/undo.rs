@@ -40,6 +40,11 @@ pub enum Act {
         key: String,
         value: String,
     },
+    /// Give a system path its previous permission bits back
+    ModeBack {
+        path: PathBuf,
+        mode: u32,
+    },
     DisableUnit {
         unit: String,
         stop: bool,
@@ -352,6 +357,14 @@ pub fn plan(run: &Run, view: &View) -> Vec<Item> {
                 }
                 None => rest.push(Item::not_undoable(c, id, format!("howdy set {}", s(&c.data["key"])), "no previous value was set")),
             },
+            "mode_change" => {
+                if c.status == Status::Failed {
+                    continue;
+                }
+                let path = PathBuf::from(s(&c.data["path"]));
+                let mode = c.data["before"].as_u64().unwrap_or(0o755) as u32;
+                rest.push(Item::new(c, id, Act::ModeBack { path: path.clone(), mode }, format!("Give {} its mode {mode:04o} back", path.display())));
+            }
             "service_enable" => {
                 if c.data["was_enabled"] == true {
                     continue;
@@ -548,7 +561,7 @@ pub fn gather(runs: &[&Run]) -> View {
 const PAM_TYPES: [&str; 4] = ["auth", "account", "password", "session"];
 
 /// One PAM line: (type, control, module), or None for blank lines and comments.
-fn pam_line(line: &str) -> Result<Option<(String, String, String)>, String> {
+pub(crate) fn pam_line(line: &str) -> Result<Option<(String, String, String)>, String> {
     let l = line.split('#').next().unwrap_or("").trim();
     if l.is_empty() {
         return Ok(None);
@@ -725,6 +738,9 @@ pub fn execute_with(items: &[Item], dir: &Path, user: &str, rn: &dyn crate::part
                 } else {
                     Err(anyhow::anyhow!("howdy set failed"))
                 }
+            }
+            Act::ModeBack { path, mode } => {
+                fs::set_permissions(path, fs::Permissions::from_mode(*mode)).map_err(|e| anyhow::anyhow!("restoring the mode of {}: {e}", path.display()))
             }
             Act::DisableUnit { unit, stop } => {
                 let args: &[&str] = if *stop { &["disable", "--now", unit] } else { &["disable", unit] };
@@ -927,6 +943,7 @@ pub fn describe(c: &Change) -> String {
         "folder_move" => format!("{} -> {}", s(&d["home"]), s(&d["new_path"])),
         "dir_create" => s(&d["path"]),
         "howdy_set" => format!("{} = {}", s(&d["key"]), s(&d["after"])),
+        "mode_change" => format!("{} {:04o} -> {:04o}", s(&d["path"]), d["before"].as_u64().unwrap_or(0), d["after"].as_u64().unwrap_or(0)),
         "service_enable" => s(&d["unit"]),
         "pacman_key" => s(&d["fpr"]),
         "import" => format!("{} ({})", s(&d["archive"]), d["apps"].as_array().map(|a| a.iter().map(s).collect::<Vec<_>>().join(", ")).unwrap_or_default()),

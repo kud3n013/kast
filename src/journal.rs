@@ -513,6 +513,17 @@ pub fn howdy_set(key: &str, before: Option<&str>, after: &str, run: impl FnOnce(
     ok
 }
 
+/// `chmod` of a system path, with the mode before (permission bits).
+pub fn mode_change(path: &Path, before: u32, after: u32, run: impl FnOnce() -> bool) -> bool {
+    let Some(j) = current() else { return run() };
+    let seq = j.start("mode_change", json!({ "path": path, "before": before, "after": after }));
+    let ok = run();
+    if let Ok(seq) = seq {
+        j.finish("mode_change", seq, ok, json!({})).unwrap_or_else(warn);
+    }
+    ok
+}
+
 /// `systemctl enable --now unit`, with whether it was enabled / active before.
 pub fn service_enable(unit: &str, was_enabled: bool, was_active: bool, run: impl FnOnce() -> bool) -> bool {
     let Some(j) = current() else { return run() };
