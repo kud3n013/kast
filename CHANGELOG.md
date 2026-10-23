@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.2
+
+- **Howdy works on lock screens.** A lock screen (KDE's included) checks your face as you,
+  not as root. Howdy's setuid helper only steps in when you can't read
+  `/etc/howdy/config.ini`, but some packages install it readable by everyone, so the lock
+  screen tried to open the root-only face model itself ("Failed to open user model file")
+  and fell back to the password. The Services step now gives `/etc/howdy` and `config.ini`
+  Howdy's own modes (0750, 0640: the other users' bits go, nothing else changes); undo puts
+  the old modes back. `kast status` warns while they're open.
+- **KDE's lock screen (`kde`) is on the list of PAM files.** It is left alone when its auth
+  stack already reaches Howdy through an include (Arch's includes `system-local-login`), so
+  Howdy never scans twice.
+
 ## 0.9.1
 
 - **The Services step raises Howdy's `dark_threshold` to 90** (`howdy set dark_threshold

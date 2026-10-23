@@ -235,8 +235,14 @@ Howdy setup:
 - it checks the IR camera it finds (read-only) and sets Howdy's `device_path` to the camera's
   stable `/dev/v4l/by-path/...` name, and raises `dark_threshold` to 90 (a higher value
   you set is kept), so frames between the emitter's flashes don't stop a match;
+- it gives `/etc/howdy` and `config.ini` Howdy's own modes (0750, 0640). Lock screens check
+  your face as you, and Howdy only hands them the root-only face model through its setuid
+  helper when you can't read `config.ini`; a world-readable one (some packages ship it so)
+  makes unlocking fall back to the password;
 - when the camera qualifies, every PAM file kast gives Howdy (sudo, polkit-1, system-local-login,
-  plasmalogin, sddm, gdm-password, hyprlock, swaylock) gets this line directly above Howdy's:
+  plasmalogin, sddm, gdm-password, hyprlock, swaylock, kde) gets this line directly above
+  Howdy's. A file whose auth stack already includes one with Howdy (Arch's `kde` includes
+  `system-local-login`) is left alone, so Howdy doesn't scan twice:
 
   ```
   auth      optional   pam_exec.so quiet /usr/local/bin/kast ir-emitter enable --device /dev/v4l/by-path/...
@@ -271,7 +277,7 @@ add` adds a model next to the old ones; `howdy remove` / `howdy clear` drop old 
 `kast status` shows the emitter's state.
 
 Undo (`sudo kast undo --last --step services`, or Undo changes in the menu) puts the PAM
-files and `device_path` back as they were, like the rest of the Howdy setup.
+files, `device_path` and the config modes back as they were, like the rest of the Howdy setup.
 
 ## KDE Plasma settings
 

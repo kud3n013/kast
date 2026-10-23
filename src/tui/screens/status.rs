@@ -133,6 +133,9 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &StatusState) {
     if h.ir.supported() && matches!(h.model, ModelStatus::Enrolled { .. }) {
         lines.push(Line::styled(format!("  {}", crate::ir::reenroll_note(&r.user)), theme.warn()));
     }
+    if h.config_open {
+        lines.push(field("Lock screen", Span::styled(crate::vault::status::LOCK_SCREEN_NOTE, theme.warn())));
+    }
     lines.push(field("Process", process(theme, &h.pids, "idle")));
     lines.push(Line::raw(""));
     lines.push(Line::styled("KDE Plasma", theme.title()));
@@ -200,6 +203,7 @@ mod tests {
                     mode: crate::ir::Mode::Alternate,
                     pam: true,
                 },
+                config_open: false,
             },
             kde: KdeStatus {
                 detected: true,

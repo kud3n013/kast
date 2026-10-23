@@ -49,6 +49,8 @@ pub struct HowdyStatus {
     pub faces: Option<String>,
     pub pids: Vec<i32>,
     pub ir: IrState,
+    /// /etc/howdy or config.ini is readable by other users, so lock screens can't use Howdy
+    pub config_open: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,7 +161,8 @@ pub fn collect_status() -> StatusReport {
     };
     let device = std::fs::read_to_string("/etc/howdy/config.ini").ok().and_then(|ini| crate::setup::ini_value(&ini, "device_path"));
     let ir = ir::status(device.as_deref(), std::fs::read_to_string("/etc/pam.d/sudo").ok().as_deref());
-    let howdy = HowdyStatus { package, model: model_status, faces, pids: running_pids("howdy"), ir };
+    let config_open = !crate::setup::howdy_config_open().is_empty();
+    let howdy = HowdyStatus { package, model: model_status, faces, pids: running_pids("howdy"), ir, config_open };
 
     let detected = kde_has_settings();
     let kde = KdeStatus {
@@ -177,6 +180,9 @@ pub fn collect_status() -> StatusReport {
 pub fn cmd_status() {
     print_status(&collect_status());
 }
+
+/// Why lock screens fail with "Failed to open user model file", and the fix.
+pub const LOCK_SCREEN_NOTE: &str = "can't use Howdy: /etc/howdy is readable by all users (sudo kast services makes it 0750)";
 
 /// The IR emitter line of `kast status` (without colors).
 pub fn ir_text(s: &IrState) -> String {
@@ -235,6 +241,9 @@ fn print_status(r: &StatusReport) {
     println!("  IR Emitter:  {}", ir_text(&h.ir));
     if h.ir.supported() && matches!(h.model, ModelStatus::Enrolled { .. }) {
         println!("  {C_YELLOW}Note:{C_RESET}       {}", ir::reenroll_note(&r.user));
+    }
+    if h.config_open {
+        println!("  {C_YELLOW}Lock screen:{C_RESET} {}", LOCK_SCREEN_NOTE);
     }
     if h.pids.is_empty() {
         println!("  Process:     {C_GRAY}Idle / Standby{C_RESET}");
