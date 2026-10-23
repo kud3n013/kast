@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1
+
+- **The Services step raises Howdy's `dark_threshold` to 90** (`howdy set dark_threshold
+  90`; a higher value you set is kept, undo puts the old one back).
+
 ## 0.9.0
 
 - **Howdy uses the IR emitter of Windows Hello cameras.** Many of them keep the emitter off
