@@ -609,6 +609,14 @@ fn write_hook(device: &str) -> Result<()> {
     Ok(())
 }
 
+/// Howdy's dark_threshold is raised to at least this (a higher one is kept).
+const DARK_THRESHOLD: u32 = 90;
+
+/// Whether `current` (missing, not a number, or lower) should be raised to `min`.
+fn needs_raise(current: Option<&str>, min: u32) -> bool {
+    current.and_then(|v| v.parse::<f64>().ok()).is_none_or(|v| v < f64::from(min))
+}
+
 /// `key = value` in an ini file (Howdy's config.ini), any section.
 pub fn ini_value(ini: &str, key: &str) -> Option<String> {
     ini.lines().filter_map(|l| l.split_once('=')).find(|(k, _)| k.trim() == key).map(|(_, v)| v.trim().to_string())
@@ -718,6 +726,11 @@ pub fn setup_services(auto: bool, o_start: i64, o_step: i64, o_total: i64) -> Re
     if let Ok(ini) = fs::read_to_string("/etc/howdy/config.ini") {
         for (key, value) in [("device_path", device.as_str()), ("detection_notice", "true")] {
             journal::howdy_set(key, ini_value(&ini, key).as_deref(), value, || ok_logged("howdy", &["set", key, value]));
+        }
+        let dark = ini_value(&ini, "dark_threshold");
+        if needs_raise(dark.as_deref(), DARK_THRESHOLD) {
+            let value = DARK_THRESHOLD.to_string();
+            journal::howdy_set("dark_threshold", dark.as_deref(), &value, || ok_logged("howdy", &["set", "dark_threshold", &value]));
         }
     }
 
@@ -1362,5 +1375,10 @@ mod tests {
         assert_eq!(ini_value(ini, "device_path").as_deref(), Some("/dev/video0"));
         assert_eq!(ini_value(ini, "detection_notice").as_deref(), Some("false"));
         assert_eq!(ini_value(ini, "nope"), None);
+        assert!(needs_raise(Some("75"), 90));
+        assert!(needs_raise(None, 90));
+        assert!(needs_raise(Some("x"), 90));
+        assert!(!needs_raise(Some("90"), 90));
+        assert!(!needs_raise(Some("95.5"), 90));
     }
 }

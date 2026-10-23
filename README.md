@@ -233,7 +233,8 @@ The **Services** step (`kast services`, `kast auto`, the app's step 6) does it a
 Howdy setup:
 
 - it checks the IR camera it finds (read-only) and sets Howdy's `device_path` to the camera's
-  stable `/dev/v4l/by-path/...` name;
+  stable `/dev/v4l/by-path/...` name, and raises `dark_threshold` to 90 (a higher value
+  you set is kept), so frames between the emitter's flashes don't stop a match;
 - when the camera qualifies, every PAM file kast gives Howdy (sudo, polkit-1, system-local-login,
   plasmalogin, sddm, gdm-password, hyprlock, swaylock) gets this line directly above Howdy's:
 
