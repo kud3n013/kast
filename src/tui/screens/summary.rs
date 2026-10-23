@@ -67,12 +67,12 @@ pub fn view(f: &mut Frame, body: Rect, theme: &Theme, s: &Summary) {
     if !s.howdy_enrolled {
         lines.push(Line::raw(""));
         lines.push(Line::styled("  Howdy: no face model enrolled yet. Run:", theme.warn()));
-        lines.push(Line::raw(format!("    {}", crate::ir::enroll_command(&s.user, s.ir_supported))));
+        lines.push(Line::raw(format!("    {}", crate::ir::enroll_command(s.ir_supported))));
         lines.push(Line::styled(format!("    {HOWDY_RESTORE_HINT}"), theme.dim()));
     }
     if s.howdy_enrolled && s.ir_supported {
         lines.push(Line::raw(""));
-        lines.push(Line::styled(format!("  {}", crate::ir::reenroll_note(&s.user)), theme.warn()));
+        lines.push(Line::styled(format!("  {}", crate::ir::reenroll_note()), theme.warn()));
     }
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).block(block(theme, " Summary ")), body);
 }

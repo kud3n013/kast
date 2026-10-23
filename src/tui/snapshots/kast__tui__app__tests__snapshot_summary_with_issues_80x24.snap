@@ -1,6 +1,5 @@
 ---
 source: src/tui/app.rs
-assertion_line: 1732
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -21,7 +20,7 @@ expression: render(&a)
 │    ✗ Package failed to install: steam                                        │
 │                                                                              │
 │  Howdy: no face model enrolled yet. Run:                                     │
-│    sudo kast ir-emitter run -- howdy -U p3ter add                            │
+│    sudo kast afm --ir                                                        │
 │    (or restore a saved face model with menu option 6 / `sudo kast import`)   │
 │                                                                              │
 │                                                                              │

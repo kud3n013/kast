@@ -121,7 +121,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &StatusState) {
         ModelStatus::NeedsSudo => lines.push(field("Face model", Span::styled("run kast with sudo to inspect /etc/howdy/models", theme.dim()))),
         ModelStatus::NotEnrolled { path } => {
             lines.push(field("Face model", Span::styled(format!("{} not enrolled for {} ({path})", theme.sym.warn, r.user), theme.warn())));
-            lines.push(field("Add one", Span::raw(crate::ir::enroll_command(&r.user, h.ir.supported()))));
+            lines.push(field("Add one", Span::raw(crate::ir::enroll_command(h.ir.supported()))));
         }
     }
     let ir_style = match &h.ir {
@@ -131,7 +131,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &StatusState) {
     };
     lines.push(field("IR emitter", Span::styled(crate::vault::status::ir_text(&h.ir), ir_style)));
     if h.ir.supported() && matches!(h.model, ModelStatus::Enrolled { .. }) {
-        lines.push(Line::styled(format!("  {}", crate::ir::reenroll_note(&r.user)), theme.warn()));
+        lines.push(Line::styled(format!("  {}", crate::ir::reenroll_note()), theme.warn()));
     }
     if h.config_open {
         lines.push(field("Lock screen", Span::styled(crate::vault::status::LOCK_SCREEN_NOTE, theme.warn())));

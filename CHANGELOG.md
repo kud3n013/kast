@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.3
+
+- **New `kast add-face` (`kast afm`)** adds a Howdy face model for you (`--user` for another
+  account). `--ir` switches the IR emitter on first; without it, it's plain `howdy add`.
+  Where kast tells you to add a face model, it now says `sudo kast afm --ir` (or `sudo kast
+  afm` when the camera has no emitter kast can switch on).
+
 ## 0.9.2
 
 - **Howdy works on lock screens.** A lock screen (KDE's included) checks your face as you,
