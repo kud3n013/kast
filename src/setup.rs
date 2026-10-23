@@ -729,10 +729,10 @@ pub fn services_footer() {
     println!("IR emitter: {line}");
     if Path::new(&format!("/etc/howdy/models/{}.dat", c.target_user)).is_file() {
         if emitter {
-            println!("{}", ir::reenroll_note(&c.target_user));
+            println!("{}", ir::reenroll_note());
         }
     } else if Path::new("/usr/share/howdy").is_dir() {
-        println!("No face model enrolled yet. Run: {}", ir::enroll_command(&c.target_user, emitter));
+        println!("No face model enrolled yet. Run: {}", ir::enroll_command(emitter));
     }
 }
 
@@ -1202,11 +1202,11 @@ fn print_summary(s: &Summary) {
     if s.howdy_enrolled {
         println!("  • Howdy Face Model:   {C_GREEN}Enrolled / Restored for {}{C_RESET}", s.user);
         if s.ir_supported {
-            println!("{C_YELLOW}Note:{C_RESET} {}", ir::reenroll_note(&s.user));
+            println!("{C_YELLOW}Note:{C_RESET} {}", ir::reenroll_note());
         }
     } else {
         println!("{C_YELLOW}Note:{C_RESET} If you have not enrolled your face in Howdy yet, run:");
-        println!("  {}", ir::enroll_command(&s.user, s.ir_supported));
+        println!("  {}", ir::enroll_command(s.ir_supported));
         println!("  {HOWDY_RESTORE_HINT}");
     }
     println!();

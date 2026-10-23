@@ -235,12 +235,12 @@ fn print_status(r: &StatusReport) {
         ModelStatus::NeedsSudo => println!("  Face Model:  {C_GRAY}Run with sudo to inspect /etc/howdy/models{C_RESET}"),
         ModelStatus::NotEnrolled { path } => {
             println!("  Face Model:  {C_YELLOW}Not enrolled for {}{C_RESET} ({path})", r.user);
-            println!("  Add one:     {}", ir::enroll_command(&r.user, h.ir.supported()));
+            println!("  Add one:     {}", ir::enroll_command(h.ir.supported()));
         }
     }
     println!("  IR Emitter:  {}", ir_text(&h.ir));
     if h.ir.supported() && matches!(h.model, ModelStatus::Enrolled { .. }) {
-        println!("  {C_YELLOW}Note:{C_RESET}       {}", ir::reenroll_note(&r.user));
+        println!("  {C_YELLOW}Note:{C_RESET}       {}", ir::reenroll_note());
     }
     if h.config_open {
         println!("  {C_YELLOW}Lock screen:{C_RESET} {}", LOCK_SCREEN_NOTE);

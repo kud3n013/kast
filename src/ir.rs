@@ -626,9 +626,7 @@ pub fn cmd_run(device: Option<&Path>, command: &[OsString]) -> u8 {
 }
 
 pub fn run_with(enable: impl FnOnce() -> Result<String, IrError>, command: &[OsString]) -> u8 {
-    use nix::sys::signal::{SigHandler, Signal, signal};
-    use std::os::unix::process::ExitStatusExt;
-    let Some((prog, args)) = command.split_first() else {
+    let Some(prog) = command.first() else {
         eprintln!("kast ir-emitter run: no command given");
         return 2;
     };
@@ -636,10 +634,19 @@ pub fn run_with(enable: impl FnOnce() -> Result<String, IrError>, command: &[OsS
         Ok(line) => eprintln!("{line}"),
         Err(e) => eprintln!("IR emitter not switched on ({e}); running {} anyway", prog.to_string_lossy()),
     }
+    run_command("kast ir-emitter run", command)
+}
+
+/// Run `command` (not empty) and exit with its status, like a shell does. `who` starts the
+/// error messages.
+pub fn run_command(who: &str, command: &[OsString]) -> u8 {
+    use nix::sys::signal::{SigHandler, Signal, signal};
+    use std::os::unix::process::ExitStatusExt;
+    let Some((prog, args)) = command.split_first() else { return 2 };
     let mut child = match std::process::Command::new(prog).args(args).spawn() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("kast ir-emitter run: {}: {e}", prog.to_string_lossy());
+            eprintln!("{who}: {}: {e}", prog.to_string_lossy());
             return if e.kind() == std::io::ErrorKind::NotFound { 127 } else { 126 };
         }
     };
@@ -658,10 +665,16 @@ pub fn run_with(enable: impl FnOnce() -> Result<String, IrError>, command: &[OsS
     match status {
         Ok(st) => st.code().map_or_else(|| st.signal().map_or(1, |s| 128 + s as u8), |c| c as u8),
         Err(e) => {
-            eprintln!("kast ir-emitter run: {e}");
+            eprintln!("{who}: {e}");
             1
         }
     }
+}
+
+/// `kast add-face`: `howdy -U user add`, with the emitter switched on first when `ir`.
+pub fn cmd_add_face(user: &str, ir: bool, device: Option<&Path>) -> u8 {
+    let command: Vec<OsString> = ["howdy", "-U", user, "add"].map(OsString::from).to_vec();
+    if ir { cmd_run(device, &command) } else { run_command("kast add-face", &command) }
 }
 
 /// One request's answer in `probe`.
@@ -946,13 +959,13 @@ pub fn check(dev: &Path) -> Check {
 }
 
 /// How to add a face model: with the emitter on when the camera has one.
-pub fn enroll_command(user: &str, emitter: bool) -> String {
-    if emitter { format!("sudo kast ir-emitter run -- howdy -U {user} add") } else { format!("sudo howdy -U {user} add") }
+pub fn enroll_command(emitter: bool) -> String {
+    if emitter { "sudo kast afm --ir".into() } else { "sudo kast afm".into() }
 }
 
 /// For a camera with an emitter and a face model already there.
-pub fn reenroll_note(user: &str) -> String {
-    format!("Models recorded before the IR emitter worked were captured in the dark; add a fresh one: {}", enroll_command(user, true))
+pub fn reenroll_note() -> String {
+    format!("Models recorded before the IR emitter worked were captured in the dark; add a fresh one: {}", enroll_command(true))
 }
 
 // --- PAM lines ---------------------------------------------------------------------------

@@ -265,15 +265,16 @@ sends a mode the camera lists and never touches other bits; nothing is hardcoded
 
 ```sh
 kast ir-emitter probe            # what the camera says and what enable would do (--json too)
-sudo kast ir-emitter run -- howdy -U $USER add   # add a face model with the emitter on
+sudo kast afm --ir               # add a face model with the emitter on (kast add-face)
 sudo kast ir-emitter run -- howdy -U $USER test
 kast ir-emitter restore          # write the camera's default back
 ```
 
 `run` is for Howdy commands that don't go through PAM; the camera switches the emitter off
 by itself a few seconds after the stream stops. **Face models added before the emitter
-worked were recorded in the dark**: add a fresh one with the `run` command above (`howdy
-add` adds a model next to the old ones; `howdy remove` / `howdy clear` drop old ones).
+worked were recorded in the dark**: add a fresh one with `sudo kast afm --ir` (it adds a
+model next to the old ones; `howdy remove` / `howdy clear` drop old ones). Without `--ir`,
+`kast afm` is plain `howdy -U <you> add`; `--user` picks another account.
 `kast status` shows the emitter's state.
 
 Undo (`sudo kast undo --last --step services`, or Undo changes in the menu) puts the PAM

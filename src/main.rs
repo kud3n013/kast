@@ -139,11 +139,29 @@ enum Cmd {
         after_help = "Cameras whose IR function has Microsoft's camera extension unit with the face-authentication\n\
                       control (UVC 1.5) qualify; the Services step adds `enable` above Howdy in PAM. Exit status:\n\
                       3 no qualifying camera, 4 the camera's answers rule a write out, 5 a request failed.\n\
-                      Examples:\n  kast ir-emitter probe\n  sudo kast ir-emitter run -- howdy -U $USER add"
+                      Examples:\n  kast ir-emitter probe\n  sudo kast ir-emitter run -- howdy -U $USER test\n  sudo kast afm --ir   (add a face model)"
     )]
     IrEmitter {
         #[command(subcommand)]
         cmd: IrCmd,
+    },
+    /// Add a Howdy face model (`howdy -U <user> add`); --ir switches the camera's IR emitter on first
+    #[command(
+        name = "add-face",
+        visible_alias = "afm",
+        after_help = "Without --ir the camera stays as it is: a Windows Hello camera then records your face in the dark.\n\
+                      Examples:\n  sudo kast afm --ir\n  sudo kast afm --ir --user alice"
+    )]
+    AddFace {
+        /// Switch the IR emitter on first (kast ir-emitter run)
+        #[arg(long)]
+        ir: bool,
+        /// Whose model (default: you, also through sudo)
+        #[arg(long, short)]
+        user: Option<String>,
+        /// IR capture node (default: the camera that qualifies)
+        #[arg(long, value_name = "PATH", requires = "ir")]
+        device: Option<PathBuf>,
     },
     /// Inspect a backup archive's manifest
     #[command(visible_alias = "inspect")]
@@ -581,8 +599,11 @@ fn needs_root(cmd: &Option<Cmd>) -> bool {
     match cmd {
         Some(Cmd::Packages(a)) => !a.list,
         Some(Cmd::Partition(a)) => a.needs_root(),
-        // The journal is root's: undo and uninstall run through sudo, listing included
-        _ => matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Repo | Cmd::Services | Cmd::Undo(_) | Cmd::Uninstall { .. })) || interactive_vault(cmd),
+        // The journal is root's: undo and uninstall run through sudo, listing included; howdy add needs root
+        _ => {
+            matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Repo | Cmd::Services | Cmd::Undo(_) | Cmd::Uninstall { .. } | Cmd::AddFace { .. }))
+                || interactive_vault(cmd)
+        }
     }
 }
 
@@ -712,6 +733,10 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         Some(Cmd::Plasma { cmd }) => plasma::cli::run(cmd),
         Some(Cmd::FixPermissions { dry_run, yes }) => vault::fix::cmd_fix_permissions(dry_run, yes),
         Some(Cmd::IrEmitter { cmd }) => std::process::exit(run_ir(cmd).into()),
+        Some(Cmd::AddFace { ir: with_ir, user, device }) => {
+            let user = user.unwrap_or_else(|| ctx::ctx().target_user.clone());
+            std::process::exit(ir::cmd_add_face(&user, with_ir, device.as_deref()).into())
+        }
         Some(Cmd::Test) => Ok(()),
     }
 }
