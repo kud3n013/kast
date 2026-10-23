@@ -1243,7 +1243,8 @@ mod tests {
         let t = tempfile::tempdir().unwrap();
         let exe = t.path().join("kast");
         fs::write(&exe, "").unwrap();
-        assert!(emitter_rule(&exe, BY_PATH).unwrap_err().contains("not root"));
+        // not root's, or (tests running as root) in a folder others can write
+        assert!(emitter_rule(&exe, BY_PATH).is_err());
         let env = Path::new("/usr/bin/env");
         if fs::metadata(env).is_ok_and(|m| std::os::unix::fs::MetadataExt::uid(&m) == 0) {
             let real = fs::canonicalize(env).unwrap().display().to_string();

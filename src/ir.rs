@@ -996,7 +996,7 @@ mod tests {
         #[cfg(target_pointer_width = "64")]
         {
             assert_eq!(std::mem::size_of::<UvcXuControlQuery>(), 16);
-            assert_eq!(nix::request_code_readwrite!(b'u', 0x21, std::mem::size_of::<UvcXuControlQuery>()) as u64, 0xc010_7521);
+            assert_eq!(nix::request_code_readwrite!(b'u', 0x21, std::mem::size_of::<UvcXuControlQuery>()) as u32, 0xc010_7521);
         }
     }
 
