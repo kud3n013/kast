@@ -704,6 +704,7 @@ impl Cli {
     ) -> io::Result<Output> {
         let mut child = self.command(args).spawn()?;
         let pgid = child.id() as i32;
+        RUNNING_GROUP.set(Some(pgid));
         let tracked = crate::report::owns_terminal();
         if tracked {
             crate::report::set_child(Some(pgid));
@@ -754,6 +755,7 @@ impl Cli {
             }
             std::thread::sleep(Duration::from_millis(40));
         };
+        RUNNING_GROUP.set(None);
         if tracked {
             crate::report::set_child(None);
         }
@@ -846,6 +848,15 @@ impl Cli {
     pub fn logout(&self) -> Result<(), Problem> {
         self.call(&args_logout(), SMALL_TIMEOUT, &mut |_| {}).map(|_| ())
     }
+}
+
+thread_local! {
+    static RUNNING_GROUP: std::cell::Cell<Option<i32>> = const { std::cell::Cell::new(None) };
+}
+
+/// The process group of the CLI this thread is running now (for an `on_line` that measures it).
+pub fn running_group() -> Option<i32> {
+    RUNNING_GROUP.get()
 }
 
 /// A transfer's result: the summary when there is one (failures inside it are the caller's to

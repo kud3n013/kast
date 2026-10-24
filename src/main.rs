@@ -18,6 +18,7 @@ mod schedule;
 mod settings;
 mod setup;
 mod snapshot;
+mod tcpsent;
 mod tui;
 mod ui;
 mod undo;

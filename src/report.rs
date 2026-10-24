@@ -66,6 +66,20 @@ pub struct Progress {
     pub recent_log: String,
     /// Fixed mark instead of the spinner (✔ / ✘ when an item finished)
     pub mark: Option<String>,
+    /// A transfer's bytes, speed and time left (instead of s_step/s_total)
+    pub transfer: Option<Transfer>,
+}
+
+/// Where a transfer is: what's been sent of `total`, how fast, and how long it should take.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Transfer {
+    pub total: u64,
+    /// None when it can't be measured
+    pub done: Option<u64>,
+    /// Bytes per second, recent
+    pub speed: Option<f64>,
+    /// Seconds left
+    pub eta: Option<i64>,
 }
 
 pub trait Reporter: Send + Sync {

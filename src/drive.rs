@@ -651,18 +651,31 @@ fn ensure_folders(cli: &Cli, base: &str, host: &str) -> Result<()> {
     Ok(())
 }
 
-/// Upload, showing the size and the time it's taking. Rate-limited: one more try after 60 s.
+/// Upload, showing how much has been sent, how fast, and how long it should take (measured
+/// from the CLI's TCP connections: it reports no progress itself). Rate-limited: one more try
+/// after 60 s.
 fn upload_with_retry(cli: &Cli, files: &[std::path::PathBuf], parent: &str, name: &str, size: u64) -> Result<proton::Summary> {
+    let total = files.iter().filter_map(|f| std::fs::metadata(f).ok()).map(|m| m.len()).sum::<u64>().max(size);
     let mut tried = false;
     loop {
         let start = std::time::Instant::now();
         let dash = crate::ui::Dash::new(false, 0, 1, 1, "Upload to Proton Drive");
         let tui = crate::report::owns_terminal();
+        let mut sent: Option<crate::tcpsent::Sent> = None;
+        let mut meter = crate::ui::RateMeter::default();
         let mut on_line = |l: Option<&str>| match l {
             Some(line) => crate::report::current().output_line(line),
             None if tui => {
-                let e = start.elapsed().as_secs();
-                dash.render(0, 1, &format!("Uploading {name} ({}) · {}:{:02}", human(size), e / 60, e % 60), "", None);
+                let pgid = proton::running_group();
+                if sent.is_none() {
+                    sent = pgid.map(crate::tcpsent::Sent::new);
+                }
+                let done = sent.as_mut().and_then(crate::tcpsent::Sent::sample).map(|d| d.min(total));
+                if let Some(d) = done {
+                    meter.update(start.elapsed().as_secs_f64(), d);
+                }
+                let t = crate::report::Transfer { total, done, speed: meter.speed(), eta: meter.eta(total) };
+                dash.render_transfer(&format!("Uploading {name} ({})", human(size)), t);
             }
             None => {}
         };
@@ -680,7 +693,14 @@ fn upload_with_retry(cli: &Cli, files: &[std::path::PathBuf], parent: &str, name
                 anyhow::bail!("Upload canceled");
             }
             Err(p) => return Err(p.into()),
-            Ok(s) => return Ok(s),
+            Ok(s) => {
+                let secs = start.elapsed().as_secs_f64();
+                if s.failed_items == 0 && secs >= 1.0 {
+                    let avg = crate::ui::human_rate(total as f64 / secs);
+                    crate::vault::log_info(&format!("Sent {} in {} ({avg} on average)", human(total), crate::ui::format_seconds(secs.round() as i64)));
+                }
+                return Ok(s);
+            }
         }
     }
 }

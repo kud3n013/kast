@@ -1086,6 +1086,7 @@ pub mod tests {
             item: item.into(),
             recent_log: String::new(),
             mark: mark.map(str::to_string),
+            transfer: None,
         }
     }
 
@@ -1562,6 +1563,21 @@ pub mod tests {
     #[test]
     fn snapshot_run_auto_140x40() {
         insta::assert_snapshot!(render(&running_auto(140, 40)));
+    }
+
+    #[test]
+    fn snapshot_run_upload() {
+        const MIB: u64 = 1024 * 1024;
+        let mut a = app(80, 24);
+        a.now = 1100 + 95;
+        let mut st = RunState::new("Back up zen to Proton Drive", false, 1000);
+        let mut p = progress(0, 0, 1, "Uploading zen_backup_2026-10-24_101500.zip (456.7 MiB)", None);
+        p.auto = false;
+        p.title = "Upload to Proton Drive".into();
+        p.transfer = Some(crate::report::Transfer { total: 457 * MIB, done: Some(181 * MIB), speed: Some(2.4 * MIB as f64), eta: Some(118) });
+        st.on_progress(p);
+        a.screen = Screen::Run(Box::new(st));
+        insta::assert_snapshot!(render(&a));
     }
 
     #[test]

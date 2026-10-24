@@ -222,6 +222,88 @@ pub fn overall_eta(o_pct: i64, o_elapsed: i64) -> i64 {
     }
 }
 
+/// Transfer speed and time left, estimated the way download managers do: a smoothed recent
+/// speed that follows the network as it changes, blended with the average since the first
+/// byte so the ETA doesn't swing with every burst or stall.
+#[derive(Debug, Default, Clone)]
+pub struct RateMeter {
+    /// (seconds, bytes) when the first bytes were seen
+    first: Option<(f64, u64)>,
+    last: Option<(f64, u64)>,
+    recent: Option<f64>,
+}
+
+/// Weight of the newest one-second sample in the recent speed (about 3 s of memory).
+const RATE_SMOOTHING: f64 = 0.3;
+
+impl RateMeter {
+    /// `done` bytes at `t` seconds (any fixed origin).
+    pub fn update(&mut self, t: f64, done: u64) {
+        let Some((t0, d0)) = self.last else {
+            if done > 0 {
+                self.first = Some((t, done));
+                self.last = Some((t, done));
+            }
+            return;
+        };
+        let dt = t - t0;
+        if dt <= 0.0 {
+            return;
+        }
+        let now = done.saturating_sub(d0) as f64 / dt;
+        self.recent = Some(self.recent.map_or(now, |r| r + RATE_SMOOTHING * (now - r)));
+        self.last = Some((t, done.max(d0)));
+    }
+
+    /// Bytes per second, recent.
+    pub fn speed(&self) -> Option<f64> {
+        self.recent
+    }
+
+    /// Bytes per second since the first bytes.
+    pub fn average(&self) -> Option<f64> {
+        let ((t0, d0), (t1, d1)) = (self.first?, self.last?);
+        (t1 - t0 >= 1.0).then(|| (d1 - d0) as f64 / (t1 - t0))
+    }
+
+    /// Seconds until `total`; None while there's no speed to go by (not started, stalled).
+    pub fn eta(&self, total: u64) -> Option<i64> {
+        let done = self.last?.1;
+        if done >= total {
+            return Some(0);
+        }
+        let recent = self.recent?;
+        let speed = self.average().map_or(recent, |avg| (avg + recent) / 2.0);
+        (speed >= 1.0).then(|| ((total - done) as f64 / speed).ceil() as i64)
+    }
+}
+
+pub fn human_rate(bytes_per_s: f64) -> String {
+    format!("{}/s", crate::undo::human(bytes_per_s.max(0.0) as u64))
+}
+
+/// A transfer's percentage (never 100 before it's finished: the total is an estimate).
+pub fn transfer_pct(t: &report::Transfer) -> u16 {
+    match t.done {
+        Some(d) if t.total > 0 => (d.saturating_mul(100) / t.total).min(99) as u16,
+        _ => 0,
+    }
+}
+
+/// "42% · 120.4 MiB / 456.7 MiB · 3.2 MiB/s · ETA 01:45"
+pub fn transfer_label(t: &report::Transfer) -> String {
+    let human = crate::undo::human;
+    let Some(done) = t.done else {
+        return format!("{} · progress not measurable here", human(t.total));
+    };
+    if done >= t.total {
+        return format!("{} sent · finishing…", human(t.total));
+    }
+    let speed = t.speed.map_or_else(|| "– /s".to_string(), human_rate);
+    let eta = t.eta.map_or_else(|| "--:--".to_string(), format_seconds);
+    format!("{}% · {} / {} · {speed} · ETA {eta}", transfer_pct(t), human(done), human(t.total))
+}
+
 pub fn draw_bar(percent: i64, width: i64) -> String {
     let p = percent.clamp(0, 100);
     let w = width.max(1);
@@ -273,6 +355,26 @@ impl Dash {
             item: item.to_string(),
             recent_log: recent_log.to_string(),
             mark: spinner.map(str::to_string),
+            transfer: None,
+        });
+    }
+
+    /// A single-step transfer: the gauge follows its bytes instead of steps.
+    pub fn render_transfer(&self, item: &str, t: report::Transfer) {
+        report::progress(&Progress {
+            auto: self.auto,
+            o_step: self.o_step,
+            o_total: self.o_total,
+            weights: if self.auto { step_weights() } else { Vec::new() },
+            o_start: self.o_start,
+            title: self.title.clone(),
+            s_start: self.s_start,
+            s_step: 0,
+            s_total: 1,
+            item: item.to_string(),
+            recent_log: String::new(),
+            mark: None,
+            transfer: Some(t),
         });
     }
 
@@ -483,6 +585,50 @@ pub fn sleep_secs(s: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MIB: u64 = 1024 * 1024;
+
+    #[test]
+    fn rate_meter_follows_the_speed_and_estimates_from_it() {
+        let mut m = RateMeter::default();
+        // Nothing sent yet (preparing): no speed, no ETA
+        m.update(0.0, 0);
+        m.update(1.0, 0);
+        assert_eq!((m.speed(), m.eta(100 * MIB)), (None, None));
+        // A steady 2 MiB/s
+        for t in 2..=12 {
+            m.update(t as f64, (t - 1) as u64 * 2 * MIB);
+        }
+        assert!((m.speed().unwrap() - 2.0 * MIB as f64).abs() < 1.0);
+        assert_eq!(m.eta(100 * MIB), Some(39)); // 78 MiB left
+        // The network halves: the speed follows within seconds, the ETA moves between the two
+        for t in 13..=17 {
+            m.update(t as f64, 22 * MIB + (t - 12) as u64 * MIB);
+        }
+        let speed = m.speed().unwrap() / MIB as f64;
+        assert!(speed > 1.0 && speed < 1.3, "{speed}");
+        let eta = m.eta(100 * MIB).unwrap();
+        assert!(eta > 73 / 2 && eta < 73, "{eta}"); // 73 MiB left: between 2 and 1 MiB/s
+        // A stall: the speed decays toward 0, then there's nothing to estimate from
+        for t in 18..=60 {
+            m.update(t as f64, 27 * MIB);
+        }
+        assert!(m.speed().unwrap() < 1.0);
+        assert!(m.eta(100 * MIB).is_some(), "the average still gives an estimate");
+        assert_eq!(m.eta(27 * MIB), Some(0));
+    }
+
+    #[test]
+    fn transfer_labels() {
+        let t = report::Transfer { total: 400 * MIB, done: Some(100 * MIB), speed: Some(3.5 * MIB as f64), eta: Some(86) };
+        assert_eq!(transfer_label(&t), "25% · 100.0 MiB / 400.0 MiB · 3.5 MiB/s · ETA 01:26");
+        let t = report::Transfer { done: Some(1), speed: None, eta: None, ..t };
+        assert_eq!(transfer_label(&t), "0% · 1 B / 400.0 MiB · – /s · ETA --:--");
+        let t = report::Transfer { done: Some(400 * MIB), ..t };
+        assert_eq!((transfer_label(&t).as_str(), transfer_pct(&t)), ("400.0 MiB sent · finishing…", 99));
+        let t = report::Transfer { done: None, ..t };
+        assert_eq!((transfer_label(&t).as_str(), transfer_pct(&t)), ("400.0 MiB · progress not measurable here", 0));
+    }
 
     #[test]
     fn seconds_format() {

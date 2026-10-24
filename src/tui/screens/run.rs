@@ -13,7 +13,7 @@ use crate::report::{Level, Progress};
 use crate::tui::app::App;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{block, ellipsize};
-use crate::ui::{calc_overall_progress, eta_countdown_at, format_seconds, overall_eta};
+use crate::ui::{calc_overall_progress, eta_countdown_at, format_seconds, overall_eta, transfer_label, transfer_pct};
 
 pub const LOG_CAPACITY: usize = 5000;
 
@@ -177,12 +177,16 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
     let (s_step, s_total) = p.map_or((0, 0), |p| (p.s_step, p.s_total));
     let s_start = p.map_or(st.started, |p| p.s_start);
     let step_title = p.map_or_else(|| st.title.clone(), |p| p.title.clone());
-    let s_pct = pct(s_step, s_total);
-    let step_label = format!(
-        "{s_pct}% · {} elapsed · ETA {}",
-        format_seconds(app.now - s_start),
-        if st.running() { eta_countdown_at(app.now, s_start, s_step, s_total, 15) } else { "00:00".into() }
-    );
+    let transfer = p.and_then(|p| p.transfer.as_ref()).filter(|_| st.running());
+    let s_pct = transfer.map_or_else(|| pct(s_step, s_total), transfer_pct);
+    let step_label = match transfer {
+        Some(t) => transfer_label(t),
+        None => format!(
+            "{s_pct}% · {} elapsed · ETA {}",
+            format_seconds(app.now - s_start),
+            if st.running() { eta_countdown_at(app.now, s_start, s_step, s_total, 15) } else { "00:00".into() }
+        ),
+    };
     if st.auto {
         let [o, s] = Layout::vertical([Constraint::Length(3), Constraint::Length(3)]).areas(gauge_area);
         let o_step = p.map_or(1, |p| p.o_step);
@@ -196,7 +200,10 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
         let title = format!(" Step {s_step}/{s_total} ");
         f.render_widget(gauge(theme, title, s_pct, step_label, theme.gauge_step()), s);
     } else {
-        let title = format!(" {} · {s_step}/{s_total} ", st.title);
+        let title = match transfer {
+            Some(_) => format!(" {} · {} elapsed ", st.title, format_seconds(app.now - s_start)),
+            None => format!(" {} · {s_step}/{s_total} ", st.title),
+        };
         f.render_widget(gauge(theme, title, s_pct, step_label, theme.gauge_overall()), gauge_area);
     }
 
@@ -231,7 +238,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &RunState) {
                 Some(m) => (m, theme.ok()),
                 None => (spinner, theme.accent()),
             };
-            let count = if s_total > 0 { format!("{s_step}/{s_total}: ") } else { String::new() };
+            let count = if s_total > 0 && transfer.is_none() { format!("{s_step}/{s_total}: ") } else { String::new() };
             let max = status.width.saturating_sub(8) as usize;
             let mut spans = vec![Span::styled(format!("{sym} "), style), Span::raw(ellipsize(&format!("{count}{item}"), max, theme.sym.ellipsis))];
             if st.cancel_requested {
@@ -362,6 +369,7 @@ mod tests {
             item: item.into(),
             recent_log: String::new(),
             mark: mark.map(str::to_string),
+            transfer: None,
         };
         st.on_progress(p("zen", Some("✘")));
         st.on_progress(p("zen", Some("✘")));
