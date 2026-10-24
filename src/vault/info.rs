@@ -119,6 +119,7 @@ pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
                 fields.push(("Models Dir:  ".into(), "/etc/howdy/models".into()));
                 fields.push(("User Model:  ".into(), if file.is_empty() { format!("{user}.dat") } else { file }));
             }
+            "KWALLET" | "GNOMEKEYRING" => fields.extend(super::keyring::info_lines(m, &key)),
             "KDE" => {
                 fields.push(("Config:      ".into(), "~/.config (kdeglobals, kwinrc, Plasma applets, shortcuts)".into()));
                 fields.push(("Share:       ".into(), "~/.local/share (plasma, kwin, icons, wallpapers)".into()));
@@ -179,6 +180,20 @@ fn print_info(r: &InfoReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyrings_are_listed_without_their_contents() {
+        let m = serde_json::json!({"apps": {
+            "kwallet": {"keyrings": [{"name": "kdewallet", "type": "blowfish-pbkdf2", "size": 1924, "salt": true}], "default": "kdewallet", "secret_service_owner": "ksecretd"},
+            "gnome-keyring": {"keyrings": [{"name": "login", "type": "gnome-aes", "size": 2048}], "default": "login", "left_out": ["Default.keyring"]},
+        }});
+        let r = info_from_manifest("a.zip".into(), "1K".into(), &m);
+        let text = |k: &str| r.apps.iter().find(|a| a.key == k).unwrap().fields.iter().map(|(l, v)| format!("{l}{v}")).collect::<Vec<_>>().join("\n");
+        let kw = text("kwallet");
+        assert!(kw.contains("kdewallet (Blowfish, PBKDF2-SHA512, 1.9K)") && kw.contains("KDE Wallet (ksecretd)"), "{kw}");
+        let g = text("gnome-keyring");
+        assert!(g.contains("login (AES, password-protected, 2.0K)") && g.contains("Left out:    Default.keyring (no password)"), "{g}");
+    }
 
     #[test]
     fn jq_fallbacks() {

@@ -289,7 +289,7 @@ enum VaultCmd {
     },
 }
 
-const TARGETS: [&str; 25] = [
+const TARGETS: [&str; 32] = [
     "all",
     "beeper",
     "beepertexts",
@@ -315,6 +315,13 @@ const TARGETS: [&str; 25] = [
     "kde-plasma",
     "hypr",
     "hyprland",
+    "kwallet",
+    "kdewallet",
+    "wallet",
+    "gnome-keyring",
+    "gkr",
+    "seahorse",
+    "keyrings",
 ];
 
 /// Which package list to use.
@@ -449,6 +456,12 @@ struct BackupArgs {
     /// Don't start the apps -k (or the prompt) closed again after the backup
     #[arg(long)]
     no_relaunch: bool,
+    /// Include KDE Wallet and GNOME Keyring in `all` (or set `[vault] keyrings = true` in ~/.config/kast/settings.toml)
+    #[arg(long)]
+    with_keyrings: bool,
+    /// Back up a GNOME keyring that has no password (its secrets are plain text; never uploaded)
+    #[arg(long)]
+    allow_plaintext_keyring: bool,
     /// Upload the backup to Proton Drive (sign in first: kast drive login)
     #[arg(long, value_name = "WHERE", value_parser = ["proton"])]
     upload: Option<String>,
@@ -476,6 +489,8 @@ impl BackupArgs {
             && !self.force
             && !self.dry_run
             && !self.no_relaunch
+            && !self.with_keyrings
+            && !self.allow_plaintext_keyring
             && self.upload.is_none()
             && self.keep.is_none()
             && self.also_local.is_none()
@@ -492,6 +507,8 @@ impl BackupArgs {
             force: self.force,
             dry_run: self.dry_run,
             no_relaunch: self.no_relaunch,
+            with_keyrings: self.with_keyrings,
+            allow_plaintext_keyring: self.allow_plaintext_keyring,
             ..Default::default()
         }
     }
@@ -542,7 +559,7 @@ fn run_backup(a: BackupArgs) -> Result<()> {
 struct ImportArgs {
     /// Backup archive (.zip) or standalone face model (.dat)
     file: Option<PathBuf>,
-    /// Only restore one app (beeper, zalo, vesktop, zen, helium, obsidian, fcitx5, antigravity, fdm, fish, fastfetch, scripts, howdy, kde, hypr)
+    /// Only restore one app (beeper, zalo, vesktop, zen, helium, obsidian, fcitx5, antigravity, fdm, fish, fastfetch, scripts, zotero, howdy, kde, hypr, kwallet, gnome-keyring, or keyrings for both)
     #[arg(long)]
     app: Option<String>,
     /// Skip the safety snapshot of existing files

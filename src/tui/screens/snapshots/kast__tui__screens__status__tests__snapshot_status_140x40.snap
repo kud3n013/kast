@@ -1,5 +1,6 @@
 ---
 source: src/tui/screens/status.rs
+assertion_line: 250
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -29,11 +30,11 @@ expression: render(&a)
 │  Config      not found                                                                                                                   │
 │  Session     Hyprland not running                                                                                                        │
 │                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
-│                                                                                                                                          │
+│Keyrings                                                                                                                                  │
+│  KDE Wallet  none                                                                                                                        │
+│  GNOME       none                                                                                                                        │
+│  Secrets API no provider running now (one starts on demand)                                                                              │
+│  Backup      opt-in: kast backup keyrings, or all --with-keyrings                                                                        │
 │                                                                                                                                          │
 │                                                                                                                                          │
 │                                                                                                                                          │

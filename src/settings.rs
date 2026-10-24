@@ -25,6 +25,7 @@ const MAX_READ: u64 = 1024 * 1024;
 pub struct Settings {
     pub proton: Proton,
     pub schedule: Schedule,
+    pub vault: Vault,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -48,6 +49,13 @@ pub struct Schedule {
     pub targets: Option<Vec<String>>,
     /// "daily" or "weekly"
     pub every: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+pub struct Vault {
+    /// `all` (and so the schedule) includes KDE Wallet and GNOME Keyring
+    pub keyrings: bool,
 }
 
 impl Settings {
@@ -237,12 +245,14 @@ mod tests {
         assert_eq!((s.folder(), s.keep(), s.store(), s.also_local()), (DEFAULT_FOLDER.to_string(), 5, None, None));
         let s = Settings::parse(
             "future = 1\n[proton]\ncredentials_store = \"pass\"\nfolder = \"/my-files/Backups/kast/\"\nkeep = 3\nalso_local = \"/media/data/backups\"\nnew_key = true\n\
-             [schedule]\nnotify_success = true\n[other]\nx = 1\n",
+             [schedule]\nnotify_success = true\n[vault]\nkeyrings = true\n[other]\nx = 1\n",
         )
         .unwrap();
         assert_eq!(s.folder(), "/my-files/Backups/kast");
         assert_eq!((s.keep(), s.store().as_deref(), s.schedule.notify_success), (3, Some("pass"), true));
         assert_eq!(s.also_local(), Some(PathBuf::from("/media/data/backups")));
+        assert!(s.vault.keyrings);
+        assert!(!Settings::parse("").unwrap().vault.keyrings, "keyrings stay out of all by default");
         assert!(Settings::parse("[proton\n").is_err());
     }
 

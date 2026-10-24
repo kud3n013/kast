@@ -162,6 +162,19 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &StatusState) {
         None => lines.push(field("Config", Span::styled("not found", theme.dim()))),
     }
     lines.push(field("Session", session(r.hypr.running, "Hyprland")));
+    lines.push(Line::raw(""));
+    lines.push(Line::styled("Keyrings", theme.title()));
+    for l in crate::vault::status::keyring_lines(&r.keyrings) {
+        use crate::vault::status::KeyringLevel;
+        let style = match l.level {
+            KeyringLevel::Ok => theme.ok(),
+            KeyringLevel::Warn => theme.warn(),
+            KeyringLevel::Dim => theme.dim(),
+            KeyringLevel::Plain => ratatui::style::Style::new(),
+        };
+        let label = l.label.trim_end().trim_end_matches(':').to_string();
+        lines.push(Line::from(vec![Span::styled(format!("  {label:<12}"), theme.bold()), Span::styled(l.value, style)]));
+    }
     f.render_widget(Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }).scroll((st.scroll, 0)).block(block(theme, " System ")), rest);
 }
 
@@ -213,6 +226,7 @@ mod tests {
                 plasma_running: true,
             },
             hypr: HyprStatus { config: None, running: false },
+            keyrings: Default::default(),
         }
     }
 

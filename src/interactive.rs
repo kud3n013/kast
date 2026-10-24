@@ -249,12 +249,13 @@ pub fn export_data() -> Result<()> {
         ("howdy", "Howdy Face Recognition Model (/etc/howdy/models)"),
         ("kde", "KDE Plasma settings (curated ~/.config + ~/.local/share)"),
         ("hypr", "Hyprland settings (~/.config/hypr)"),
+        ("keyrings", "Keyrings: KDE Wallet & GNOME Keyring (encrypted with your keyring password)"),
     ];
     for (i, (_, label)) in targets.iter().enumerate() {
         println!("  {}) {label}", i + 1);
     }
     println!("  q) Cancel\n");
-    let choice = read_choice("Choose target [1-17, q]: ");
+    let choice = read_choice(&format!("Choose target [1-{}, q]: ", targets.len()));
     let target = match choice.parse::<usize>() {
         Ok(n) if (1..=targets.len()).contains(&n) => targets[n - 1].0,
         _ if choice.is_empty() || choice.eq_ignore_ascii_case("q") => {
@@ -277,7 +278,19 @@ pub fn export_data() -> Result<()> {
         is_dat = read_choice("Choose format [1-2, default: 1]: ") != "2";
     }
     let mut include_media = true;
-    if !matches!(target, "howdy" | "kde" | "hypr") {
+    let mut allow_plaintext_keyring = false;
+    if target == "keyrings" {
+        println!("\n{}. {}", crate::vault::keyring::NOTE, crate::vault::keyring::OFFLINE_NOTE);
+        let plain = crate::vault::keyring::plaintext_keyrings();
+        if !plain.is_empty() {
+            println!(
+                "\n{C_YELLOW}Warning:{C_RESET} the GNOME keyring(s) {} have no password: their secrets are plain text, readable by anyone with the archive.",
+                plain.join(", ")
+            );
+            allow_plaintext_keyring = read_choice("Include them anyway? (y/N): ").eq_ignore_ascii_case("y");
+        }
+    }
+    if !matches!(target, "howdy" | "kde" | "hypr" | "keyrings") {
         include_media = !read_choice("Include large media/attachments? (Y/n): ").eq_ignore_ascii_case("n");
     }
 
@@ -290,7 +303,16 @@ pub fn export_data() -> Result<()> {
     println!("\nDestination: {C_BOLD}{}{C_RESET}", out.display());
     read_choice("Press Enter to start backup (or Ctrl+C to abort)...");
     println!("\n{C_CYAN}==>{C_RESET} Executing backup as {C_BOLD}{}{C_RESET}...", c.target_user);
-    cmd_backup(BackupOpts { target: target.into(), output: Some(out.clone()), include_media, kill: true, force: false, dry_run: false, ..Default::default() })?;
+    cmd_backup(BackupOpts {
+        target: target.into(),
+        output: Some(out.clone()),
+        include_media,
+        kill: true,
+        force: false,
+        dry_run: false,
+        allow_plaintext_keyring,
+        ..Default::default()
+    })?;
     if ctx::canceled() {
         println!("\n{C_YELLOW}[CANCELED]{C_RESET} No backup was created.");
     } else {
