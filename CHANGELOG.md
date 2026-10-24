@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.4
+
+- **`kast import` stops `kglobalacceld` while it restores KDE shortcuts**, so restoring
+  *All* brings back your shortcuts like *KDE Plasma settings only* does. The daemon kept
+  KDE's defaults (Meta+L, the stock Meta+number bindings) in memory and wrote them over the
+  restored `kglobalshortcutsrc` as soon as an app registered shortcuts with it, and *All*
+  starts the apps it closed again right after the restore. It now runs again on the
+  restored file before plasmashell and those apps start, and is started again on every
+  error. Undoing a KDE restore does the same. The daemon check only counts your own
+  session's daemon when kast runs under sudo (`kast plasma apply` too).
+
 ## 0.9.3
 
 - **New `kast add-face` (`kast afm`)** adds a Howdy face model for you (`--user` for another

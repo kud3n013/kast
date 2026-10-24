@@ -104,8 +104,10 @@ pub fn start_shell(t: &Tools) -> Result<(), String> {
 
 const SHORTCUT_UNIT: &str = "plasma-kglobalaccel.service";
 
+/// The target user's daemon only: under sudo another session's must not count.
 fn shortcut_daemon_running() -> bool {
-    Command::new("pgrep").args(["-x", "kglobalacceld"]).stdout(Stdio::null()).status().is_ok_and(|s| s.success())
+    let user = &crate::ctx::ctx().target_user;
+    Command::new("pgrep").args(["-u", user, "-x", "kglobalacceld"]).stdout(Stdio::null()).status().is_ok_and(|s| s.success())
 }
 
 fn user_ok(program: &str, args: &[&str]) -> bool {

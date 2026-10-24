@@ -218,7 +218,92 @@ fn import_dat(o: &ImportOpts) -> Result<()> {
     Ok(())
 }
 
+/// The parts of the Plasma session a KDE restore stops and starts. A seam, so tests can watch
+/// the order without touching the desktop they run in.
+trait KdeSession {
+    fn shell_running(&self) -> bool;
+    fn stop_shell(&self);
+    /// Start plasmashell again and have KWin reload its settings.
+    fn start_shell(&self);
+    /// See [`crate::plasma::reload::stop_shortcut_daemon`].
+    fn stop_shortcuts(&self) -> Result<bool, String>;
+    fn start_shortcuts(&self) -> Result<(), String>;
+}
+
+/// The user's real session.
+struct LiveSession;
+
+impl KdeSession for LiveSession {
+    fn shell_running(&self) -> bool {
+        process_running("plasmashell", Some(&ctx().target_user))
+    }
+
+    fn stop_shell(&self) {
+        let _ = user_ok(&["systemctl", "--user", "stop", "plasma-plasmashell.service"]) || user_ok(&["kquitapp6", "plasmashell"]);
+        crate::ui::sleep_secs(1.0);
+    }
+
+    fn start_shell(&self) {
+        if !user_ok(&["systemctl", "--user", "start", "plasma-plasmashell.service"]) {
+            let _ = user_cmd(&["kstart", "plasmashell"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+        }
+        user_ok(&["qdbus6", "org.kde.KWin", "/KWin", "reconfigure"]);
+    }
+
+    fn stop_shortcuts(&self) -> Result<bool, String> {
+        crate::plasma::reload::stop_shortcut_daemon()
+    }
+
+    fn start_shortcuts(&self) -> Result<(), String> {
+        crate::plasma::reload::start_shortcut_daemon()
+    }
+}
+
+/// `kglobalacceld` is stopped while this lives. [`start`](Self::start), or dropping it (an
+/// error, a canceled job unwinding), starts it again: a restore never leaves the user
+/// without global shortcuts.
+struct ShortcutsStopped<'a> {
+    session: &'a dyn KdeSession,
+    stopped: bool,
+}
+
+impl<'a> ShortcutsStopped<'a> {
+    fn stop(session: &'a dyn KdeSession) -> Self {
+        log_info("Stopping kglobalacceld so it can't write its old shortcuts over the restored ones...");
+        let stopped = session.stop_shortcuts().unwrap_or_else(|e| {
+            log_warn(&format!("Could not stop kglobalacceld ({e}); the restored shortcuts may only take effect after you log out and in."));
+            // It may still be on its way out: starting it again is harmless if it isn't
+            true
+        });
+        ShortcutsStopped { session, stopped }
+    }
+
+    fn start(mut self) {
+        self.restart();
+    }
+
+    fn restart(&mut self) {
+        if !std::mem::take(&mut self.stopped) {
+            return;
+        }
+        if let Err(e) = self.session.start_shortcuts() {
+            let hint = if e.contains("log out") { String::new() } else { "; log out and in to load the shortcuts".into() };
+            log_warn(&format!("Could not start kglobalacceld again: {e}{hint}"));
+        }
+    }
+}
+
+impl Drop for ShortcutsStopped<'_> {
+    fn drop(&mut self) {
+        self.restart();
+    }
+}
+
 pub fn cmd_import(o: ImportOpts) -> Result<()> {
+    import_with(o, &LiveSession)
+}
+
+fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
     let c = ctx();
     ctx::set_canceled(false);
     require_vault_tools()?;
@@ -359,11 +444,14 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
         }
     }
 
+    // The order doesn't matter to the shortcuts: restore_kde has kglobalacceld running again
+    // on the restored kglobalshortcutsrc before it returns, and the apps closed above are
+    // started again (dropping `_relaunch`) only after every app is restored.
     for app in &apps {
         log_step(&format!("Restoring: {C_BOLD}{app}{C_RESET}"));
         match app.as_str() {
             "howdy" => restore_howdy(&staging, &rollback, &manifest, &o)?,
-            "kde" => restore_kde(&staging, &rollback, &o)?,
+            "kde" => restore_kde(&staging, &rollback, &o, session)?,
             other => {
                 if let Some(spec) = restore_spec(other) {
                     restore_app_dir(other, &spec, &staging, &rollback, &o)?;
@@ -548,17 +636,23 @@ fn restore_howdy(staging: &Path, rollback: &Path, manifest: &Value, o: &ImportOp
     Ok(())
 }
 
-fn restore_kde(staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
+const SHORTCUTS_RC: &str = "kglobalshortcutsrc";
+
+fn restore_kde(staging: &Path, rollback: &Path, o: &ImportOpts, session: &dyn KdeSession) -> Result<()> {
     let c = ctx();
     let kde = staging.join("kde");
     if !kde.is_dir() {
         log_warn("KDE snapshot folder missing in archive, skipping...");
         return Ok(());
     }
+    let has_shortcuts = kde.join("config").join(SHORTCUTS_RC).is_file();
     if o.dry_run {
         log_info(&format!("  [Dry-run] Would restore KDE config to: {}", c.config_home.display()));
         log_info(&format!("  [Dry-run] Would restore KDE share data to: {}", c.data_home.display()));
         log_info("  [Dry-run] Would restore ~/.fonts ~/.themes ~/.icons if present");
+        if has_shortcuts {
+            log_info("  [Dry-run] Would stop kglobalacceld while restoring shortcuts");
+        }
         return Ok(());
     }
     if o.safety_backup {
@@ -568,12 +662,19 @@ fn restore_kde(staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
     }
 
     // Stop plasmashell so its in-memory state doesn't overwrite the restored files on logout
-    let plasma_was_running = process_running("plasmashell", Some(&c.target_user));
+    let plasma_was_running = session.shell_running();
     if plasma_was_running {
         log_info("Stopping plasmashell to prevent in-memory state from overwriting restored settings on logout...");
-        let _ = user_ok(&["systemctl", "--user", "stop", "plasma-plasmashell.service"]) || user_ok(&["kquitapp6", "plasmashell"]);
-        crate::ui::sleep_secs(1.0);
+        session.stop_shell();
     }
+    // kglobalacceld owns the global shortcuts and writes them from memory over
+    // kglobalshortcutsrc whenever an app registers shortcuts with it (the apps kast starts
+    // again after the restore do) and when it exits. Stopped after plasmashell, which can
+    // still talk to it while it quits (that writes only the old file over itself), and
+    // before the files go in. Started again below as soon as they are in, before
+    // plasmashell, the other apps and the relaunch: everything that registers shortcuts
+    // after this talks to a daemon that loaded the restored file. Like `kast plasma apply`.
+    let shortcuts = has_shortcuts.then(|| ShortcutsStopped::stop(session));
 
     let opts = restore_opts();
     if kde.join("config").is_dir() {
@@ -587,13 +688,14 @@ fn restore_kde(staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
     if kde.join("home").is_dir() {
         rsync_entries(&opts, &kde.join("home"), &c.target_home)?;
     }
+    if let Some(s) = shortcuts {
+        log_info("Starting kglobalacceld with the restored shortcuts...");
+        s.start();
+    }
 
     if plasma_was_running {
         log_info("Restarting plasmashell and reloading KWin settings...");
-        if !user_ok(&["systemctl", "--user", "start", "plasma-plasmashell.service"]) {
-            let _ = user_cmd(&["kstart", "plasmashell"]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
-        }
-        user_ok(&["qdbus6", "org.kde.KWin", "/KWin", "reconfigure"]);
+        session.start_shell();
     }
     log_success("KDE Plasma settings restored successfully!");
     log_info("Note: For a complete refresh of all panel widgets and icons, logging out and back in is recommended.");
@@ -605,6 +707,10 @@ fn restore_kde(staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
 /// models go back to /etc/howdy as root only while the snapshot still has the fingerprint
 /// the journal recorded.
 pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>) -> Result<()> {
+    undo_with(snapshot, apps, fingerprint, &LiveSession)
+}
+
+fn undo_with(snapshot: &Path, apps: &[String], fingerprint: Option<&str>, session: &dyn KdeSession) -> Result<()> {
     let c = ctx();
     if !snapshot.is_dir() {
         bail!("the snapshot {} is gone", snapshot.display());
@@ -642,10 +748,15 @@ pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>)
                 sh_priv(r#"cp -p "$1"/*.dat "$2"/ && chown root:root "$2"/*.dat && chmod 600 "$2"/*.dat"#, &[&src.to_string_lossy(), HOWDY_MODELS_DIR]);
             }
             "kde" => {
+                // As in restore_kde: the daemon would write its shortcuts over the old ones
+                let shortcuts = snapshot.join("kde/config").join(SHORTCUTS_RC).is_file().then(|| ShortcutsStopped::stop(session));
                 for (sub, dest) in [("kde/config", &c.config_home), ("kde/share", &c.data_home), ("kde/home", &c.target_home)] {
                     if snapshot.join(sub).is_dir() {
                         copy_entries(&snapshot.join(sub), dest)?;
                     }
+                }
+                if let Some(s) = shortcuts {
+                    s.start();
                 }
             }
             other => {
@@ -919,5 +1030,224 @@ mod tests {
         assert_eq!(fs::metadata(scripts.join("hello.sh")).unwrap().permissions().mode() & 0o755, 0o755, "still executable");
         assert_eq!(fs::read_to_string(c.config_home.join("fish/config.fish")).unwrap(), "set -x A 1\n");
         assert_eq!(fs::read_to_string(&history).unwrap(), "- cmd: ls\n");
+    }
+
+    /// Records what a KDE restore does to the session, with the shortcut file as the daemon
+    /// would load it and whether the scripts (restored after `kde`) are back yet.
+    struct FakeSession {
+        events: std::cell::RefCell<Vec<String>>,
+        start_fails: bool,
+    }
+
+    impl FakeSession {
+        fn new() -> FakeSession {
+            FakeSession { events: Default::default(), start_fails: false }
+        }
+
+        fn note(&self, what: &str) {
+            let c = ctx();
+            let rc = fs::read_to_string(c.config_home.join(SHORTCUTS_RC)).unwrap_or_default();
+            let scripts = c.target_home.join(".scripts/hello.sh").is_file();
+            self.events.borrow_mut().push(format!("{what} rc={} scripts={scripts}", rc.trim()));
+        }
+
+        fn events(&self) -> Vec<String> {
+            self.events.borrow().clone()
+        }
+    }
+
+    impl KdeSession for FakeSession {
+        fn shell_running(&self) -> bool {
+            true
+        }
+        fn stop_shell(&self) {
+            self.note("stop shell");
+        }
+        fn start_shell(&self) {
+            self.note("start shell");
+        }
+        fn stop_shortcuts(&self) -> Result<bool, String> {
+            self.note("stop shortcuts");
+            Ok(true)
+        }
+        fn start_shortcuts(&self) -> Result<(), String> {
+            self.note("start shortcuts");
+            if self.start_fails { Err("could not start kglobalacceld; log out and in to load the shortcuts".into()) } else { Ok(()) }
+        }
+    }
+
+    const SAVED: &str = "[kwin]\nLock Session=Meta+Shift+L,Meta+L,Lock Session";
+    const DEFAULT: &str = "[kwin]\nLock Session=Meta+L,Meta+L,Lock Session";
+
+    /// A backup of `kde` (with shortcuts) and `scripts`, which comes after `kde`, taken in the
+    /// test home; the home then holds KDE's default shortcuts and no scripts. Removes what it
+    /// wrote when dropped.
+    struct KdeArchive {
+        zip: PathBuf,
+        _dir: tempfile::TempDir,
+    }
+
+    impl KdeArchive {
+        fn new() -> KdeArchive {
+            let c = ctx();
+            let rc = c.config_home.join(SHORTCUTS_RC);
+            fs::create_dir_all(&c.config_home).unwrap();
+            fs::write(c.config_home.join("kdeglobals"), "[General]\n").unwrap();
+            fs::write(&rc, SAVED).unwrap();
+            let scripts = c.target_home.join(".scripts");
+            fs::create_dir_all(&scripts).unwrap();
+            fs::write(scripts.join("hello.sh"), "echo hi\n").unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let zip = dir.path().join("all.zip");
+            let o = super::super::backup::BackupOpts {
+                target: "all".into(),
+                output: Some(zip.clone()),
+                force: true,
+                no_howdy: true,
+                no_relaunch: true,
+                running: super::super::backup::RunningPolicy::Skip,
+                ..Default::default()
+            };
+            super::super::backup::cmd_backup(o).unwrap();
+            fs::write(&rc, DEFAULT).unwrap();
+            fs::remove_dir_all(&scripts).unwrap();
+            KdeArchive { zip, _dir: dir }
+        }
+
+        fn opts(&self, app: Option<&str>) -> ImportOpts {
+            ImportOpts {
+                file: self.zip.clone(),
+                app: app.map(String::from),
+                safety_backup: false,
+                kill: false,
+                force: true,
+                confirmed: true,
+                dry_run: false,
+                no_relaunch: true,
+            }
+        }
+
+        fn import(&self, app: Option<&str>, session: &FakeSession) -> Result<()> {
+            import_with(self.opts(app), session)
+        }
+    }
+
+    impl Drop for KdeArchive {
+        fn drop(&mut self) {
+            let c = ctx();
+            for f in [SHORTCUTS_RC, "kdeglobals"] {
+                let p = c.config_home.join(f);
+                let _ = fs::remove_file(&p).or_else(|_| fs::remove_dir_all(&p));
+            }
+            let p = c.target_home.join(".scripts");
+            let _ = fs::remove_dir_all(&p).or_else(|_| fs::remove_file(&p));
+        }
+    }
+
+    fn kde_test_lock() -> Option<(std::sync::MutexGuard<'static, ()>, std::sync::MutexGuard<'static, ()>)> {
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return None;
+        }
+        let home = crate::perms::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let staging = ctx::staging_test_lock();
+        crate::ctx::init_for_tests();
+        Some((home, staging))
+    }
+
+    #[test]
+    fn the_shortcut_daemon_is_stopped_before_the_files_go_in_and_started_before_later_apps() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let archive = KdeArchive::new();
+        let session = FakeSession::new();
+        archive.import(None, &session).unwrap();
+        let (saved, default) = (SAVED, DEFAULT);
+        assert_eq!(
+            session.events(),
+            [
+                format!("stop shell rc={default} scripts=false"),
+                format!("stop shortcuts rc={default} scripts=false"),
+                // the file is in, the later app (and so the relaunch, after every app) is not
+                format!("start shortcuts rc={saved} scripts=false"),
+                format!("start shell rc={saved} scripts=false"),
+            ]
+        );
+        assert!(ctx().target_home.join(".scripts/hello.sh").is_file());
+    }
+
+    #[test]
+    fn all_and_kde_only_restore_the_same_shortcuts() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let archive = KdeArchive::new();
+        let rc = ctx().config_home.join(SHORTCUTS_RC);
+        let mut got = Vec::new();
+        for app in [None, Some("kde")] {
+            fs::write(&rc, DEFAULT).unwrap();
+            let session = FakeSession::new();
+            archive.import(app, &session).unwrap();
+            assert_eq!(session.events().iter().filter(|e| e.contains("shortcuts")).count(), 2, "{app:?}: {:?}", session.events());
+            got.push(fs::read_to_string(&rc).unwrap());
+        }
+        assert_eq!(got[0], got[1]);
+        assert_eq!(got[0], SAVED);
+    }
+
+    #[test]
+    fn the_shortcut_daemon_runs_again_when_a_later_app_fails() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let archive = KdeArchive::new();
+        // a file where the scripts folder goes: restoring `scripts` fails (even as root)
+        fs::write(ctx().target_home.join(".scripts"), "").unwrap();
+        let session = FakeSession::new();
+        assert!(archive.import(None, &session).is_err());
+        let events = session.events();
+        assert_eq!(events.iter().filter(|e| e.starts_with("start shortcuts")).count(), 1, "{events:?}");
+        assert!(events.iter().any(|e| e.starts_with("start shortcuts") && e.contains(SAVED)), "{events:?}");
+    }
+
+    #[test]
+    fn the_shortcut_daemon_runs_again_when_the_kde_restore_itself_fails() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let archive = KdeArchive::new();
+        // a non-empty folder where the shortcut file goes: rsync can't replace it
+        let rc = ctx().config_home.join(SHORTCUTS_RC);
+        fs::remove_file(&rc).unwrap();
+        fs::create_dir_all(rc.join("x")).unwrap();
+        let session = FakeSession { start_fails: true, ..FakeSession::new() };
+        assert!(archive.import(Some("kde"), &session).is_err());
+        let events = session.events();
+        assert!(events.iter().any(|e| e.starts_with("stop shortcuts")), "{events:?}");
+        assert_eq!(events.iter().filter(|e| e.starts_with("start shortcuts")).count(), 1, "started once, by the guard: {events:?}");
+    }
+
+    #[test]
+    fn a_kde_restore_without_shortcuts_leaves_the_daemon_alone() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let c = ctx();
+        let archive = KdeArchive::new();
+        // the same archive, minus the shortcut file
+        let t = tempfile::tempdir().unwrap();
+        extract_zip_archive(&archive.zip, t.path()).unwrap();
+        fs::remove_file(t.path().join("kde/config").join(SHORTCUTS_RC)).unwrap();
+        let session = FakeSession::new();
+        restore_kde(t.path(), &c.state_home.join("no-rollback"), &archive.opts(Some("kde")), &session).unwrap();
+        assert!(session.events().iter().all(|e| !e.contains("shortcuts")), "{:?}", session.events());
+    }
+
+    #[test]
+    fn undoing_a_kde_restore_stops_the_shortcut_daemon_around_the_copy() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let c = ctx();
+        let _archive = KdeArchive::new();
+        let snap = tempfile::tempdir().unwrap();
+        fs::create_dir_all(snap.path().join("kde/config")).unwrap();
+        fs::write(snap.path().join("kde/config").join(SHORTCUTS_RC), SAVED).unwrap();
+        let session = FakeSession::new();
+        undo_with(snap.path(), &["kde".to_string()], None, &session).unwrap();
+        assert_eq!(fs::read_to_string(c.config_home.join(SHORTCUTS_RC)).unwrap(), SAVED);
+        let events = session.events();
+        assert_eq!(events.len(), 2, "{events:?}");
+        assert!(events[0].starts_with("stop shortcuts") && events[0].contains(DEFAULT), "{events:?}");
+        assert!(events[1].starts_with("start shortcuts") && events[1].contains(SAVED), "{events:?}");
     }
 }
