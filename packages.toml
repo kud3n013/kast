@@ -66,6 +66,8 @@ packages = [
   { name = "oxygen-cursors" },
   { name = "oxygen-icons" },
   { name = "oxygen-icons-svg" },
+  { name = "ttf-jetbrains-mono-nerd" },
+  { name = "ttf-jetbrains-mono" },
 ]
 
 # Packages only the CachyOS repositories carry. Empty for now: which of the entries above
