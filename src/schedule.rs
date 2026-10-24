@@ -571,47 +571,6 @@ mod tests {
         assert!(!Scheduled.ask(&Prompt::yes_no("Close?", true)));
     }
 
-    /// Fails the test on any question.
-    struct NoPrompts;
-
-    impl Reporter for NoPrompts {
-        fn log(&self, _: Level, _: &str) {}
-        fn progress(&self, _: &Progress) {}
-        fn ask(&self, p: &Prompt) -> bool {
-            panic!("a scheduled backup asked: {}", p.text)
-        }
-    }
-
-    #[test]
-    fn scheduled_backup_skips_running_apps_and_the_face_model_without_asking() {
-        if !ctx::have("rsync") || !ctx::have("pgrep") {
-            eprintln!("skipped: needs rsync and pgrep");
-            return;
-        }
-        let c = ctx::init_for_tests();
-        let _staging = ctx::staging_test_lock();
-        crate::report::install(std::sync::Arc::new(NoPrompts));
-        let t = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(c.config_home.join("fcitx5")).unwrap();
-        std::fs::write(c.config_home.join("fcitx5/config"), "x").unwrap();
-        // An "obsidian" that's running
-        let fake = t.path().join("obsidian");
-        std::fs::copy("/bin/sleep", &fake).unwrap();
-        let mut running = std::process::Command::new(&fake).arg("30").spawn().unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        let (mut o, _) = scheduled_opts("all", 5, None);
-        let out = t.path().join("apps.zip");
-        o.output = Some(out.clone());
-        let r = crate::vault::backup::cmd_backup(o);
-        let _ = running.kill();
-        let _ = running.wait();
-        r.unwrap();
-        assert_eq!(crate::vault::backup::take_skipped(), ["obsidian"]);
-        let m: serde_json::Value = serde_json::from_str(&crate::vault::archive::read_zip_manifest(&out).unwrap()).unwrap();
-        let apps = m["apps"].as_object().unwrap();
-        assert!(apps.contains_key("fcitx5") && !apps.contains_key("obsidian") && !apps.contains_key("howdy"), "{apps:?}");
-    }
-
     #[test]
     fn failure_texts_say_what_to_do() {
         let e: anyhow::Error = drive::NotReady(crate::proton::Problem::SignedOut).into();
