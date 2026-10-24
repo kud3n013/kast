@@ -52,8 +52,24 @@ pub fn require_vault_tools() -> Result<()> {
     Ok(())
 }
 
-pub const ALL_APPS: [&str; 15] =
-    ["beeper", "zalo", "vesktop", "zen", "helium", "obsidian", "fcitx5", "antigravity", "fdm", "fish", "fastfetch", "scripts", "howdy", "kde", "hypr"];
+pub const ALL_APPS: [&str; 16] = [
+    "beeper",
+    "zalo",
+    "vesktop",
+    "zen",
+    "helium",
+    "obsidian",
+    "fcitx5",
+    "antigravity",
+    "fdm",
+    "fish",
+    "fastfetch",
+    "scripts",
+    "zotero",
+    "howdy",
+    "kde",
+    "hypr",
+];
 
 pub fn normalize_app(app: &str) -> String {
     match app {
@@ -91,6 +107,7 @@ pub fn find_config(app: &str) -> Option<PathBuf> {
         "helium" => first_dir(cfg, &["net.imput.helium"]),
         "fdm" => first_dir(cfg, &["Softdeluxe"]),
         "scripts" => first_dir(&c.target_home, &[".scripts"]),
+        "zotero" => first_dir(&c.target_home, &["Zotero"]),
         "zen" => first_dir(cfg, &["zen"]).or_else(|| first_dir(&c.target_home, &[".zen"])),
         "antigravity" => first_dir(cfg, &["Antigravity", "antigravity"]),
         _ => None,
@@ -98,24 +115,27 @@ pub fn find_config(app: &str) -> Option<PathBuf> {
 }
 
 /// The folder an app's restore folder (`RestoreSpec::folder`) is in: ~/.config, except for
-/// ~/.scripts.
+/// ~/.scripts and ~/Zotero.
 pub fn restore_base(app: &str) -> PathBuf {
     let c = ctx();
-    if app == "scripts" { c.target_home.clone() } else { c.config_home.clone() }
+    if matches!(app, "scripts" | "zotero") { c.target_home.clone() } else { c.config_home.clone() }
 }
 
-/// A second folder of an app, under ~/.local/share (archived as `<app>-share`): FDM keeps
-/// its settings.ini and download list there, fish its history.
-pub fn share_folder(app: &str) -> Option<&'static str> {
+/// A second folder of an app (archived as `<app>-share`): FDM keeps its settings.ini and
+/// download list under ~/.local/share, fish its history, Zotero its profile (preferences and
+/// plugins) in ~/.zotero.
+pub fn share_path(app: &str) -> Option<PathBuf> {
+    let c = ctx();
     match app {
-        "fdm" => Some("Softdeluxe/Free Download Manager"),
-        "fish" => Some("fish"),
+        "fdm" => Some(c.data_home.join("Softdeluxe/Free Download Manager")),
+        "fish" => Some(c.data_home.join("fish")),
+        "zotero" => Some(c.target_home.join(".zotero")),
         _ => None,
     }
 }
 
 pub fn share_dir(app: &str) -> Option<PathBuf> {
-    share_folder(app).map(|f| ctx().data_home.join(f)).filter(|p| p.is_dir())
+    share_path(app).filter(|p| p.is_dir())
 }
 
 pub fn find_zalo_flags() -> Option<PathBuf> {
@@ -433,6 +453,7 @@ fn pgrep_specs(app: &str) -> Vec<Vec<&'static str>> {
         "fdm" => vec![vec!["-x", "fdm"], vec!["-f", "^/opt/freedownloadmanager/fdm( |$)"]],
         "fcitx5" => vec![vec!["-x", "fcitx5"], vec!["-x", "fcitx5-daemon"]],
         "antigravity" => vec![vec!["-x", "antigravity"], vec!["-f", "/(usr|opt)/[^ ]*/antigravity(/| |$)"]],
+        "zotero" => vec![vec!["-x", "zotero"], vec!["-x", "zotero-bin"], vec!["-f", "^/(usr|opt)/[^ ]*/zotero(-bin)?( |$)"]],
         "howdy" => vec![vec!["-x", "howdy"], vec!["-x", "howdy_compare"]],
         // Never kill the Plasma or Hyprland session, or the shell kast runs in (fish)
         _ => vec![],

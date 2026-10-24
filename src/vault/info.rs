@@ -96,6 +96,12 @@ pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
                 fields.push(("Folder:      ".into(), "~/.scripts".into()));
                 source(&mut fields, "Source:      ", "config_path");
             }
+            "ZOTERO" => {
+                fields.push(("Library:     ".into(), "~/Zotero".into()));
+                fields.push(("Profile:     ".into(), "~/.zotero".into()));
+                source(&mut fields, "Source lib:  ", "config_path");
+                source(&mut fields, "Source prof: ", "share_path");
+            }
             "HELIUM" => {
                 fields.push(("Folder:      ".into(), "~/.config/net.imput.helium".into()));
                 source(&mut fields, "Source:      ", "config_path");

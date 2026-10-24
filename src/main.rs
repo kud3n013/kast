@@ -289,7 +289,7 @@ enum VaultCmd {
     },
 }
 
-const TARGETS: [&str; 24] = [
+const TARGETS: [&str; 25] = [
     "all",
     "beeper",
     "beepertexts",
@@ -308,6 +308,7 @@ const TARGETS: [&str; 24] = [
     "fish",
     "fastfetch",
     "scripts",
+    "zotero",
     "howdy",
     "kde",
     "plasma",
