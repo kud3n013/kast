@@ -65,11 +65,12 @@ kast repo | packages | services
 kast packages --list  # what would be installed, and from which list (no root needed)
 kast undo --list      # what kast changed, run by run; kast undo <run> / --last undoes it
 kast uninstall steam  # remove apps of the list (keeps what something else needs)
-kast status           # detected apps, Howdy and the IR emitter, KDE, Hyprland
+kast status           # detected apps, Howdy and the IR emitter, KDE, Hyprland, keyrings
 kast ir-emitter probe # the IR camera's face-authentication control (read-only; see below)
 kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
 kast backup all --upload proton   # back up to Proton Drive (see "Proton Drive" below)
+kast backup keyrings  # KDE Wallet + GNOME Keyring (opt-in; see "Keyrings" below)
 kast drive login      # sign in to Proton Drive (link + QR code); drive status / logout
 kast schedule enable --targets all --every daily   # back up to Proton Drive on a timer
 kast info ~/all.zip
@@ -279,6 +280,95 @@ model next to the old ones; `howdy remove` / `howdy clear` drop old ones). Witho
 
 Undo (`sudo kast undo --last --step services`, or Undo changes in the menu) puts the PAM
 files, `device_path` and the config modes back as they were, like the rest of the Howdy setup.
+
+## Keyrings (KDE Wallet and GNOME Keyring)
+
+The Chromium and Electron apps kast backs up (Helium, Beeper, Vesktop, Obsidian, Antigravity,
+Zalo) don't keep their saved passwords, cookies and tokens readable in their profile: they
+encrypt them with a key that lives in the desktop keyring. Restore a profile next to an empty
+keyring and the app signs you out anyway. Wi-Fi passwords saved "for this user only" and other
+Secret Service secrets (proton-drive's session, unless it uses `pass`) live there too. So kast
+can carry the keyrings along:
+
+```sh
+kast backup keyrings                # both; or kast backup kwallet / gnome-keyring
+kast backup all --with-keyrings     # all, keyrings included
+kast restore ~/all.zip --app keyrings --dry-run
+```
+
+| Target | What goes in the archive |
+|---|---|
+| `kwallet` (`kdewallet`, `wallet`) | `~/.local/share/kwalletd`: each wallet's `<name>.kwl` with its `<name>.salt` (a PBKDF2 wallet can't be opened without it) and `<name>_attributes.json` (KWallet 6's Secret Service attributes), plus `~/.config/kwalletrc` |
+| `gnome-keyring` (`gkr`, `seahorse`) | every regular file in `~/.local/share/keyrings`: `<name>.keyring`, `default`, `user.keystore` |
+
+**Opt-in.** They're the most sensitive thing kast carries, and `all` also feeds the scheduled
+Proton Drive backup, so `all` leaves them out unless you pass `--with-keyrings` or set it for
+good (the schedule then follows):
+
+```toml
+# ~/.config/kast/settings.toml
+[vault]
+keyrings = true
+```
+
+In the backup screen both are listed, and `all` has an "Include keyrings" option that is off
+unless the setting is on.
+
+**What kast does and doesn't do.** It copies the encrypted files as they are on disk; it never
+asks for, reads, stores or logs a keyring password, and never opens or unlocks a keyring. Only
+the file headers are read, to tell the formats apart, and the manifest lists each keyring's name,
+type and size, never its content. The files stay 0600 in a 0700 folder in the archive (itself
+0600) and when restored.
+
+**Brute force.** Encrypted keyrings stay encrypted inside the zip, but anyone with the archive
+can try passwords against them offline as long as they like: KWallet derives its key with
+PBKDF2-SHA512, GNOME Keyring with iterated SHA-256 (a few thousand rounds). A weak keyring password can be
+cracked. Keep the archive private, and give the keyring a real password.
+
+**Plain-text keyrings.** A GNOME keyring with an empty password is saved as a plain-text file:
+every secret in it is readable. kast never puts one in a Proton Drive upload or a scheduled run.
+A local backup leaves it out too unless you say so (`--allow-plaintext-keyring`, or "Back up
+anyway" in the backup screen). Better: set a password in Seahorse (Passwords and Keys: right-click
+the keyring, Change Password). (KWallet has no unencrypted format.)
+
+**Which store an app uses.** It depends on the desktop it runs in. Chromium's os_crypt (and the
+Electron apps built on it) talks to KWallet (`org.kde.kwalletd6`) when `XDG_CURRENT_DESKTOP` says
+KDE, and to whatever owns `org.freedesktop.secrets` (usually gnome-keyring) everywhere else,
+Hyprland included; `--password-store=` in an app's flags file overrides that. If you use both
+Plasma and Hyprland, the same app can have keys in both stores, which is why both are backed up.
+On KWallet 6, `kwalletd6` itself forwards to a Secret Service: ksecretd's wallet files by default,
+or the `org.freedesktop.secrets` owner when kwalletrc has `[KSecretD] Enabled=false`. Only one
+program can own `org.freedesktop.secrets`; the backup records which one did, and a restore warns
+when another one does now (libsecret apps then look in the other store). `kast status` shows the
+keyrings, the owner and the PAM setup.
+
+**Restoring** puts the keyrings in before every other app (an app started first could ask for its
+secret and get a freshly created empty keyring), keeps keyrings of the new system that aren't in
+the archive, and snapshots the ones it replaces (a fresh install's first login may already have
+made an empty `kdewallet` or `login.keyring`; `kast undo` puts them back). It stops the daemon
+first, so it can't write the old keyring from memory over the restored files: ksecretd and
+kwalletd6 are asked to quit (they start again on demand through D-Bus), and gnome-keyring-daemon
+is stopped through its systemd user units, or with SIGTERM when PAM's `auto_start` or Hyprland's
+`exec-once` started it, and started again the same way. A daemon that won't stop aborts that
+keyring's restore with nothing written. kwalletrc comes back with `Enabled=true` and
+`First Use=false`, so the first-run wizard can't create a new wallet over yours; when the archive
+also has the `kde` target, the kwalletrc that came with the wallets is the one restored.
+
+**Passwords after a restore.** PAM unlocks a keyring at login with your login password:
+`pam_kwallet5.so` (package `kwallet-pam`) the wallet named `kdewallet` (Blowfish, PBKDF2),
+`pam_gnome_keyring.so` (package `gnome-keyring`) the `login` keyring, each needing an `auth` and a
+`session` line in your display manager's PAM file (`/etc/pam.d/sddm`, `plasmalogin`,
+`gdm-password`, `greetd`, `ly`, `login`, ...). Log out and back in after the restore. If your new
+login password matches the old keyring password it unlocks by itself; otherwise you're asked for
+the old password once. Set the keyring's password to your login password (KWalletManager,
+Seahorse) and the automatic unlock works from then on. kast says so after the restore, and warns
+when the PAM module or its package isn't set up. A default wallet that isn't `kdewallet`, or a
+default keyring that isn't `login`, is never unlocked by PAM; the backup warns about that.
+
+**GPG wallets.** A KWallet can be encrypted with a GPG key instead of a password. It opens on the
+new system only with the matching private key in `~/.gnupg`, which kast doesn't back up. The
+backup warns, the manifest records the key ID, and the restore checks `gpg --list-secret-keys`
+for it.
 
 ## KDE Plasma settings
 

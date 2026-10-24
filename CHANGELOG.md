@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.10.0
+
+- **New backup targets: `kwallet` and `gnome-keyring`** (`kast backup keyrings` for both).
+  The Chromium and Electron apps kast restores keep the key to their saved passwords and
+  cookies in the desktop keyring, so a restore next to an empty keyring signed you out
+  anyway. `kwallet` carries `~/.local/share/kwalletd` (each wallet's `.kwl` with its `.salt`
+  and `_attributes.json`) and `kwalletrc`; `gnome-keyring` carries `~/.local/share/keyrings`.
+  The files are copied encrypted as they are: kast never asks for, reads or unlocks a keyring
+  password, and the manifest lists names, types and sizes only.
+- **Opt-in**: `all` (and so the schedule) includes them only with `--with-keyrings` or
+  `[vault] keyrings = true` in `~/.config/kast/settings.toml`. The backup screen lists both and
+  has an "Include keyrings" option for `all`, off by default.
+- **Plain-text keyrings** (a GNOME keyring with an empty password) never go to Proton Drive or
+  a scheduled run, and a local backup takes them only with `--allow-plaintext-keyring` (or
+  "Back up anyway" in the backup screen).
+- **Restoring** puts the keyrings in before every app, with ksecretd/kwalletd6 or
+  gnome-keyring-daemon stopped (gnome-keyring is started again the way it ran: systemd units or
+  its own command line), keeps the new system's other keyrings, snapshots the replaced ones for
+  `kast undo`, and leaves kwalletrc with `Enabled=true` and `First Use=false`. Afterwards it says
+  what to expect at the next login (PAM auto-unlock, the old password, GPG wallets) and warns
+  when another program now answers for the Secret Service.
+- `kast status` shows the keyrings, their type, whether PAM unlocks them and who owns
+  `org.freedesktop.secrets`; `kast info` lists an archive's keyrings. The overwrite question of
+  `kast import` lists what each app's restore replaces.
+
 ## 0.9.5
 
 - **Export / Import data covers Zotero** (`kast backup zotero`, and part of `all` and of

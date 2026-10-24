@@ -1,5 +1,6 @@
 ---
 source: src/tui/screens/import.rs
+assertion_line: 1669
 expression: out
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -8,7 +9,7 @@ expression: out
 ││                                                                            ││
 ││  Archive:  /media/data/backups/all_backup_2026-10-16_210400.zip            ││
 ││  Restores: beeper zalo vesktop zen helium obsidian fcitx5 antigravity fdm  ││
-││fish fastfetch scripts zotero howdy kde hypr                                ││
+││fish fastfetch scripts zotero howdy kde hypr kwallet gnome-keyring          ││
 ││                                                                            ││
 ││  Overwrites:                                                               ││
 ││    /home/p3ter/.config/beeper                                              ││

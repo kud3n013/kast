@@ -18,7 +18,7 @@ use crate::tui::job::JobKind;
 use crate::tui::widgets::{Input, block, popup};
 use crate::vault::backup::BackupOpts;
 
-pub const TARGETS: [(&str, &str); 17] = [
+pub const TARGETS: [(&str, &str); 19] = [
     ("all", "All detected apps & Howdy face model"),
     ("beeper", "BeeperTexts (~/.config/BeeperTexts)"),
     ("zalo", "ZaloData (~/.config/ZaloData)"),
@@ -36,6 +36,8 @@ pub const TARGETS: [(&str, &str); 17] = [
     ("howdy", "Howdy face model (/etc/howdy/models)"),
     ("kde", "KDE Plasma settings (curated)"),
     ("hypr", "Hyprland settings (~/.config/hypr)"),
+    ("kwallet", "KDE Wallet (~/.local/share/kwalletd)"),
+    ("gnome-keyring", "GNOME Keyring (~/.local/share/keyrings)"),
 ];
 
 /// What kast found for one target.
@@ -62,6 +64,18 @@ pub fn load_targets() -> Vec<TargetInfo> {
                 },
                 "kde" if kde_has_settings() => (true, kde_format_total_size(), c.config_home.display().to_string()),
                 "kde" => (false, String::new(), String::new()),
+                k if crate::vault::keyring::is_keyring(k) => {
+                    let (dir, scan) = if k == "kwallet" {
+                        (crate::vault::keyring::kwallet_dir(), crate::vault::keyring::scan_kwallet(&crate::vault::keyring::kwallet_dir()))
+                    } else {
+                        (crate::vault::keyring::gnome_dir(), crate::vault::keyring::scan_gnome(&crate::vault::keyring::gnome_dir()))
+                    };
+                    if scan.keyrings.is_empty() {
+                        (false, String::new(), String::new())
+                    } else {
+                        (true, crate::vault::keyring::human(scan.keyrings.iter().map(|f| f.size).sum()), dir.display().to_string())
+                    }
+                }
                 app => match find_config(app) {
                     Some(p) => (true, format_bytes(&p), p.display().to_string()),
                     None => (false, String::new(), String::new()),
@@ -129,12 +143,16 @@ pub struct ExportState {
     pub local_copy: bool,
     /// Automatic run: when nothing changed since the last upload, don't upload
     pub skip_unchanged: bool,
+    /// `all` includes the keyrings (off unless `[vault] keyrings = true`)
+    pub keyrings: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Row {
     Target(usize),
     Media,
+    /// `all`: include KDE Wallet and GNOME Keyring
+    Keyrings,
     Format,
     Kill,
     Dest,
@@ -173,6 +191,7 @@ impl ExportState {
             keep: crate::settings::DEFAULT_KEEP,
             local_copy: false,
             skip_unchanged: true,
+            keyrings: crate::settings::load().vault.keyrings,
         }
     }
 
@@ -181,13 +200,21 @@ impl ExportState {
     }
 
     fn media_applies(&self) -> bool {
-        !matches!(self.key(), "howdy" | "kde" | "hypr")
+        !matches!(self.key(), "howdy" | "kde" | "hypr") && !crate::vault::keyring::is_keyring(self.key())
+    }
+
+    /// The backup takes the keyrings along.
+    fn with_keyrings(&self) -> bool {
+        crate::vault::keyring::is_keyring(self.key()) || (self.key() == "all" && self.keyrings)
     }
 
     fn rows(&self) -> Vec<Row> {
         let mut rows: Vec<Row> = (0..TARGETS.len()).map(Row::Target).collect();
         if self.media_applies() {
             rows.push(Row::Media);
+        }
+        if self.key() == "all" {
+            rows.push(Row::Keyrings);
         }
         if self.key() == "howdy" {
             rows.push(Row::Format);
@@ -229,6 +256,7 @@ impl ExportState {
             kill: self.kill,
             force: false,
             dry_run: false,
+            with_keyrings: self.key() == "all" && self.keyrings,
             ..Default::default()
         }
     }
@@ -454,6 +482,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> Option<Command> {
                 st.refresh_dest();
             }
             Row::Media => st.include_media = !st.include_media,
+            Row::Keyrings => st.keyrings = !st.keyrings,
             Row::Format => {
                 st.dat = !st.dat;
                 st.refresh_dest();
@@ -488,6 +517,13 @@ fn confirm_upload(app: &mut App) -> Option<Command> {
         None => "Built in a private folder and removed after the upload.".into(),
     });
     details.push(format!("Keeps the newest {} on Drive; older ones go to its trash.", up.keep));
+    if st.with_keyrings() {
+        details.push(format!("Keyrings: {}.", crate::vault::keyring::NOTE));
+        let plain = crate::vault::keyring::plaintext_keyrings();
+        if !plain.is_empty() {
+            details.push(format!("Left out: {} (no password, so plain text: never uploaded).", plain.join(", ")));
+        }
+    }
     details.push(if st.kill {
         "Running apps among these are closed first and reopened in the background after.".into()
     } else {
@@ -522,7 +558,7 @@ fn confirm(app: &mut App) -> Option<Command> {
     if st.proton {
         return confirm_upload(app);
     }
-    let opts = st.opts();
+    let mut opts = st.opts();
     if st.dest.value.trim().is_empty() {
         st.focus = st.rows().iter().position(|r| *r == Row::Dest).unwrap_or(0);
         st.editing = true;
@@ -544,14 +580,29 @@ fn confirm(app: &mut App) -> Option<Command> {
     if Path::new(&dest).exists() {
         details.push("The destination file already exists and will be replaced.".into());
     }
+    let plain = if st.with_keyrings() { crate::vault::keyring::plaintext_keyrings() } else { Vec::new() };
+    if st.with_keyrings() {
+        details.push(format!("Keyrings: {}. {}", crate::vault::keyring::NOTE, crate::vault::keyring::OFFLINE_NOTE));
+    }
+    let (title, text, yes) = if plain.is_empty() {
+        ("Back up", "Start this backup?", "Back up")
+    } else {
+        // Saying yes here is the explicit consent --allow-plaintext-keyring gives on the CLI
+        opts.allow_plaintext_keyring = true;
+        details.push(format!(
+            "WARNING: the GNOME keyring(s) {} have no password. Their secrets go into the archive as plain text, readable by anyone who gets it. Set a password in Seahorse to avoid this.",
+            plain.join(", ")
+        ));
+        ("Back up a plain-text keyring?", "Include the unprotected keyring(s) in this backup?", "Back up anyway")
+    };
     app.modal = Some(Modal {
         kind: ModalKind::Confirm(Box::new(JobKind::Export(opts))),
-        title: "Back up".into(),
-        text: "Start this backup?".into(),
+        title: title.into(),
+        text: text.into(),
         details,
-        yes: "Back up",
+        yes,
         no: "Back",
-        yes_selected: true,
+        yes_selected: plain.is_empty(),
     });
     None
 }
@@ -626,6 +677,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
                 ListItem::new(Line::from(vec![Span::raw(format!("{} {}", radio(i == st.target), TARGETS[i].1)), state]))
             }
             Row::Media => ListItem::new(format!("{} Include large media (attachments, site data)", check(st.include_media))),
+            Row::Keyrings => ListItem::new(format!("{} Include keyrings (KDE Wallet, GNOME Keyring)", check(st.keyrings))),
             Row::Format => ListItem::new(format!("{} Standalone .dat (otherwise a .zip with manifest)", check(st.dat))),
             Row::Kill => ListItem::new(format!("{} Close running apps first (reopened in the background)", check(st.kill))),
             Row::LocalCopy => ListItem::new(format!("{} Also keep a copy in {}", check(st.local_copy), st.dir.display())),
@@ -659,10 +711,16 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
                     lines.push(Line::from(vec![Span::styled("Size:    ", theme.bold()), Span::raw(t.size.clone())]));
                 }
                 if t.key == "all" {
-                    let found: Vec<&str> = st.targets.iter().skip(1).filter(|t| t.detected).map(|t| t.key).collect();
+                    let found: Vec<&str> =
+                        st.targets.iter().skip(1).filter(|t| t.detected && (st.keyrings || !crate::vault::keyring::is_keyring(t.key))).map(|t| t.key).collect();
                     lines.push(Line::raw(format!("Includes: {}", found.join(", "))));
                 }
             }
+        }
+        if st.with_keyrings() {
+            lines.push(Line::raw(""));
+            lines.push(Line::styled(crate::vault::keyring::NOTE, theme.warn()));
+            lines.push(Line::styled(crate::vault::keyring::OFFLINE_NOTE, theme.dim()));
         }
         lines.push(Line::raw(""));
         if st.proton {
@@ -790,6 +848,26 @@ mod tests {
             insta::assert_snapshot!(format!("export_proton_unchanged_{w}x{h}"), render(&a));
             assert!(matches!(update(&mut a, key(KeyCode::Enter)), Some(Command::Answer { id: 1, yes: false })));
         }
+    }
+
+    #[test]
+    fn keyrings_are_off_in_all_until_ticked() {
+        let mut a = loaded(80, 24);
+        assert!(!st(&a).keyrings, "unchecked by default");
+        assert!(!st(&a).opts().with_keyrings);
+        let rows = st(&a).rows();
+        let at = rows.iter().position(|r| *r == Row::Keyrings).expect("all offers the keyrings");
+        state(&mut a).unwrap().focus = at;
+        update(&mut a, key(KeyCode::Char(' ')));
+        assert!(st(&a).opts().with_keyrings);
+        // A keyring target on its own: no media option, no keyring toggle, its own file name
+        let kw = TARGETS.iter().position(|(k, _)| *k == "kwallet").unwrap();
+        let s = state(&mut a).unwrap();
+        s.target = kw;
+        s.refresh_dest();
+        assert!(!s.rows().contains(&Row::Media) && !s.rows().contains(&Row::Keyrings));
+        assert!(s.with_keyrings());
+        assert!(s.dest.value.starts_with("kwallet_backup_"));
     }
 
     fn st(a: &App) -> &ExportState {

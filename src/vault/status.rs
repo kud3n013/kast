@@ -76,6 +76,7 @@ pub struct StatusReport {
     pub howdy: HowdyStatus,
     pub kde: KdeStatus,
     pub hypr: HyprStatus,
+    pub keyrings: super::keyring::KeyringStatus,
 }
 
 fn media(cfg: &Path, extras: &mut Vec<(String, String)>) {
@@ -175,7 +176,7 @@ pub fn collect_status() -> StatusReport {
     };
     let hypr =
         HyprStatus { config: find_config("hypr").map(|cfg| (cfg.display().to_string(), format_bytes(&cfg))), running: process_running("Hyprland", None) };
-    StatusReport { user: c.target_user.clone(), apps, howdy, kde, hypr }
+    StatusReport { user: c.target_user.clone(), apps, howdy, kde, hypr, keyrings: super::keyring::status() }
 }
 
 pub fn cmd_status() {
@@ -285,4 +286,66 @@ fn print_status(r: &StatusReport) {
     } else {
         println!("  Session:     {C_GRAY}Hyprland not running{C_RESET}");
     }
+    println!();
+
+    // [14] Keyrings
+    println!("{C_CYAN}[14] Keyrings (~/.local/share/kwalletd + ~/.local/share/keyrings){C_RESET}");
+    for line in keyring_lines(&r.keyrings) {
+        let color = match line.level {
+            KeyringLevel::Ok => C_GREEN,
+            KeyringLevel::Warn => C_YELLOW,
+            KeyringLevel::Dim => C_GRAY,
+            KeyringLevel::Plain => "",
+        };
+        println!("  {}{color}{}{C_RESET}", line.label, line.value);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyringLevel {
+    Ok,
+    Warn,
+    Dim,
+    Plain,
+}
+
+/// One line of the keyring section (the CLI and the TUI show the same).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyringLine {
+    /// Padded to 13 columns
+    pub label: String,
+    pub value: String,
+    pub level: KeyringLevel,
+}
+
+pub fn keyring_lines(k: &super::keyring::KeyringStatus) -> Vec<KeyringLine> {
+    use super::keyring::{Kind, found_text, provider_label};
+    let line = |label: &str, value: String, level| KeyringLine { label: format!("{label:<13}"), value, level };
+    let mut v = Vec::new();
+    let sets = [("KDE Wallet:", &k.kwallet, k.pam_kwallet, "pam_kwallet5", "kdewallet"), ("GNOME:", &k.gnome, k.pam_gnome, "pam_gnome_keyring", "login")];
+    for (label, list, pam, module, unlocks) in sets {
+        if list.is_empty() {
+            v.push(line(label, "none".into(), KeyringLevel::Dim));
+            continue;
+        }
+        for (i, f) in list.iter().enumerate() {
+            let level = if f.kind == Kind::Plaintext || f.kind == Kind::Unknown { KeyringLevel::Warn } else { KeyringLevel::Plain };
+            v.push(line(if i == 0 { label } else { "" }, found_text(f), level));
+        }
+        let (text, level) = if pam {
+            (format!("{module} set up: unlocks '{unlocks}' at login"), KeyringLevel::Ok)
+        } else {
+            (format!("{module} not set up: asks for the password"), KeyringLevel::Warn)
+        };
+        v.push(line("  PAM:", text, level));
+    }
+    if !k.kwallet.is_empty() && k.kde_backend != "ksecretd" {
+        v.push(line("KDE backend:", "kwalletd6 forwards to the Secret Service ([KSecretD] Enabled=false)".into(), KeyringLevel::Plain));
+    }
+    match &k.owner {
+        Some(o) => v.push(line("Secrets API:", format!("{} answers org.freedesktop.secrets", provider_label(o)), KeyringLevel::Plain)),
+        None => v.push(line("Secrets API:", "no provider running now (one starts on demand)".into(), KeyringLevel::Dim)),
+    }
+    v.push(line("Backup:", "opt-in: kast backup keyrings, or all --with-keyrings".into(), KeyringLevel::Dim));
+    v
 }

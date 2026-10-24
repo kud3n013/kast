@@ -1,11 +1,12 @@
-//! App Vault: backup, export, import & status of app data, KDE Plasma, Hyprland and
-//! Howdy face models.
+//! App Vault: backup, export, import & status of app data, KDE Plasma, Hyprland, Howdy face
+//! models and the desktop keyrings (KDE Wallet, GNOME Keyring).
 
 pub mod archive;
 pub mod backup;
 pub mod fix;
 pub mod import;
 pub mod info;
+pub mod keyring;
 pub mod rehome;
 pub mod status;
 
@@ -52,7 +53,8 @@ pub fn require_vault_tools() -> Result<()> {
     Ok(())
 }
 
-pub const ALL_APPS: [&str; 16] = [
+/// Every target. The keyrings are in `all` only when asked for (see [`all_apps`]).
+pub const ALL_APPS: [&str; 18] = [
     "beeper",
     "zalo",
     "vesktop",
@@ -69,7 +71,24 @@ pub const ALL_APPS: [&str; 16] = [
     "howdy",
     "kde",
     "hypr",
+    "kwallet",
+    "gnome-keyring",
 ];
+
+/// What `all` covers: every target, the keyrings only with `with_keyrings` (they're the most
+/// sensitive thing kast carries, and `all` also feeds the unattended schedule).
+pub fn all_apps(with_keyrings: bool) -> Vec<String> {
+    ALL_APPS.iter().filter(|a| with_keyrings || !keyring::is_keyring(a)).map(|a| a.to_string()).collect()
+}
+
+/// A target as the apps it means: `all`, the `keyrings` group, or itself.
+pub fn expand_target(target: &str, with_keyrings: bool) -> Vec<String> {
+    match target {
+        "all" => all_apps(with_keyrings),
+        "keyrings" => keyring::TARGETS.iter().map(|a| a.to_string()).collect(),
+        t => vec![t.to_string()],
+    }
+}
 
 pub fn normalize_app(app: &str) -> String {
     match app {
@@ -79,6 +98,9 @@ pub fn normalize_app(app: &str) -> String {
         "hyprland" => "hypr",
         "helium-browser" => "helium",
         "freedownloadmanager" | "free-download-manager" => "fdm",
+        "kdewallet" | "wallet" | "kde-wallet" => "kwallet",
+        "gnome-keyrings" | "gkr" | "seahorse" => "gnome-keyring",
+        "keyring" => "keyrings",
         a => a,
     }
     .to_string()
@@ -439,6 +461,9 @@ pub fn rsync_dir_as(as_user: bool, extra: &[String], src: &Path, dest: &Path) ->
 
 // --- Processes ---------------------------------------------------------------------
 
+const KWALLET_DAEMON_NAMES: &str = "ksecretd|kwalletd[56]?";
+const GNOME_DAEMON_NAMES: &str = "gnome-keyring-d(aemon)?";
+
 /// pgrep invocations tried in order; the first that finds something wins.
 fn pgrep_specs(app: &str) -> Vec<Vec<&'static str>> {
     match app {
@@ -455,6 +480,10 @@ fn pgrep_specs(app: &str) -> Vec<Vec<&'static str>> {
         "antigravity" => vec![vec!["-x", "antigravity"], vec!["-f", "/(usr|opt)/[^ ]*/antigravity(/| |$)"]],
         "zotero" => vec![vec!["-x", "zotero"], vec!["-x", "zotero-bin"], vec!["-f", "^/(usr|opt)/[^ ]*/zotero(-bin)?( |$)"]],
         "howdy" => vec![vec!["-x", "howdy"], vec!["-x", "howdy_compare"]],
+        // The keyring daemons a keyring restore stops (exact names; the kernel cuts the
+        // process name at 15 characters: gnome-keyring-d)
+        "kwallet-daemons" => vec![vec!["-x", KWALLET_DAEMON_NAMES]],
+        "gnome-keyring-daemon" => vec![vec!["-x", GNOME_DAEMON_NAMES]],
         // Never kill the Plasma or Hyprland session, or the shell kast runs in (fish)
         _ => vec![],
     }
@@ -518,7 +547,7 @@ pub fn cmdline_argv(raw: &[u8]) -> Vec<String> {
 /// isn't an app, and the desktop session is never touched.
 pub fn relaunch_plan(apps: &[String]) -> Vec<Relaunch> {
     let mut out: Vec<Relaunch> = Vec::new();
-    for app in apps.iter().filter(|a| !matches!(a.as_str(), "howdy" | "kde" | "hypr")) {
+    for app in apps.iter().filter(|a| !matches!(a.as_str(), "howdy" | "kde" | "hypr") && !keyring::is_keyring(a)) {
         let procs: Vec<(i32, i32)> = running_pids(app)
             .into_iter()
             .filter_map(|p| fs::read_to_string(format!("/proc/{p}/stat")).ok().and_then(|s| stat_ppid(&s)).map(|pp| (p, pp)))
@@ -761,6 +790,63 @@ mod tests {
         assert_eq!(stat_ppid("garbage"), None);
         assert_eq!(cmdline_argv(b"/opt/beeper/beepertexts\0--no-sandbox\0\0"), vec!["/opt/beeper/beepertexts".to_string(), "--no-sandbox".into()]);
         assert!(cmdline_argv(b"").is_empty());
+    }
+
+    #[test]
+    fn keyrings_are_in_all_only_when_asked_for() {
+        let all = all_apps(false);
+        assert!(!all.iter().any(|a| keyring::is_keyring(a)), "{all:?}");
+        assert!(all.contains(&"zotero".to_string()) && all.contains(&"howdy".to_string()));
+        let with = expand_target("all", true);
+        assert!(with.contains(&"kwallet".to_string()) && with.contains(&"gnome-keyring".to_string()));
+        assert_eq!(expand_target("keyrings", false), ["kwallet", "gnome-keyring"]);
+        assert_eq!(expand_target("zen", true), ["zen"]);
+        for (alias, app) in [("kdewallet", "kwallet"), ("wallet", "kwallet"), ("gkr", "gnome-keyring"), ("seahorse", "gnome-keyring"), ("keyring", "keyrings")]
+        {
+            assert_eq!(normalize_app(alias), app);
+        }
+    }
+
+    #[test]
+    fn keyring_daemon_patterns_never_match_the_session() {
+        // pgrep -x: the pattern must match the whole (15-character) process name
+        let matches = |pat: &str, name: &str| regex::Regex::new(&format!("^(?:{pat})$")).unwrap().is_match(name);
+        for (spec, hits) in [("kwallet-daemons", &["ksecretd", "kwalletd6", "kwalletd5", "kwalletd"][..]), ("gnome-keyring-daemon", &["gnome-keyring-d"][..])] {
+            let pats: Vec<&str> = pgrep_specs(spec)
+                .into_iter()
+                .map(|v| {
+                    assert_eq!(v[0], "-x", "{spec}: exact names only");
+                    v[1]
+                })
+                .collect();
+            assert!(!pats.is_empty());
+            for name in hits {
+                assert!(pats.iter().any(|p| matches(p, name)), "{spec} misses {name}");
+            }
+            for session in [
+                "kwin_wayland",
+                "kwin_x11",
+                "plasmashell",
+                "ksmserver",
+                "kglobalacceld",
+                "kded6",
+                "Hyprland",
+                "fish",
+                "bash",
+                "zsh",
+                "sh",
+                "kwalletmanager5",
+                "kwallet-query",
+                "gnome-keyring",
+                "gnome-shell",
+                "ssh-agent",
+                "systemd",
+                "dbus-broker",
+                "kast",
+            ] {
+                assert!(!pats.iter().any(|p| matches(p, session)), "{spec} would stop {session}");
+            }
+        }
     }
 
     #[test]

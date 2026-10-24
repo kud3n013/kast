@@ -463,7 +463,16 @@ pub fn on_inspected(app: &mut App, path: PathBuf, pick: bool, result: Result<Opt
         Err(e) => app.toast(ToastKind::Error, e),
         Ok(None) if st.mode == Mode::Inspect => app.toast(ToastKind::Info, "A .dat face model has no manifest to show"),
         Ok(None) => {
-            let opts = ImportOpts { file: path.clone(), app: None, safety_backup: true, kill: false, force: false, confirmed: true, dry_run: false, no_relaunch: false };
+            let opts = ImportOpts {
+                file: path.clone(),
+                app: None,
+                safety_backup: true,
+                kill: false,
+                force: false,
+                confirmed: true,
+                dry_run: false,
+                no_relaunch: false,
+            };
             if st.auto {
                 return super::wizard::import_done(app, opts);
             }

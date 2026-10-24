@@ -27,6 +27,12 @@ pub struct BackupOpts {
     pub staged: bool,
     /// Don't start the apps kast closed again afterwards
     pub no_relaunch: bool,
+    /// `all` includes the keyrings (also when `[vault] keyrings = true` in the settings)
+    pub with_keyrings: bool,
+    /// A local backup may carry a GNOME keyring that has no password
+    pub allow_plaintext_keyring: bool,
+    /// Built for Proton Drive or a scheduled run: a plain-text keyring never goes in
+    pub upload: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -226,7 +232,8 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
         log_warn("DRY-RUN MODE ENABLED: No files will be archived.");
     }
 
-    let mut apps: Vec<String> = if target == "all" { ALL_APPS.iter().map(|s| s.to_string()).collect() } else { vec![target.clone()] };
+    let with_keyrings = o.with_keyrings || (target == "all" && crate::settings::load().vault.keyrings);
+    let mut apps: Vec<String> = expand_target(&target, with_keyrings);
     if o.no_howdy && target == "all" {
         apps.retain(|a| a != "howdy");
     }
@@ -319,6 +326,13 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
             "kde" => {
                 if let Some(v) = backup_kde(&staging, o.dry_run)? {
                     app_entries.insert("kde".into(), v);
+                }
+            }
+            k if keyring::is_keyring(k) => {
+                let policy =
+                    keyring::Policy { dry_run: o.dry_run, upload: o.upload, allow_plaintext: o.allow_plaintext_keyring, quiet_missing: target == "all" };
+                if let Some(v) = keyring::backup(k, &staging, &policy)? {
+                    app_entries.insert(k.to_string(), v);
                 }
             }
             other => {

@@ -1,5 +1,6 @@
 ---
 source: src/tui/screens/export.rs
+assertion_line: 936
 expression: "render(&loaded(80, 24))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -21,8 +22,8 @@ expression: "render(&loaded(80, 24))"
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                            │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                    │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                           │
+│  ( ) KDE Wallet (~/.local/share/kwalletd)  not found                         │
+│  ( ) GNOME Keyring (~/.local/share/keyrings)  not found                      │
 │  [x] Include large media (attachments, site data)                            │
-│  [x] Close running apps first (reopened in the background)                   │
-│  File name: all_backup_2026-10-17_101500.zip                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Space select/toggle  s start  Esc folder  ? help

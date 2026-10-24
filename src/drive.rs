@@ -522,6 +522,7 @@ pub fn backup_upload(o: crate::vault::backup::BackupOpts, up: &UploadOpts) -> Re
     let mut bo = o.clone();
     bo.output = Some(file.clone());
     bo.staged = staging.is_some();
+    bo.upload = true;
     crate::vault::backup::cmd_backup(bo)?;
     if crate::ctx::canceled() {
         return Ok(Uploaded::Canceled);

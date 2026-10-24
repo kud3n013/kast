@@ -68,6 +68,11 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
             format!("KDE data in {} (plasma, kwin, icons, wallpapers, ...)", c.data_home.display()),
             "~/.fonts, ~/.themes, ~/.icons (if in the archive)".into(),
         ],
+        "kwallet" => vec![
+            format!("KDE wallets in {} (the ones in the archive; others are kept)", keyring::kwallet_dir().display()),
+            keyring::kwalletrc_path().display().to_string(),
+        ],
+        "gnome-keyring" => vec![format!("GNOME keyrings in {} (the ones in the archive; others are kept)", keyring::gnome_dir().display())],
         other => match restore_spec(other) {
             Some(spec) => {
                 let mut v = vec![restore_base(other).join(spec.folder).display().to_string()];
@@ -91,6 +96,8 @@ pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
         match app.as_str() {
             "howdy" => out.push(PathBuf::from(HOWDY_MODELS_DIR)),
             "kde" => out.extend(crate::vault::kde_existing_paths()),
+            "kwallet" => out.extend([keyring::kwallet_dir(), keyring::kwalletrc_path()]),
+            "gnome-keyring" => out.push(keyring::gnome_dir()),
             other => {
                 if let Some(spec) = restore_spec(other) {
                     out.push(restore_base(other).join(spec.folder));
@@ -230,8 +237,23 @@ trait KdeSession {
     fn start_shortcuts(&self) -> Result<(), String>;
 }
 
+/// Everything a restore stops and starts in the user's session.
+trait Session: KdeSession + keyring::KeyringDaemons {}
+
+impl<T: KdeSession + keyring::KeyringDaemons> Session for T {}
+
 /// The user's real session.
 struct LiveSession;
+
+impl keyring::KeyringDaemons for LiveSession {
+    fn stop_keyring(&self, store: keyring::Store) -> Result<keyring::Restart, String> {
+        keyring::LiveDaemons.stop_keyring(store)
+    }
+
+    fn start_keyring(&self, store: keyring::Store, how: &keyring::Restart) -> Result<(), String> {
+        keyring::LiveDaemons.start_keyring(store, how)
+    }
+}
 
 impl KdeSession for LiveSession {
     fn shell_running(&self) -> bool {
@@ -303,7 +325,7 @@ pub fn cmd_import(o: ImportOpts) -> Result<()> {
     import_with(o, &LiveSession)
 }
 
-fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
+fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
     let c = ctx();
     ctx::set_canceled(false);
     require_vault_tools()?;
@@ -329,6 +351,15 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
     }
 
     let mut apps: Vec<String> = match &o.app {
+        Some(a) if normalize_app(a) == "keyrings" => {
+            let found: Vec<String> = keyring::TARGETS.iter().map(|k| k.to_string()).filter(|k| available.is_empty() || available.contains(k)).collect();
+            if found.is_empty() {
+                log_error("The archive has no keyrings (kwallet, gnome-keyring).");
+                log_info(&format!("Available in archive: {}", available.join(" ")));
+                return Err(reported());
+            }
+            found
+        }
         Some(a) => {
             let a = normalize_app(a);
             if !available.is_empty() && !available.contains(&a) {
@@ -340,6 +371,7 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
         }
         None => available.clone(),
     };
+    keyrings_first(&mut apps);
     if !apps.is_empty() {
         log_info(&format!("Apps to restore: {C_BOLD}{}{C_RESET}", apps.join(" ")));
     }
@@ -389,7 +421,8 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
     if !o.confirmed && !o.dry_run {
         report::blank();
         log_warn("Restoring will OVERWRITE existing application settings, login credentials, and databases!");
-        if !report::ask(&Prompt::yes_no("Are you sure you want to proceed?", false)) {
+        let overwrites: Vec<String> = apps.iter().flat_map(|a| restore_destinations(a)).collect();
+        if !report::ask(&Prompt::yes_no("Are you sure you want to proceed?", false).with_details(overwrites)) {
             log_info("Restore operation canceled.");
             ctx::set_canceled(true);
             return Ok(());
@@ -409,7 +442,7 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
 
     if apps.is_empty() {
         let has = |names: &[&str]| names.iter().any(|n| staging.join(n).is_dir());
-        let detect: [(&str, &[&str]); 16] = [
+        let detect: [(&str, &[&str]); 18] = [
             ("beeper", &["BeeperTexts", "beeper"]),
             ("zalo", &["ZaloData", "zalo"]),
             ("vesktop", &["vesktop"]),
@@ -426,12 +459,20 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
             ("howdy", &["howdy"]),
             ("kde", &["kde"]),
             ("hypr", &["hypr"]),
+            ("kwallet", &["kwallet"]),
+            ("gnome-keyring", &["gnome-keyring"]),
         ];
         apps = detect.iter().filter(|(_, n)| has(n)).map(|(a, _)| a.to_string()).collect();
+        keyrings_first(&mut apps);
         log_info(&format!("Auto-detected apps in archive: {C_BOLD}{}{C_RESET}", apps.join(" ")));
     }
 
     rehome::rehome_staging(&staging, &apps, &manifest, o.dry_run);
+    // kwalletrc is in both: the copy that came with the wallets wins (it names them)
+    let kde_rc = staging.join("kde/config/kwalletrc");
+    if apps.iter().any(|a| a == "kwallet") && apps.iter().any(|a| a == "kde") && staging.join("kwallet/kwalletrc").is_file() && kde_rc.is_file() {
+        fs::remove_file(&kde_rc)?;
+    }
 
     if !o.safety_backup && !o.dry_run {
         log_warn(&no_snapshot_warning(&apps));
@@ -453,6 +494,17 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
         match app.as_str() {
             "howdy" => restore_howdy(&staging, &rollback, &manifest, &o)?,
             "kde" => restore_kde(&staging, &rollback, &o, session)?,
+            k if keyring::is_keyring(k) => {
+                let r = keyring::RestoreCtx {
+                    staging: &staging,
+                    rollback: &rollback,
+                    dry_run: o.dry_run,
+                    safety_backup: o.safety_backup,
+                    manifest: &manifest,
+                    daemons: session,
+                };
+                keyring::restore(k, &r)?;
+            }
             other => {
                 if let Some(spec) = restore_spec(other) {
                     restore_app_dir(other, &spec, &staging, &rollback, &o)?;
@@ -478,6 +530,12 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
         log_info(&format!("Safety rollback snapshot created at: {}", rollback.display()));
     }
     Ok(())
+}
+
+/// The keyrings go in before everything else: an app restored and started first could ask
+/// for its secret and get a freshly created, empty keyring.
+fn keyrings_first(apps: &mut [String]) {
+    apps.sort_by_key(|a| !keyring::is_keyring(a));
 }
 
 fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
@@ -710,7 +768,7 @@ pub fn undo_restore(snapshot: &Path, apps: &[String], fingerprint: Option<&str>)
     undo_with(snapshot, apps, fingerprint, &LiveSession)
 }
 
-fn undo_with(snapshot: &Path, apps: &[String], fingerprint: Option<&str>, session: &dyn KdeSession) -> Result<()> {
+fn undo_with(snapshot: &Path, apps: &[String], fingerprint: Option<&str>, session: &dyn Session) -> Result<()> {
     let c = ctx();
     if !snapshot.is_dir() {
         bail!("the snapshot {} is gone", snapshot.display());
@@ -759,6 +817,11 @@ fn undo_with(snapshot: &Path, apps: &[String], fingerprint: Option<&str>, sessio
                     s.start();
                 }
             }
+            k if keyring::is_keyring(k) => {
+                if !keyring::undo(k, snapshot, session)? {
+                    continue;
+                }
+            }
             other => {
                 if let Some(spec) = restore_spec(other) {
                     let src = snapshot.join(spec.folder);
@@ -791,6 +854,8 @@ pub fn managed_paths(apps: &[String]) -> Vec<PathBuf> {
                 v.extend(KDE_SHARE_ENTRIES.iter().map(|e| c.data_home.join(e)));
                 v.extend(KDE_HOME_ENTRIES.iter().map(|e| c.target_home.join(e)));
             }
+            "kwallet" => v.extend([keyring::kwallet_dir(), keyring::kwalletrc_path()]),
+            "gnome-keyring" => v.push(keyring::gnome_dir()),
             other => {
                 if let Some(spec) = restore_spec(other) {
                     v.push(restore_base(other).join(spec.folder));
@@ -1081,11 +1146,24 @@ mod tests {
     struct FakeSession {
         events: std::cell::RefCell<Vec<String>>,
         start_fails: bool,
+        /// The keyring daemons won't stop
+        keyring_stuck: bool,
+        /// How the fake gnome-keyring "ran" before it was stopped
+        gnome_ran: keyring::Restart,
     }
 
     impl FakeSession {
         fn new() -> FakeSession {
-            FakeSession { events: Default::default(), start_fails: false }
+            FakeSession { events: Default::default(), start_fails: false, keyring_stuck: false, gnome_ran: keyring::Restart::default() }
+        }
+
+        /// A keyring event, with the wallet and keyring as a daemon would find them on disk.
+        fn note_keyring(&self, what: &str) {
+            let read = |p: PathBuf| fs::read_to_string(p).map(|s| s.trim().to_string()).unwrap_or_else(|_| "-".into());
+            let kwl = read(keyring::kwallet_dir().join("kdewallet.kwl")).replace(KWL_HEAD, "");
+            let login = read(keyring::gnome_dir().join("login.keyring")).replace(GKR_HEAD, "");
+            let scripts = ctx().target_home.join(".scripts/hello.sh").is_file();
+            self.events.borrow_mut().push(format!("{what} kwl={kwl} login={login} scripts={scripts}"));
         }
 
         fn note(&self, what: &str) {
@@ -1117,6 +1195,21 @@ mod tests {
         fn start_shortcuts(&self) -> Result<(), String> {
             self.note("start shortcuts");
             if self.start_fails { Err("could not start kglobalacceld; log out and in to load the shortcuts".into()) } else { Ok(()) }
+        }
+    }
+
+    impl keyring::KeyringDaemons for FakeSession {
+        fn stop_keyring(&self, store: keyring::Store) -> Result<keyring::Restart, String> {
+            self.note_keyring(&format!("stop {store:?}"));
+            if self.keyring_stuck {
+                return Err("still running".into());
+            }
+            Ok(if store == keyring::Store::Gnome { self.gnome_ran.clone() } else { keyring::Restart::default() })
+        }
+
+        fn start_keyring(&self, store: keyring::Store, how: &keyring::Restart) -> Result<(), String> {
+            self.note_keyring(&format!("start {store:?} units={:?} argv={:?}", how.units, how.argv));
+            Ok(())
         }
     }
 
@@ -1276,6 +1369,299 @@ mod tests {
         let session = FakeSession::new();
         restore_kde(t.path(), &c.state_home.join("no-rollback"), &archive.opts(Some("kde")), &session).unwrap();
         assert!(session.events().iter().all(|e| !e.contains("shortcuts")), "{:?}", session.events());
+    }
+
+    // A wallet and a keyring as their headers make them look (the rest is a marker the
+    // tests follow; never real secrets)
+    const KWL_HEAD: &str = "KWALLET\n\r\0\r\n\0\u{1}\u{3}\u{2}";
+    const GKR_HEAD: &str = "GnomeKeyring\n\r\0\n\0\0\0\0";
+
+    fn mode(p: &Path) -> u32 {
+        fs::symlink_metadata(p).unwrap().permissions().mode() & 0o777
+    }
+
+    /// Wallets and keyrings in the test home; removed when dropped.
+    struct Keyrings;
+
+    impl Keyrings {
+        fn new() -> Keyrings {
+            let (kw, gk) = (keyring::kwallet_dir(), keyring::gnome_dir());
+            for d in [&kw, &gk] {
+                let _ = fs::remove_dir_all(d);
+                fs::create_dir_all(d).unwrap();
+            }
+            fs::set_permissions(&kw, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::write(kw.join("kdewallet.kwl"), format!("{KWL_HEAD}SAVED-WALLET")).unwrap();
+            fs::write(kw.join("kdewallet.salt"), "S".repeat(56)).unwrap();
+            fs::write(kw.join("kdewallet_attributes.json"), "{}").unwrap();
+            fs::write(kw.join("kdewallet.kwl~"), "old copy").unwrap();
+            fs::write(gk.join("login.keyring"), format!("{GKR_HEAD}SAVED-LOGIN")).unwrap();
+            fs::write(gk.join("default"), "login").unwrap();
+            fs::write(gk.join("user.keystore"), "").unwrap();
+            fs::write(gk.join("Plain.keyring"), "[keyring]\ndisplay-name=Plain\n\n[1]\nsecret=PLAINTEXT-SECRET\n").unwrap();
+            std::os::unix::fs::symlink("/etc/passwd", gk.join("evil.keyring")).unwrap();
+            for d in [&kw, &gk] {
+                for e in fs::read_dir(d).unwrap().flatten().filter(|e| !e.path().is_symlink()) {
+                    fs::set_permissions(e.path(), fs::Permissions::from_mode(0o600)).unwrap();
+                }
+            }
+            fs::create_dir_all(&ctx().config_home).unwrap();
+            fs::write(keyring::kwalletrc_path(), "[Wallet]\nDefault Wallet=kdewallet\nFirst Use=false\nEnabled=true\n").unwrap();
+            Keyrings
+        }
+
+        fn backup(&self, target: &str, o: super::super::backup::BackupOpts) -> (PathBuf, tempfile::TempDir) {
+            let dir = tempfile::tempdir().unwrap();
+            let zip = dir.path().join("k.zip");
+            let o = super::super::backup::BackupOpts { target: target.into(), output: Some(zip.clone()), force: true, no_relaunch: true, ..o };
+            super::super::backup::cmd_backup(o).unwrap();
+            (zip, dir)
+        }
+    }
+
+    impl Drop for Keyrings {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(keyring::kwallet_dir());
+            let _ = fs::remove_dir_all(keyring::gnome_dir());
+            let _ = fs::remove_file(keyring::kwalletrc_path());
+            let _ = fs::remove_dir_all(ctx().target_home.join(".scripts"));
+        }
+    }
+
+    fn import_opts(zip: &Path, app: Option<&str>, safety_backup: bool) -> ImportOpts {
+        ImportOpts {
+            file: zip.to_path_buf(),
+            app: app.map(String::from),
+            safety_backup,
+            kill: false,
+            force: true,
+            confirmed: true,
+            dry_run: false,
+            no_relaunch: true,
+        }
+    }
+
+    #[test]
+    fn keyrings_back_up_exactly_their_files_and_no_contents_in_the_manifest() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let _k = Keyrings::new();
+        ctx::clear_issues();
+        let (zip, _d) = _k.backup("keyrings", Default::default());
+        let issues = ctx::take_issues();
+        assert!(issues.iter().any(|i| i.contains("'Plain'") && i.contains("--allow-plaintext-keyring")), "{issues:?}");
+        let t = tempfile::tempdir().unwrap();
+        extract_zip_archive(&zip, t.path()).unwrap();
+        let mut got: Vec<String> = walkdir::WalkDir::new(t.path())
+            .into_iter()
+            .flatten()
+            .filter(|e| e.file_type().is_file())
+            .map(|e| e.path().strip_prefix(t.path()).unwrap().display().to_string())
+            .collect();
+        got.sort();
+        assert_eq!(
+            got,
+            [
+                "backup_manifest.json",
+                "gnome-keyring/keyrings/default",
+                "gnome-keyring/keyrings/login.keyring",
+                "gnome-keyring/keyrings/user.keystore",
+                "kwallet/kwalletd/kdewallet.kwl",
+                "kwallet/kwalletd/kdewallet.salt",
+                "kwallet/kwalletd/kdewallet_attributes.json",
+                "kwallet/kwalletrc",
+            ]
+        );
+        for f in got.iter().filter(|f| f.contains('/')) {
+            assert_eq!(mode(&t.path().join(f)), 0o600, "{f}");
+        }
+        for d in ["kwallet", "kwallet/kwalletd", "gnome-keyring/keyrings"] {
+            assert_eq!(mode(&t.path().join(d)), 0o700, "{d}");
+        }
+        let m = fs::read_to_string(t.path().join("backup_manifest.json")).unwrap();
+        for secret in ["SAVED-WALLET", "SAVED-LOGIN", "PLAINTEXT-SECRET", "SSSS"] {
+            assert!(!m.contains(secret), "the manifest holds {secret}: {m}");
+        }
+        let v: Value = serde_json::from_str(&m).unwrap();
+        assert_eq!(v["apps"]["kwallet"]["keyrings"][0]["type"], "blowfish-pbkdf2");
+        assert_eq!(v["apps"]["kwallet"]["keyrings"][0]["salt"], true);
+        assert_eq!(v["apps"]["gnome-keyring"]["keyrings"][0]["name"], "login");
+        assert_eq!(v["apps"]["gnome-keyring"]["default"], "login");
+        assert_eq!(v["apps"]["gnome-keyring"]["left_out"], serde_json::json!(["Plain.keyring"]));
+    }
+
+    #[test]
+    fn plaintext_keyrings_need_the_flag_and_never_go_up() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let k = Keyrings::new();
+        let has_plain = |zip: &Path| {
+            let t = tempfile::tempdir().unwrap();
+            extract_zip_archive(zip, t.path()).unwrap();
+            t.path().join("gnome-keyring/keyrings/Plain.keyring").is_file()
+        };
+        let allowed = super::super::backup::BackupOpts { allow_plaintext_keyring: true, ..Default::default() };
+        let (zip, _d) = k.backup("gnome-keyring", allowed.clone());
+        assert!(has_plain(&zip), "a local backup with --allow-plaintext-keyring carries it");
+        // Built for Proton Drive (or the schedule): never, flag or not
+        let (zip, _d2) = k.backup("gnome-keyring", super::super::backup::BackupOpts { upload: true, ..allowed });
+        assert!(!has_plain(&zip));
+        let (zip, _d3) = k.backup("gnome-keyring", Default::default());
+        assert!(!has_plain(&zip));
+    }
+
+    #[test]
+    fn all_takes_the_keyrings_only_when_asked() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let k = Keyrings::new();
+        let apps = |zip: &Path| -> Vec<String> {
+            let v: Value = serde_json::from_str(&read_zip_manifest(zip).unwrap()).unwrap();
+            v["apps"].as_object().unwrap().keys().cloned().collect()
+        };
+        let base = super::super::backup::BackupOpts { no_howdy: true, running: super::super::backup::RunningPolicy::Skip, ..Default::default() };
+        let (zip, _d) = k.backup("all", base.clone());
+        assert!(!apps(&zip).iter().any(|a| keyring::is_keyring(a)), "{:?}", apps(&zip));
+        let (zip, _d2) = k.backup("all", super::super::backup::BackupOpts { with_keyrings: true, ..base.clone() });
+        assert!(apps(&zip).contains(&"kwallet".to_string()) && apps(&zip).contains(&"gnome-keyring".to_string()));
+        // The setting does the same, for `all` (and so the schedule)
+        crate::settings::write_own(&crate::settings::path(), b"[vault]\nkeyrings = true\n", 0o600).unwrap();
+        let (zip, _d3) = k.backup("all", base);
+        let _ = fs::remove_file(crate::settings::path());
+        assert!(apps(&zip).contains(&"kwallet".to_string()));
+    }
+
+    #[test]
+    fn keyrings_go_in_first_with_their_daemon_stopped() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let k = Keyrings::new();
+        let c = ctx();
+        let scripts = c.target_home.join(".scripts");
+        fs::create_dir_all(&scripts).unwrap();
+        fs::write(scripts.join("hello.sh"), "echo hi\n").unwrap();
+        // `scripts` sorts before both keyrings, and is restored after them
+        let (keys, _d) = k.backup("keyrings", Default::default());
+        let (script_zip, _d2) = k.backup("scripts", Default::default());
+        let t = tempfile::tempdir().unwrap();
+        extract_zip_archive(&keys, t.path()).unwrap();
+        extract_zip_archive(&script_zip, t.path()).unwrap();
+        let mut m: Value = serde_json::from_str(&read_zip_manifest(&keys).unwrap()).unwrap();
+        let sm: Value = serde_json::from_str(&read_zip_manifest(&script_zip).unwrap()).unwrap();
+        m["apps"]["scripts"] = sm["apps"]["scripts"].clone();
+        fs::write(t.path().join(super::super::archive::MANIFEST), m.to_string()).unwrap();
+        let both = t.path().join("both.zip");
+        let src = tempfile::tempdir().unwrap();
+        crate::vault::rsync_dir(&[], t.path(), src.path()).unwrap();
+        super::super::archive::create_zip_archive(src.path(), &both).unwrap();
+
+        // A fresh install: PAM's first login made an empty wallet, no login keyring yet, and
+        // the first-run wizard is armed. A wallet of the new system's own stays.
+        let (kw, gk) = (keyring::kwallet_dir(), keyring::gnome_dir());
+        fs::write(kw.join("kdewallet.kwl"), format!("{KWL_HEAD}FRESH")).unwrap();
+        fs::write(kw.join("work.kwl"), format!("{KWL_HEAD}WORK")).unwrap();
+        fs::remove_file(gk.join("login.keyring")).unwrap();
+        fs::write(keyring::kwalletrc_path(), "[Wallet]\nFirst Use=true\n").unwrap();
+        fs::remove_dir_all(&scripts).unwrap();
+
+        let session = FakeSession {
+            gnome_ran: keyring::Restart { units: vec!["gnome-keyring-daemon.socket".into(), "gnome-keyring-daemon.service".into()], argv: None },
+            ..FakeSession::new()
+        };
+        import_with(import_opts(&both, None, true), &session).unwrap();
+        let events = session.events();
+        assert_eq!(events.len(), 4, "{events:?}");
+        assert!(events[0].starts_with("stop Gnome kwl=FRESH login=- scripts=false"), "{events:?}");
+        assert!(
+            events[1].starts_with("start Gnome units=[\"gnome-keyring-daemon.socket\", \"gnome-keyring-daemon.service\"] argv=None")
+                && events[1].contains("login=SAVED-LOGIN"),
+            "{events:?}"
+        );
+        assert!(events[2].starts_with("stop KWallet") && events[2].contains("kwl=FRESH"), "{events:?}");
+        assert!(events[3].starts_with("start KWallet") && events[3].contains("kwl=SAVED-WALLET") && events[3].ends_with("scripts=false"), "{events:?}");
+        assert!(scripts.join("hello.sh").is_file(), "scripts came after");
+
+        assert_eq!(fs::read_to_string(kw.join("work.kwl")).unwrap(), format!("{KWL_HEAD}WORK"), "unrelated wallets stay");
+        for f in ["kdewallet.kwl", "kdewallet.salt", "kdewallet_attributes.json"] {
+            assert_eq!(mode(&kw.join(f)), 0o600, "{f}");
+        }
+        assert_eq!(mode(&gk.join("login.keyring")), 0o600);
+        assert_eq!((mode(&kw), mode(&gk)), (0o700, 0o700));
+        assert!(
+            !gk.join("Plain.keyring").exists() || fs::read_to_string(gk.join("Plain.keyring")).unwrap().contains("PLAINTEXT"),
+            "never added from the archive"
+        );
+        let rc = fs::read_to_string(keyring::kwalletrc_path()).unwrap();
+        assert_eq!(keyring::ini_get(&rc, "Wallet", "First Use").as_deref(), Some("false"), "{rc}");
+        assert_eq!(keyring::ini_get(&rc, "Wallet", "Enabled").as_deref(), Some("true"));
+        assert_eq!(keyring::ini_get(&rc, "Wallet", "Default Wallet").as_deref(), Some("kdewallet"), "the archive's kwalletrc");
+
+        // The safety snapshot holds what was replaced; undo puts exactly that back
+        let snap = fs::read_dir(safety_backup_dir()).unwrap().flatten().map(|e| e.path()).max().unwrap();
+        assert_eq!(fs::read_to_string(snap.join("kwallet/kwalletd/kdewallet.kwl")).unwrap(), format!("{KWL_HEAD}FRESH"));
+        assert!(snap.join("kwallet/kwalletrc").is_file());
+        let undo = FakeSession::new();
+        undo_with(&snap, &["gnome-keyring".to_string(), "kwallet".to_string()], None, &undo).unwrap();
+        assert_eq!(fs::read_to_string(kw.join("kdewallet.kwl")).unwrap(), format!("{KWL_HEAD}FRESH"));
+        assert!(!gk.join("login.keyring").exists(), "the restore added it; undo takes it out again");
+        assert_eq!(fs::read_to_string(keyring::kwalletrc_path()).unwrap(), "[Wallet]\nFirst Use=true\n");
+        let ev = undo.events();
+        assert_eq!(ev.len(), 4, "{ev:?}");
+        assert!(ev[0].starts_with("stop Gnome") && ev[0].contains("login=SAVED-LOGIN"), "stopped before the copy: {ev:?}");
+        assert!(ev[2].starts_with("stop KWallet") && ev[2].contains("kwl=SAVED-WALLET"), "{ev:?}");
+        assert!(ev[3].starts_with("start KWallet") && ev[3].contains("kwl=FRESH"), "{ev:?}");
+        let _ = fs::remove_dir_all(safety_backup_dir());
+    }
+
+    #[test]
+    fn a_keyring_daemon_that_wont_stop_aborts_before_any_write() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let k = Keyrings::new();
+        let (zip, _d) = k.backup("kwallet", Default::default());
+        fs::write(keyring::kwallet_dir().join("kdewallet.kwl"), format!("{KWL_HEAD}FRESH")).unwrap();
+        let session = FakeSession { keyring_stuck: true, ..FakeSession::new() };
+        assert!(import_with(import_opts(&zip, None, false), &session).is_err());
+        assert_eq!(fs::read_to_string(keyring::kwallet_dir().join("kdewallet.kwl")).unwrap(), format!("{KWL_HEAD}FRESH"), "nothing written under it");
+        assert_eq!(session.events().len(), 1, "never started: it never stopped {:?}", session.events());
+    }
+
+    #[test]
+    fn a_dry_run_leaves_the_keyring_daemons_alone() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let k = Keyrings::new();
+        let (zip, _d) = k.backup("keyrings", Default::default());
+        fs::write(keyring::kwallet_dir().join("kdewallet.kwl"), "FRESH").unwrap();
+        let session = FakeSession::new();
+        import_with(ImportOpts { dry_run: true, ..import_opts(&zip, Some("keyrings"), true) }, &session).unwrap();
+        assert!(session.events().is_empty(), "{:?}", session.events());
+        assert_eq!(fs::read_to_string(keyring::kwallet_dir().join("kdewallet.kwl")).unwrap(), "FRESH");
+    }
+
+    #[test]
+    fn the_wallets_kwalletrc_wins_over_the_kde_copy() {
+        let Some(_locks) = kde_test_lock() else { return };
+        let k = Keyrings::new();
+        let c = ctx();
+        fs::write(c.config_home.join("kdeglobals"), "[General]\n").unwrap();
+        let (zip, _d) = k.backup("all", super::super::backup::BackupOpts { with_keyrings: true, no_howdy: true, ..Default::default() });
+        // The kde copy says First Use=true: it must not end up in the home
+        let t = tempfile::tempdir().unwrap();
+        extract_zip_archive(&zip, t.path()).unwrap();
+        fs::write(t.path().join("kde/config/kwalletrc"), "[Wallet]\nFirst Use=true\nDefault Wallet=other\n").unwrap();
+        let fixed = t.path().join("x.zip");
+        let src = tempfile::tempdir().unwrap();
+        crate::vault::rsync_dir(&[], t.path(), src.path()).unwrap();
+        super::super::archive::create_zip_archive(src.path(), &fixed).unwrap();
+        import_with(import_opts(&fixed, None, false), &FakeSession::new()).unwrap();
+        let rc = fs::read_to_string(keyring::kwalletrc_path()).unwrap();
+        assert_eq!(keyring::ini_get(&rc, "Wallet", "Default Wallet").as_deref(), Some("kdewallet"), "{rc}");
+        assert_eq!(keyring::ini_get(&rc, "Wallet", "First Use").as_deref(), Some("false"));
+        let _ = fs::remove_file(c.config_home.join("kdeglobals"));
+    }
+
+    #[test]
+    fn keyrings_are_restored_before_the_apps_that_use_them() {
+        let mut apps: Vec<String> = ["beeper", "fdm", "gnome-keyring", "helium", "kde", "kwallet", "zalo"].map(String::from).to_vec();
+        keyrings_first(&mut apps);
+        assert_eq!(apps, ["gnome-keyring", "kwallet", "beeper", "fdm", "helium", "kde", "zalo"]);
+        assert!(restore_destinations("kwallet").iter().any(|d| d.contains("kwalletd")), "the overwrite confirmation names them");
+        assert!(restore_destinations("gnome-keyring").iter().any(|d| d.contains("keyrings")));
     }
 
     #[test]
