@@ -51,6 +51,7 @@ fn restore_spec(app: &str) -> Option<RestoreSpec> {
         "fish" => s(&["fish"], "fish", "fish config"),
         "fastfetch" => s(&["fastfetch"], "fastfetch", "fastfetch config"),
         "scripts" => s(&["scripts"], ".scripts", "scripts"),
+        "zotero" => s(&["Zotero"], "Zotero", "Zotero library"),
         "hypr" => s(&["hypr", "hypr/config"], "hypr", "Hyprland config"),
         _ => return None,
     })
@@ -73,8 +74,8 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
                 if other == "zalo" {
                     v.push(format!("{cfg}/zalo-flags.conf"));
                 }
-                if let Some(share) = share_folder(other) {
-                    v.push(format!("{}/{share}", c.data_home.display()));
+                if let Some(share) = share_path(other) {
+                    v.push(share.display().to_string());
                 }
                 v
             }
@@ -85,7 +86,6 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
 
 /// What a restore of `apps` would overwrite that exists now (what its safety snapshot copies).
 pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
-    let c = ctx();
     let mut out = Vec::new();
     for app in apps {
         match app.as_str() {
@@ -95,7 +95,7 @@ pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
                 if let Some(spec) = restore_spec(other) {
                     out.push(restore_base(other).join(spec.folder));
                 }
-                out.extend(share_folder(other).map(|f| c.data_home.join(f)));
+                out.extend(share_path(other));
             }
         }
     }
@@ -409,7 +409,7 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
 
     if apps.is_empty() {
         let has = |names: &[&str]| names.iter().any(|n| staging.join(n).is_dir());
-        let detect: [(&str, &[&str]); 15] = [
+        let detect: [(&str, &[&str]); 16] = [
             ("beeper", &["BeeperTexts", "beeper"]),
             ("zalo", &["ZaloData", "zalo"]),
             ("vesktop", &["vesktop"]),
@@ -422,6 +422,7 @@ fn import_with(o: ImportOpts, session: &dyn KdeSession) -> Result<()> {
             ("fish", &["fish", "fish-share"]),
             ("fastfetch", &["fastfetch"]),
             ("scripts", &["scripts"]),
+            ("zotero", &["Zotero", "zotero-share"]),
             ("howdy", &["howdy"]),
             ("kde", &["kde"]),
             ("hypr", &["hypr"]),
@@ -516,14 +517,13 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
     Ok(())
 }
 
-/// The app's folder under ~/.local/share (`share_folder`), archived as `<app>-share`.
+/// The app's second folder (`share_path`), archived as `<app>-share`.
 fn restore_share_dir(app: &str, staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
-    let Some(folder) = share_folder(app) else { return Ok(()) };
+    let Some(dest) = share_path(app) else { return Ok(()) };
     let src = staging.join(format!("{app}-share"));
     if !src.is_dir() {
         return Ok(());
     }
-    let dest = ctx().data_home.join(folder);
     if o.dry_run {
         log_info(&format!("  [Dry-run] Would restore {app} data to: {}", dest.display()));
         return Ok(());
@@ -766,10 +766,10 @@ fn undo_with(snapshot: &Path, apps: &[String], fingerprint: Option<&str>, sessio
                         copy(&src, &restore_base(other).join(spec.folder), true)?;
                     }
                 }
-                if let Some(folder) = share_folder(other) {
+                if let Some(dest) = share_path(other) {
                     let src = snapshot.join(format!("{other}-share"));
                     if src.is_dir() {
-                        copy(&src, &c.data_home.join(folder), true)?;
+                        copy(&src, &dest, true)?;
                     }
                 }
             }
@@ -798,7 +798,7 @@ pub fn managed_paths(apps: &[String]) -> Vec<PathBuf> {
                 if other == "zalo" {
                     v.push(c.config_home.join("zalo-flags.conf"));
                 }
-                v.extend(share_folder(other).map(|f| c.data_home.join(f)));
+                v.extend(share_path(other));
             }
         }
     }
@@ -1030,6 +1030,50 @@ mod tests {
         assert_eq!(fs::metadata(scripts.join("hello.sh")).unwrap().permissions().mode() & 0o755, 0o755, "still executable");
         assert_eq!(fs::read_to_string(c.config_home.join("fish/config.fish")).unwrap(), "set -x A 1\n");
         assert_eq!(fs::read_to_string(&history).unwrap(), "- cmd: ls\n");
+    }
+
+    #[test]
+    fn zotero_library_and_profile_come_back_without_attachments_on_no_media() {
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return;
+        }
+        let _g = crate::perms::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _staging = ctx::staging_test_lock();
+        let c = crate::ctx::init_for_tests();
+        let (lib, prof) = (c.target_home.join("Zotero"), c.target_home.join(".zotero/zotero/abc.default"));
+        for d in [lib.join("storage/KEY1"), lib.join("logs"), prof.join("storage/default")] {
+            fs::create_dir_all(d).unwrap();
+        }
+        for (p, s) in [
+            (lib.join("zotero.sqlite"), "db"),
+            (lib.join("zotero.sqlite.1.bak"), "old"),
+            (lib.join("storage/KEY1/paper.pdf"), "pdf"),
+            (lib.join("logs/debug.txt"), "log"),
+            (prof.join("prefs.js"), "user_pref"),
+            (prof.join("storage/default/x"), "web"),
+            (prof.join("lock"), ""),
+        ] {
+            fs::write(p, s).unwrap();
+        }
+
+        let t = tempfile::tempdir().unwrap();
+        let zip = t.path().join("zotero.zip");
+        let o = super::super::backup::BackupOpts { target: "zotero".into(), output: Some(zip.clone()), force: true, ..Default::default() };
+        super::super::backup::cmd_backup(o).unwrap();
+        assert_eq!(snapshot_paths(&["zotero".to_string()]), [lib.clone(), c.target_home.join(".zotero")]);
+        for p in snapshot_paths(&["zotero".to_string()]) {
+            fs::remove_dir_all(p).unwrap();
+        }
+        let o = ImportOpts { file: zip, app: None, safety_backup: false, kill: false, force: true, confirmed: true, dry_run: false, no_relaunch: true };
+        cmd_import(o).unwrap();
+
+        assert_eq!(fs::read_to_string(lib.join("zotero.sqlite")).unwrap(), "db");
+        assert_eq!(fs::read_to_string(prof.join("prefs.js")).unwrap(), "user_pref");
+        assert_eq!(fs::read_to_string(prof.join("storage/default/x")).unwrap(), "web", "only the library's storage is media");
+        for gone in [lib.join("storage"), lib.join("zotero.sqlite.1.bak"), lib.join("logs"), prof.join("lock")] {
+            assert!(!gone.exists(), "{} should not be backed up", gone.display());
+        }
     }
 
     /// Records what a KDE restore does to the session, with the shortcut file as the daemon

@@ -17,12 +17,12 @@ expression: render(&a)
 │  ( ) fish (~/.config/fish)  not found                                        │
 │  ( ) fastfetch (~/.config/fastfetch)  not found                              │
 │  ( ) Scripts (~/.scripts)  not found                                         │
+│  ( ) Zotero (~/Zotero + ~/.zotero)  not found                                │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                            │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                    │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                           │
 │  [x] Include large media (attachments, site data)                            │
 │  [x] Close running apps first (reopened in the background)                   │
 │  [ ] Also keep a copy in /media/data/backups                                 │
-│  ▶ Start backup                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Space select/toggle  s start  Esc back  ? help

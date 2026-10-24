@@ -124,6 +124,7 @@ pub fn collect_status() -> StatusReport {
         app_status(10, "fish (~/.config/fish)", "fish"),
         app_status(11, "fastfetch (~/.config/fastfetch)", "fastfetch"),
         app_status(12, "Scripts (~/.scripts)", "scripts"),
+        app_status(13, "Zotero (~/Zotero + ~/.zotero)", "zotero"),
     ];
 
     let package = ["howdy-next", "howdy-next-bin", "howdy"]

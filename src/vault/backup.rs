@@ -109,6 +109,15 @@ fn app_spec(app: &str) -> Option<AppSpec> {
         "fdm" => s("Softdeluxe", "Free Download Manager (~/.config/Softdeluxe)", "Free Download Manager config not found", &["logs", "cache", "backup"], None),
         "fish" => s("fish", "fish (~/.config/fish)", "fish config not found", &[], None),
         "scripts" => s("scripts", "Scripts (~/.scripts)", "~/.scripts not found", &[], None),
+        // ~/Zotero is the library (zotero.sqlite, attachments in storage/); the profile in
+        // ~/.zotero comes along as the second folder
+        "zotero" => s(
+            "Zotero",
+            "Zotero (~/Zotero + ~/.zotero)",
+            "Zotero data directory (~/Zotero) not found",
+            &["lock", ".parentlock", "crashes", "minidumps", "datareporting", "logs", "zotero.sqlite.*.bak"],
+            Some("/storage"),
+        ),
         "fastfetch" => s("fastfetch", "fastfetch (~/.config/fastfetch)", "fastfetch config not found", &[], None),
         "hypr" => s("hypr", "Hyprland (~/.config/hypr)", "Hyprland config directory (~/.config/hypr) not found", &[], None),
         _ => return None,
@@ -357,9 +366,11 @@ fn backup_app_dir(app: &str, spec: &AppSpec, staging: &Path, o: &BackupOpts) -> 
         return Ok(None);
     };
     log_step(&format!("Processing {}...", spec.label));
-    let mut excludes: Vec<String> = COMMON_EXCLUDES.iter().chain(spec.extra_excludes).map(|e| format!("--exclude={e}")).collect();
+    let excludes: Vec<String> = COMMON_EXCLUDES.iter().chain(spec.extra_excludes).map(|e| format!("--exclude={e}")).collect();
+    // The media folder is the main folder's only, never the second one's
+    let mut main_excludes = excludes.clone();
     if let (false, Some(m)) = (o.include_media, spec.media_exclude) {
-        excludes.push(format!("--exclude={m}"));
+        main_excludes.push(format!("--exclude={m}"));
     }
     let dest = staging.join(spec.folder);
     fs::create_dir_all(&dest)?;
@@ -367,7 +378,7 @@ fn backup_app_dir(app: &str, spec: &AppSpec, staging: &Path, o: &BackupOpts) -> 
         let what = if app == "antigravity" { "Would sync config" } else { "Would sync" };
         log_info(&format!("  [Dry-run] {what}: {} -> {}", cfg.display(), spec.folder));
     } else {
-        rsync_dir(&excludes, &cfg, &dest)?;
+        rsync_dir(&main_excludes, &cfg, &dest)?;
     }
 
     let mut entry = json!({"included": true, "folder": spec.folder, "config_path": cfg.to_string_lossy()});

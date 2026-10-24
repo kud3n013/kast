@@ -7,8 +7,8 @@ expression: out
 │❯ (•) All detected apps & Howdy face model  ✓                              ││All detected apps & Howdy face model                         │
 │  ( ) BeeperTexts (~/.config/BeeperTexts)  ✓                               ││                                                             │
 │  ( ) ZaloData (~/.config/ZaloData)  ✓                                     ││Includes: beeper, zalo, vesktop, zen, helium, obsidian,      │
-│  ( ) Vesktop (~/.config/vesktop)  ✓                                       ││fcitx5, antigravity, fdm, fish, fastfetch, scripts, howdy,   │
-│  ( ) Zen Browser (~/.config/zen)  ✓                                       ││kde, hypr                                                    │
+│  ( ) Vesktop (~/.config/vesktop)  ✓                                       ││fcitx5, antigravity, fdm, fish, fastfetch, scripts, zotero,  │
+│  ( ) Zen Browser (~/.config/zen)  ✓                                       ││howdy, kde, hypr                                             │
 │  ( ) Helium (~/.config/net.imput.helium)  ✓                               ││                                                             │
 │  ( ) Obsidian (~/.config/obsidian)  ✓                                     ││Uploads:                                                     │
 │  ( ) Fcitx5 (~/.config/fcitx5)  ✓                                         ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
@@ -17,7 +17,8 @@ expression: out
 │  ( ) fish (~/.config/fish)  ✓                                             ││this kind; older ones go to Proton Drive's trash.            │
 │  ( ) fastfetch (~/.config/fastfetch)  ✓                                   ││                                                             │
 │  ( ) Scripts (~/.scripts)  ✓                                              ││Built in a private folder (0700) and removed after the upload│
-│  ( ) Howdy face model (/etc/howdy/models)  ✓                              ││unless you keep a copy.                                      │
+│  ( ) Zotero (~/Zotero + ~/.zotero)  ✓                                     ││unless you keep a copy.                                      │
+│  ( ) Howdy face model (/etc/howdy/models)  ✓                              ││                                                             │
 │  ( ) KDE Plasma settings (curated)  ✓                                     ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  ✓                                ││                                                             │
 │  [x] Include large media (attachments, site data)                         ││                                                             │
@@ -25,7 +26,6 @@ expression: out
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  [x] Skip the upload if nothing changed since the last one                ││                                                             │
 │  ▶ Use this backup                                                        ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

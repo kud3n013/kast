@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.5
+
+- **Export / Import data covers Zotero** (`kast backup zotero`, and part of `all` and of
+  scheduled backups): the library in `~/Zotero` (`zotero.sqlite`, styles, translators,
+  attachments) and the profile in `~/.zotero` (preferences, plugins), without logs, lock
+  files and old `zotero.sqlite.*.bak` copies. `--no-media` leaves the attachments in
+  `~/Zotero/storage` out. A running Zotero is closed for the backup like the other apps.
+
 ## 0.9.4
 
 - **`kast import` stops `kglobalacceld` while it restores KDE shortcuts**, so restoring
