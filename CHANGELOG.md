@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Proton Drive uploads show real progress.** The gauge fills with the bytes sent out of the
+  total (instead of sitting at 0%), and its label shows sent / total, the upload speed and an
+  ETA. Proton's CLI reports no progress when kast runs it, so kast measures the bytes its TCP
+  connections had acknowledged by Proton (sock_diag; no extra privileges). The speed is smoothed
+  over the last few seconds, so it follows the network as it changes; the ETA blends it with the
+  average since the first byte, the way download managers estimate it, so it doesn't swing with
+  every burst or stall. Where it can't be measured the screen says so rather than guessing.
+- The log records each upload's size, time and average speed.
+
 ## 0.10.0
 
 - **New backup targets: `kwallet` and `gnome-keyring`** (`kast backup keyrings` for both).
