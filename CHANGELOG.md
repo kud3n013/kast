@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.1
 
 - **Proton Drive uploads show real progress.** The gauge fills with the bytes sent out of the
   total (instead of sitting at 0%), and its label shows sent / total, the upload speed and an
