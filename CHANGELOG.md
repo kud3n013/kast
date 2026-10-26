@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.4
 
 - **New backup target: `ollama`.** It carries Ollama's model store (`blobs/`, `manifests/` and
   Ollama 0.40's `manifests-v2/`) from `OLLAMA_MODELS`, `~/.ollama/models` or the store of
