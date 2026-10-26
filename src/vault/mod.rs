@@ -54,7 +54,7 @@ pub fn require_vault_tools() -> Result<()> {
 }
 
 /// Every target. The keyrings are in `all` only when asked for (see [`all_apps`]).
-pub const ALL_APPS: [&str; 18] = [
+pub const ALL_APPS: [&str; 20] = [
     "beeper",
     "zalo",
     "vesktop",
@@ -68,6 +68,8 @@ pub const ALL_APPS: [&str; 18] = [
     "fastfetch",
     "scripts",
     "zotero",
+    "claude",
+    "copilot",
     "howdy",
     "kde",
     "hypr",
@@ -130,6 +132,8 @@ pub fn find_config(app: &str) -> Option<PathBuf> {
         "fdm" => first_dir(cfg, &["Softdeluxe"]),
         "scripts" => first_dir(&c.target_home, &[".scripts"]),
         "zotero" => first_dir(&c.target_home, &["Zotero"]),
+        "claude" => first_dir(&c.target_home, &[".claude"]),
+        "copilot" => first_dir(&c.target_home, &[".copilot"]),
         "zen" => first_dir(cfg, &["zen"]).or_else(|| first_dir(&c.target_home, &[".zen"])),
         "antigravity" => first_dir(cfg, &["Antigravity", "antigravity"]),
         _ => None,
@@ -137,10 +141,10 @@ pub fn find_config(app: &str) -> Option<PathBuf> {
 }
 
 /// The folder an app's restore folder (`RestoreSpec::folder`) is in: ~/.config, except for
-/// ~/.scripts and ~/Zotero.
+/// ~/.scripts, ~/Zotero, ~/.claude and ~/.copilot.
 pub fn restore_base(app: &str) -> PathBuf {
     let c = ctx();
-    if matches!(app, "scripts" | "zotero") { c.target_home.clone() } else { c.config_home.clone() }
+    if matches!(app, "scripts" | "zotero" | "claude" | "copilot") { c.target_home.clone() } else { c.config_home.clone() }
 }
 
 /// A second folder of an app (archived as `<app>-share`): FDM keeps its settings.ini and
@@ -160,8 +164,19 @@ pub fn share_dir(app: &str) -> Option<PathBuf> {
     share_path(app).filter(|p| p.is_dir())
 }
 
+/// A single file an app keeps outside its folders, and its name in the archive: Zalo's
+/// launch flags, Claude Code's ~/.claude.json (settings, MCP servers, trusted projects).
+pub fn side_file(app: &str) -> Option<(PathBuf, &'static str)> {
+    let c = ctx();
+    match app {
+        "zalo" => Some((c.config_home.join("zalo-flags.conf"), "zalo-flags.conf")),
+        "claude" => Some((c.target_home.join(".claude.json"), "claude.json")),
+        _ => None,
+    }
+}
+
 pub fn find_zalo_flags() -> Option<PathBuf> {
-    Some(ctx().config_home.join("zalo-flags.conf")).filter(|p| p.is_file())
+    side_file("zalo").map(|(p, _)| p).filter(|p| p.is_file())
 }
 
 pub const HOWDY_MODELS_DIR: &str = "/etc/howdy/models";

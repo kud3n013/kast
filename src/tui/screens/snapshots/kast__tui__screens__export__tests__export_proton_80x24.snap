@@ -1,6 +1,5 @@
 ---
 source: src/tui/screens/export.rs
-assertion_line: 818
 expression: render(&a)
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -19,11 +18,11 @@ expression: render(&a)
 │  ( ) fastfetch (~/.config/fastfetch)  not found                              │
 │  ( ) Scripts (~/.scripts)  not found                                         │
 │  ( ) Zotero (~/Zotero + ~/.zotero)  not found                                │
+│  ( ) Claude Code (~/.claude + ~/.claude.json)  not found                     │
+│  ( ) GitHub Copilot CLI (~/.copilot)  not found                              │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                            │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                    │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                           │
 │  ( ) KDE Wallet (~/.local/share/kwalletd)  not found                         │
-│  ( ) GNOME Keyring (~/.local/share/keyrings)  not found                      │
-│  [x] Include large media (attachments, site data)                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Space select/toggle  s start  Esc back  ? help

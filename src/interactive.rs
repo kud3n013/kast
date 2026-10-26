@@ -246,6 +246,8 @@ pub fn export_data() -> Result<()> {
         ("fastfetch", "fastfetch (~/.config/fastfetch)"),
         ("scripts", "Scripts (~/.scripts)"),
         ("zotero", "Zotero library & profile (~/Zotero + ~/.zotero)"),
+        ("claude", "Claude Code (~/.claude + ~/.claude.json, without the sign-in token)"),
+        ("copilot", "GitHub Copilot CLI (~/.copilot)"),
         ("howdy", "Howdy Face Recognition Model (/etc/howdy/models)"),
         ("kde", "KDE Plasma settings (curated ~/.config + ~/.local/share)"),
         ("hypr", "Hyprland settings (~/.config/hypr)"),
