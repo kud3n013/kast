@@ -10,7 +10,7 @@ expression: render(&a)
 │  ( ) Vesktop (~/.config/vesktop)  not found                               ││Size:    2.1G                                                │
 │  ( ) Zen Browser (~/.config/zen)  ✓ 512M                                  ││                                                             │
 │  ( ) Helium (~/.config/net.imput.helium)  not found                       ││The archive holds logins and cookies: it is created readable │
-│  ( ) Obsidian (~/.config/obsidian)  not found                             ││by you only (0600).                                          │
+│  ( ) Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)  not found││by you only (0600).                                          │
 │  ( ) Fcitx5 (~/.config/fcitx5)  not found                                 ││                                                             │
 │  ( ) Antigravity (~/.config/Antigravity)  not found                       ││                                                             │
 │  ( ) Free Download Manager (~/.config/Softdeluxe)  not found              ││                                                             │

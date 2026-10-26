@@ -149,15 +149,31 @@ pub fn restore_base(app: &str) -> PathBuf {
 
 /// A second folder of an app (archived as `<app>-share`): FDM keeps its settings.ini and
 /// download list under ~/.local/share, fish its history, Zotero its profile (preferences and
-/// plugins) in ~/.zotero.
+/// plugins) in ~/.zotero, Obsidian its vault (the notes) in ~/Documents.
 pub fn share_path(app: &str) -> Option<PathBuf> {
     let c = ctx();
     match app {
         "fdm" => Some(c.data_home.join("Softdeluxe/Free Download Manager")),
         "fish" => Some(c.data_home.join("fish")),
         "zotero" => Some(c.target_home.join(".zotero")),
+        "obsidian" => Some(c.target_home.join(OBSIDIAN_VAULT)),
         _ => None,
     }
+}
+
+/// The Obsidian vault kast carries, under the home folder.
+pub const OBSIDIAN_VAULT: &str = "Documents/Obsidian Vault";
+
+/// The id `obsidian.json` (in Obsidian's config folder `cfg`) gives the vault at `vault`.
+/// Obsidian keys a vault's Sync link and state, and its window, by this id, so a restore
+/// keeps it. Paths are compared resolved: ~/Documents may be a symlink to another drive.
+pub fn obsidian_vault_id(cfg: &Path, vault: &Path) -> Option<String> {
+    let list: serde_json::Value = serde_json::from_str(&fs::read_to_string(cfg.join("obsidian.json")).ok()?).ok()?;
+    let want = vault.canonicalize().ok()?;
+    list.get("vaults")?.as_object()?.iter().find_map(|(id, v)| {
+        let path = Path::new(v.get("path")?.as_str()?);
+        (path.canonicalize().ok()? == want).then(|| id.clone())
+    })
 }
 
 pub fn share_dir(app: &str) -> Option<PathBuf> {

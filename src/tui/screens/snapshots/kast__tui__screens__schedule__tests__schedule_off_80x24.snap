@@ -10,7 +10,7 @@ expression: "render(&opened(80, 24, info(false)))"
 │  [ ] Vesktop (~/.config/vesktop)                                             │
 │  [ ] Zen Browser (~/.config/zen)                                             │
 │  [ ] Helium (~/.config/net.imput.helium)                                     │
-│  [ ] Obsidian (~/.config/obsidian)                                           │
+│  [ ] Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)              │
 │  [ ] Fcitx5 (~/.config/fcitx5)                                               │
 │  [ ] Antigravity (~/.config/Antigravity)                                     │
 │  [ ] Free Download Manager (~/.config/Softdeluxe)                            │

@@ -88,9 +88,17 @@ pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
                 fields.push(("Folder:      ".into(), format!("~/.config/{}", field("folder", default))));
                 source(&mut fields, "Source:      ", "config_path");
             }
-            "VESKTOP" | "ZEN" | "OBSIDIAN" | "FCITX5" | "HYPR" | "FASTFETCH" => {
+            "VESKTOP" | "ZEN" | "FCITX5" | "HYPR" | "FASTFETCH" => {
                 fields.push(("Folder:      ".into(), format!("~/.config/{key}")));
                 source(&mut fields, "Source:      ", "config_path");
+            }
+            "OBSIDIAN" => {
+                fields.push(("Config:      ".into(), "~/.config/obsidian".into()));
+                if !field("share_path", "").is_empty() {
+                    fields.push(("Vault:       ".into(), "~/Documents/Obsidian Vault".into()));
+                }
+                source(&mut fields, "Source cfg:  ", "config_path");
+                source(&mut fields, "Source data: ", "share_path");
             }
             "SCRIPTS" => {
                 fields.push(("Folder:      ".into(), "~/.scripts".into()));

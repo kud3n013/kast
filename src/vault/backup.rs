@@ -109,7 +109,10 @@ fn app_spec(app: &str) -> Option<AppSpec> {
             ],
             None,
         ),
-        "obsidian" => s("obsidian", "Obsidian (~/.config/obsidian)", "Obsidian config not found", &[], None),
+        // The vault in ~/Documents comes along as the second folder. Sign-in and Sync's link to the
+        // vault are in the config folder (keyed by the vault's id); the sign-in token is encrypted
+        // with the desktop keyring's key, so it needs the keyring too
+        "obsidian" => s("obsidian", "Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)", "Obsidian config not found", &[], None),
         "fcitx5" => s("fcitx5", "Fcitx5 (~/.config/fcitx5)", "Fcitx5 config not found", &[], None),
         "antigravity" => s("Antigravity", "Antigravity (~/.config/Antigravity)", "Antigravity config not found", &["crashes", "DevToolsActivePort"], None),
         "fdm" => s("Softdeluxe", "Free Download Manager (~/.config/Softdeluxe)", "Free Download Manager config not found", &["logs", "cache", "backup"], None),
@@ -413,9 +416,16 @@ fn backup_app_dir(app: &str, spec: &AppSpec, staging: &Path, o: &BackupOpts) -> 
         } else {
             let dest = staging.join(&staged);
             fs::create_dir_all(&dest)?;
-            rsync_dir(&excludes, &share, &dest)?;
+            // Notes are the user's own files: a folder called Cache or a .log note stays in
+            let excludes = if app == "obsidian" { &[][..] } else { &excludes[..] };
+            rsync_dir(excludes, &share, &dest)?;
         }
         entry["share_path"] = json!(share.to_string_lossy());
+        if app == "obsidian"
+            && let Some(id) = obsidian_vault_id(&cfg, &share)
+        {
+            entry["vault_id"] = json!(id);
+        }
     }
     if let Some((path, staged)) = side_file(app) {
         let file = Some(path).filter(|p| p.is_file());

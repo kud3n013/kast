@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **`obsidian` now carries the vault too.** Besides `~/.config/obsidian`, the backup takes
+  `~/Documents/Obsidian Vault` (notes, attachments and the vault's own `.obsidian` settings,
+  plugins and themes), with none of the cache or `*.log` excludes the app folders get. A
+  restore puts it back in `~/Documents/Obsidian Vault` of the account you restore to, whatever
+  that account is called and wherever its `~/Documents` points, and points Obsidian's vault
+  list (`obsidian.json`) at it.
+- The vault keeps its id across the restore. Obsidian stores Sync's link to the remote vault and
+  its sync state under that id in `~/.config/obsidian`, so the restored vault is still connected
+  to Sync, and the account stays signed in. The sign-in token is encrypted with the desktop
+  keyring's key: restore the keyring too (`kast backup keyrings`) when you move to a new system.
+- `kast status` shows the vault and its size; `kast info` lists it.
+
 ## 0.10.2
 
 - **New backup targets: `claude` and `copilot`.** `claude` carries `~/.claude` (conversations,

@@ -514,6 +514,9 @@ fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
                 if let Some(spec) = restore_spec(other) {
                     restore_app_dir(other, &spec, &staging, &rollback, &o)?;
                 }
+                if other == "obsidian" {
+                    repoint_obsidian_vault(&staging, &manifest, o.dry_run)?;
+                }
             }
         }
     }
@@ -602,6 +605,65 @@ fn restore_share_dir(app: &str, staging: &Path, rollback: &Path, o: &ImportOpts)
     }
     ctx::mkdir_user(&dest)?;
     rsync_dir_as(as_user(), &restore_opts(), &src, &dest)
+}
+
+/// The vault came back to ~/Documents/Obsidian Vault: point Obsidian's vault list at it,
+/// whatever the home folder was called when it was backed up. The entry keeps its id, the
+/// one Sync's link and state are stored under, so the vault stays signed in to its remote.
+fn repoint_obsidian_vault(staging: &Path, manifest: &Value, dry_run: bool) -> Result<()> {
+    let Some(vault) = share_path("obsidian") else { return Ok(()) };
+    if !staging.join("obsidian-share").is_dir() {
+        return Ok(());
+    }
+    let list = ctx().config_home.join("obsidian/obsidian.json");
+    if dry_run {
+        log_info(&format!("  [Dry-run] Would point Obsidian at the vault in {}", vault.display()));
+        return Ok(());
+    }
+    // Resolved, the way Obsidian records a vault it opens (~/Documents may be a symlink)
+    let path = vault.canonicalize().unwrap_or(vault);
+    let existed = list.is_file();
+    let mut json: Value = fs::read_to_string(&list).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_else(|| serde_json::json!({}));
+    let id = point_obsidian_vault(&mut json, &jq_str(manifest, &["apps", "obsidian", "vault_id"], ""), &path.to_string_lossy());
+    if let Some(dir) = list.parent() {
+        ctx::mkdir_user(dir)?;
+    }
+    fs::write(&list, serde_json::to_string(&json)?)?;
+    let c = ctx();
+    if !existed && c.is_root {
+        ctx::chown_path(&list, c.target_uid, c.target_gid);
+    }
+    log_info(&format!("  Obsidian vault {id} now opens {}", path.display()));
+    Ok(())
+}
+
+/// Set the path of the vault `id` in an `obsidian.json` (archives from before `vault_id`:
+/// the entry that was in a Documents/Obsidian Vault folder), adding the vault if it isn't
+/// listed. Returns the vault's id.
+fn point_obsidian_vault(list: &mut Value, id: &str, path: &str) -> String {
+    if !list.get("vaults").is_some_and(Value::is_object) {
+        list["vaults"] = serde_json::json!({});
+    }
+    let vaults = list["vaults"].as_object_mut().expect("vaults is an object");
+    let suffix = format!("/{OBSIDIAN_VAULT}");
+    let id = Some(id)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .or_else(|| vaults.iter().find(|(_, v)| v.get("path").and_then(Value::as_str).is_some_and(|p| p.ends_with(&suffix))).map(|(k, _)| k.clone()))
+        .unwrap_or_else(new_obsidian_vault_id);
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    let entry = vaults.entry(id.clone()).or_insert_with(|| serde_json::json!({"ts": ts, "open": true}));
+    if !entry.is_object() {
+        *entry = serde_json::json!({"ts": ts, "open": true});
+    }
+    entry["path"] = Value::from(path);
+    id
+}
+
+/// A fresh vault id, 16 hex digits like Obsidian's own.
+fn new_obsidian_vault_id() -> String {
+    use std::hash::{BuildHasher, RandomState};
+    format!("{:016x}", RandomState::new().hash_one(std::process::id()))
 }
 
 /// Restored data is written by the target user (rsync runs through `sudo -u` when kast is
@@ -1108,6 +1170,66 @@ mod tests {
         assert_eq!(fs::metadata(scripts.join("hello.sh")).unwrap().permissions().mode() & 0o755, 0o755, "still executable");
         assert_eq!(fs::read_to_string(c.config_home.join("fish/config.fish")).unwrap(), "set -x A 1\n");
         assert_eq!(fs::read_to_string(&history).unwrap(), "- cmd: ls\n");
+    }
+
+    #[test]
+    fn obsidian_vault_entry_is_repointed_by_id_then_by_folder() {
+        let new = "/home/new/Documents/Obsidian Vault";
+        let mut l = serde_json::json!({"vaults": {"e73f": {"path": "/media/old/Documents/Obsidian Vault", "ts": 1, "open": true}, "aaaa": {"path": "/x/Other"}}, "frame": "native"});
+        assert_eq!(point_obsidian_vault(&mut l, "e73f", new), "e73f");
+        assert_eq!(l["vaults"]["e73f"], serde_json::json!({"path": new, "ts": 1, "open": true}), "only the path changes");
+        assert_eq!(l["vaults"]["aaaa"]["path"], "/x/Other");
+        assert_eq!(l["frame"], "native");
+
+        let mut l = serde_json::json!({"vaults": {"e73f": {"path": "/home/old/Documents/Obsidian Vault"}}});
+        assert_eq!(point_obsidian_vault(&mut l, "", new), "e73f", "older archives: found by its folder");
+        assert_eq!(l["vaults"]["e73f"]["path"], new);
+
+        let mut l = serde_json::json!({});
+        let id = point_obsidian_vault(&mut l, "", new);
+        assert_eq!(id.len(), 16);
+        assert_eq!(l["vaults"][&id]["path"], new);
+        assert_eq!(l["vaults"][&id]["open"], true);
+    }
+
+    #[test]
+    fn obsidian_vault_comes_back_to_documents_and_keeps_its_id() {
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return;
+        }
+        let _g = crate::perms::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _staging = ctx::staging_test_lock();
+        let c = crate::ctx::init_for_tests();
+        let (cfg, vault) = (c.config_home.join("obsidian"), c.target_home.join(OBSIDIAN_VAULT));
+        fs::create_dir_all(vault.join(".obsidian")).unwrap();
+        fs::create_dir_all(vault.join("Cache")).unwrap();
+        fs::write(vault.join("Cache/note.md"), "# kept\n").unwrap();
+        fs::write(vault.join("today.log"), "a note\n").unwrap();
+        fs::write(vault.join(".obsidian/app.json"), "{}").unwrap();
+        fs::create_dir_all(&cfg).unwrap();
+        let list = serde_json::json!({"vaults": {"0123456789abcdef": {"path": vault.to_string_lossy(), "ts": 1, "open": true}}});
+        fs::write(cfg.join("obsidian.json"), list.to_string()).unwrap();
+
+        let t = tempfile::tempdir().unwrap();
+        let zip = t.path().join("obsidian.zip");
+        let o = super::super::backup::BackupOpts { target: "obsidian".into(), output: Some(zip.clone()), force: true, ..Default::default() };
+        super::super::backup::cmd_backup(o).unwrap();
+        // Restored where the old path no longer exists (another drive, another user name)
+        fs::remove_dir_all(&vault).unwrap();
+        fs::write(cfg.join("obsidian.json"), r#"{"vaults":{}}"#).unwrap();
+        let o = ImportOpts { file: zip, app: None, safety_backup: false, kill: false, force: true, confirmed: true, dry_run: false, no_relaunch: true };
+        cmd_import(o).unwrap();
+
+        assert_eq!(fs::read_to_string(vault.join("Cache/note.md")).unwrap(), "# kept\n", "no cache excludes in a vault");
+        assert!(vault.join("today.log").is_file());
+        assert!(vault.join(".obsidian/app.json").is_file());
+        let list: Value = serde_json::from_str(&fs::read_to_string(cfg.join("obsidian.json")).unwrap()).unwrap();
+        let vaults = list["vaults"].as_object().unwrap();
+        assert_eq!(vaults.len(), 1);
+        assert_eq!(vaults["0123456789abcdef"]["path"], vault.canonicalize().unwrap().to_string_lossy().as_ref());
+        fs::remove_dir_all(&cfg).unwrap();
+        fs::remove_dir_all(c.target_home.join("Documents")).unwrap();
     }
 
     #[test]
