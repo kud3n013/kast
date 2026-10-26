@@ -124,6 +124,16 @@ fn app_spec(app: &str) -> Option<AppSpec> {
             &["lock", ".parentlock", "crashes", "minidumps", "datareporting", "logs", "zotero.sqlite.*.bak"],
             Some("/storage"),
         ),
+        // Conversations, memory, settings, skills and plugins; not the sign-in token
+        // (.credentials.json: sign in again after a restore) or what Claude Code rebuilds
+        "claude" => s(
+            "claude",
+            "Claude Code (~/.claude + ~/.claude.json)",
+            "Claude Code folder (~/.claude) not found",
+            &[".credentials.json", "/cache", "/paste-cache", "/shell-snapshots", "/session-env", "/sessions", "/statsig", "/telemetry", "/debug", "/ide"],
+            None,
+        ),
+        "copilot" => s("copilot", "GitHub Copilot CLI (~/.copilot)", "Copilot CLI folder (~/.copilot) not found", &["/logs"], None),
         "fastfetch" => s("fastfetch", "fastfetch (~/.config/fastfetch)", "fastfetch config not found", &[], None),
         "hypr" => s("hypr", "Hyprland (~/.config/hypr)", "Hyprland config directory (~/.config/hypr) not found", &[], None),
         _ => return None,
@@ -407,16 +417,17 @@ fn backup_app_dir(app: &str, spec: &AppSpec, staging: &Path, o: &BackupOpts) -> 
         }
         entry["share_path"] = json!(share.to_string_lossy());
     }
-    if app == "zalo" {
-        let flags = find_zalo_flags();
-        if let Some(f) = &flags {
+    if let Some((path, staged)) = side_file(app) {
+        let file = Some(path).filter(|p| p.is_file());
+        if let Some(f) = &file {
             if o.dry_run {
-                log_info(&format!("  [Dry-run] Would sync: {} -> zalo-flags.conf", f.display()));
-            } else if !ok("cp", &["-p", &f.to_string_lossy(), &staging.join("zalo-flags.conf").to_string_lossy()]) {
+                log_info(&format!("  [Dry-run] Would sync: {} -> {staged}", f.display()));
+            } else if !ok("cp", &["-p", &f.to_string_lossy(), &staging.join(staged).to_string_lossy()]) {
                 anyhow::bail!("copying {} failed", f.display());
             }
         }
-        entry["flags_path"] = json!(flags.map(|f| f.to_string_lossy().into_owned()).unwrap_or_default());
+        let key = if app == "zalo" { "flags_path" } else { "file_path" };
+        entry[key] = json!(file.map(|f| f.to_string_lossy().into_owned()).unwrap_or_default());
     }
     if spec.media_exclude.is_some() {
         entry["include_media"] = json!(o.include_media);

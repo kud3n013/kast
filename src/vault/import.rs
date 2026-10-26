@@ -52,6 +52,8 @@ fn restore_spec(app: &str) -> Option<RestoreSpec> {
         "fastfetch" => s(&["fastfetch"], "fastfetch", "fastfetch config"),
         "scripts" => s(&["scripts"], ".scripts", "scripts"),
         "zotero" => s(&["Zotero"], "Zotero", "Zotero library"),
+        "claude" => s(&["claude"], ".claude", "Claude Code data"),
+        "copilot" => s(&["copilot"], ".copilot", "Copilot CLI config"),
         "hypr" => s(&["hypr", "hypr/config"], "hypr", "Hyprland config"),
         _ => return None,
     })
@@ -76,8 +78,8 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
         other => match restore_spec(other) {
             Some(spec) => {
                 let mut v = vec![restore_base(other).join(spec.folder).display().to_string()];
-                if other == "zalo" {
-                    v.push(format!("{cfg}/zalo-flags.conf"));
+                if let Some((file, _)) = side_file(other) {
+                    v.push(file.display().to_string());
                 }
                 if let Some(share) = share_path(other) {
                     v.push(share.display().to_string());
@@ -102,6 +104,7 @@ pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
                 if let Some(spec) = restore_spec(other) {
                     out.push(restore_base(other).join(spec.folder));
                 }
+                out.extend(side_file(other).map(|(p, _)| p));
                 out.extend(share_path(other));
             }
         }
@@ -442,7 +445,7 @@ fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
 
     if apps.is_empty() {
         let has = |names: &[&str]| names.iter().any(|n| staging.join(n).is_dir());
-        let detect: [(&str, &[&str]); 18] = [
+        let detect: [(&str, &[&str]); 20] = [
             ("beeper", &["BeeperTexts", "beeper"]),
             ("zalo", &["ZaloData", "zalo"]),
             ("vesktop", &["vesktop"]),
@@ -456,6 +459,8 @@ fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
             ("fastfetch", &["fastfetch"]),
             ("scripts", &["scripts"]),
             ("zotero", &["Zotero", "zotero-share"]),
+            ("claude", &["claude"]),
+            ("copilot", &["copilot"]),
             ("howdy", &["howdy"]),
             ("kde", &["kde"]),
             ("hypr", &["hypr"]),
@@ -539,7 +544,6 @@ fn keyrings_first(apps: &mut [String]) {
 }
 
 fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Path, o: &ImportOpts) -> Result<()> {
-    let c = ctx();
     restore_share_dir(app, staging, rollback, o)?;
     let Some(src) = spec.sources.iter().map(|s| staging.join(s)).find(|p| p.is_dir()) else { return Ok(()) };
     let dest = restore_base(app).join(spec.folder);
@@ -556,14 +560,19 @@ fn restore_app_dir(app: &str, spec: &RestoreSpec, staging: &Path, rollback: &Pat
     rsync_dir_as(as_user(), &restore_opts(), &src, &dest)?;
     chmod(&dest, 0o700)?;
 
-    if app == "zalo" {
-        let flags_dest = c.config_home.join("zalo-flags.conf");
-        if let Some(f) = ["zalo-flags.conf", "zalo/extra/zalo-flags.conf"].iter().map(|f| staging.join(f)).find(|p| p.is_file())
-            && !user_ok(&["cp", "-p", &f.to_string_lossy(), &flags_dest.to_string_lossy()])
-        {
-            bail!("copying {} failed", f.display());
+    if let Some((file_dest, staged)) = side_file(app) {
+        // Older archives kept Zalo's flags in zalo/extra
+        let legacy = (app == "zalo").then_some("zalo/extra/zalo-flags.conf");
+        if let Some(f) = [Some(staged), legacy].into_iter().flatten().map(|f| staging.join(f)).find(|p| p.is_file()) {
+            if o.safety_backup && file_dest.is_file() {
+                fs::create_dir_all(rollback)?;
+                fs::copy(&file_dest, rollback.join(staged))?;
+            }
+            if !user_ok(&["cp", "-p", &f.to_string_lossy(), &file_dest.to_string_lossy()]) {
+                bail!("copying {} failed", f.display());
+            }
         }
-        user_ok(&["chmod", "u+rw", &flags_dest.to_string_lossy()]);
+        user_ok(&["chmod", "u+rw", &file_dest.to_string_lossy()]);
     }
     if app == "hypr" {
         if have("hyprctl") && process_running("Hyprland", None) {
@@ -835,6 +844,12 @@ fn undo_with(snapshot: &Path, apps: &[String], fingerprint: Option<&str>, sessio
                         copy(&src, &dest, true)?;
                     }
                 }
+                if let Some((dest, staged)) = side_file(other) {
+                    let src = snapshot.join(staged);
+                    if src.is_file() {
+                        rsync_back(src.display().to_string(), dest.display().to_string(), false)?;
+                    }
+                }
             }
         }
         log_success(&format!("Put back {app} from {}", snapshot.display()));
@@ -860,9 +875,7 @@ pub fn managed_paths(apps: &[String]) -> Vec<PathBuf> {
                 if let Some(spec) = restore_spec(other) {
                     v.push(restore_base(other).join(spec.folder));
                 }
-                if other == "zalo" {
-                    v.push(c.config_home.join("zalo-flags.conf"));
-                }
+                v.extend(side_file(other).map(|(p, _)| p));
                 v.extend(share_path(other));
             }
         }
@@ -1137,6 +1150,50 @@ mod tests {
         assert_eq!(fs::read_to_string(prof.join("prefs.js")).unwrap(), "user_pref");
         assert_eq!(fs::read_to_string(prof.join("storage/default/x")).unwrap(), "web", "only the library's storage is media");
         for gone in [lib.join("storage"), lib.join("zotero.sqlite.1.bak"), lib.join("logs"), prof.join("lock")] {
+            assert!(!gone.exists(), "{} should not be backed up", gone.display());
+        }
+    }
+
+    #[test]
+    fn claude_code_comes_back_with_its_settings_file_but_not_its_token_or_caches() {
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return;
+        }
+        let _g = crate::perms::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _staging = ctx::staging_test_lock();
+        let c = crate::ctx::init_for_tests();
+        let (dir, json) = (c.target_home.join(".claude"), c.target_home.join(".claude.json"));
+        for d in ["projects/-home-me", "plugins/cache/p", "cache", "shell-snapshots"] {
+            fs::create_dir_all(dir.join(d)).unwrap();
+        }
+        for (p, s) in [
+            (dir.join("settings.json"), "settings"),
+            (dir.join("projects/-home-me/s.jsonl"), "chat"),
+            (dir.join("plugins/cache/p/plugin.json"), "plugin"),
+            (dir.join("cache/x"), "cache"),
+            (dir.join("shell-snapshots/s.sh"), "snap"),
+            (dir.join(".credentials.json"), "token"),
+            (json.clone(), "mcp"),
+        ] {
+            fs::write(p, s).unwrap();
+        }
+
+        let t = tempfile::tempdir().unwrap();
+        let zip = t.path().join("claude.zip");
+        let o = super::super::backup::BackupOpts { target: "claude".into(), output: Some(zip.clone()), force: true, ..Default::default() };
+        super::super::backup::cmd_backup(o).unwrap();
+        assert_eq!(snapshot_paths(&["claude".to_string()]), [dir.clone(), json.clone()]);
+        fs::remove_dir_all(&dir).unwrap();
+        fs::write(&json, "changed").unwrap();
+        let o = ImportOpts { file: zip, app: None, safety_backup: false, kill: false, force: true, confirmed: true, dry_run: false, no_relaunch: true };
+        cmd_import(o).unwrap();
+
+        assert_eq!(fs::read_to_string(&json).unwrap(), "mcp");
+        assert_eq!(fs::read_to_string(dir.join("settings.json")).unwrap(), "settings");
+        assert_eq!(fs::read_to_string(dir.join("projects/-home-me/s.jsonl")).unwrap(), "chat");
+        assert_eq!(fs::read_to_string(dir.join("plugins/cache/p/plugin.json")).unwrap(), "plugin", "only the top-level cache is left out");
+        for gone in [dir.join("cache"), dir.join("shell-snapshots"), dir.join(".credentials.json")] {
             assert!(!gone.exists(), "{} should not be backed up", gone.display());
         }
     }

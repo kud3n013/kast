@@ -18,16 +18,16 @@ expression: "render(&opened(140, 40, info(true)))"
 │  [ ] fastfetch (~/.config/fastfetch)                               ││Apps that are running are left out, never closed: their data may be │
 │  [ ] Scripts (~/.scripts)                                          ││mid-write. Each skip shows here.                                    │
 │  [ ] Zotero (~/Zotero + ~/.zotero)                                 ││The Howdy face model isn't included: it needs sudo.                 │
-│  [ ] KDE Plasma settings (curated)                                 ││Nothing is uploaded when nothing changed. A failure shows a         │
-│  [ ] Hyprland settings (~/.config/hypr)                            ││notification.                                                       │
+│  [ ] Claude Code (~/.claude + ~/.claude.json)                      ││Nothing is uploaded when nothing changed. A failure shows a         │
+│  [ ] GitHub Copilot CLI (~/.copilot)                               ││notification.                                                       │
+│  [ ] KDE Plasma settings (curated)                                 ││                                                                    │
+│  [ ] Hyprland settings (~/.config/hypr)                            ││                                                                    │
 │  How often:  daily  (Space switches)                               ││                                                                    │
 │  Keep on Drive:  ‹ 5 ›  per kind (←/→)                             ││                                                                    │
 │  [ ] Also keep a copy in /media/data/backups                       ││                                                                    │
 │  ▶ Save and keep it on                                             ││                                                                    │
 │  ■ Turn it off                                                     ││                                                                    │
 │  ▷ Run a backup now                                                ││                                                                    │
-│                                                                    ││                                                                    │
-│                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.2
+
+- **New backup targets: `claude` and `copilot`.** `claude` carries `~/.claude` (conversations,
+  project memory, settings, skills, installed plugins) and `~/.claude.json` (user MCP servers,
+  trusted projects, preferences); `copilot` carries `~/.copilot` without its logs. Both are in
+  `all` and the schedule. Claude Code's sign-in token (`.credentials.json`) and what it
+  rebuilds itself (`cache`, `paste-cache`, `shell-snapshots`, `sessions`, ...) are left out:
+  sign in again after a restore. A restore takes a safety copy of the `~/.claude.json` it
+  replaces, and undo puts it back (Zalo's `zalo-flags.conf` now gets the same).
+- Running Claude Code or Copilot sessions don't block a backup or restore (kast may well be
+  run from one), but quit Claude Code before restoring: it rewrites `~/.claude.json` as it runs.
+- Paths inside `~/.claude.json` and the per-project folder names are not rewritten when you
+  restore under a different home.
+
 ## 0.10.1
 
 - **Proton Drive uploads show real progress.** The gauge fills with the bytes sent out of the

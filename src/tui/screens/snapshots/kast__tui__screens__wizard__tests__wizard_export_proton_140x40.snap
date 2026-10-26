@@ -1,6 +1,5 @@
 ---
 source: src/tui/screens/wizard.rs
-assertion_line: 901
 expression: out
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -9,7 +8,7 @@ expression: out
 │  ( ) BeeperTexts (~/.config/BeeperTexts)  ✓                               ││                                                             │
 │  ( ) ZaloData (~/.config/ZaloData)  ✓                                     ││Includes: beeper, zalo, vesktop, zen, helium, obsidian,      │
 │  ( ) Vesktop (~/.config/vesktop)  ✓                                       ││fcitx5, antigravity, fdm, fish, fastfetch, scripts, zotero,  │
-│  ( ) Zen Browser (~/.config/zen)  ✓                                       ││howdy, kde, hypr                                             │
+│  ( ) Zen Browser (~/.config/zen)  ✓                                       ││claude, copilot, howdy, kde, hypr                            │
 │  ( ) Helium (~/.config/net.imput.helium)  ✓                               ││                                                             │
 │  ( ) Obsidian (~/.config/obsidian)  ✓                                     ││Uploads:                                                     │
 │  ( ) Fcitx5 (~/.config/fcitx5)  ✓                                         ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
@@ -19,6 +18,8 @@ expression: out
 │  ( ) fastfetch (~/.config/fastfetch)  ✓                                   ││                                                             │
 │  ( ) Scripts (~/.scripts)  ✓                                              ││Built in a private folder (0700) and removed after the upload│
 │  ( ) Zotero (~/Zotero + ~/.zotero)  ✓                                     ││unless you keep a copy.                                      │
+│  ( ) Claude Code (~/.claude + ~/.claude.json)  ✓                          ││                                                             │
+│  ( ) GitHub Copilot CLI (~/.copilot)  ✓                                   ││                                                             │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓                              ││                                                             │
 │  ( ) KDE Plasma settings (curated)  ✓                                     ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  ✓                                ││                                                             │
@@ -30,8 +31,6 @@ expression: out
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  [x] Skip the upload if nothing changed since the last one                ││                                                             │
 │  ▶ Use this backup                                                        ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

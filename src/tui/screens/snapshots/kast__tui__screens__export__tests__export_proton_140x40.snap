@@ -1,6 +1,5 @@
 ---
 source: src/tui/screens/export.rs
-assertion_line: 819
 expression: "render(&proton(140, 40))"
 ---
  kast │ p3ter (UID 1000, GID 1000) │ /home/p3ter │ archbox │ root
@@ -19,6 +18,8 @@ expression: "render(&proton(140, 40))"
 │  ( ) fastfetch (~/.config/fastfetch)  not found                           ││Built in a private folder (0700) and removed after the upload│
 │  ( ) Scripts (~/.scripts)  not found                                      ││unless you keep a copy.                                      │
 │  ( ) Zotero (~/Zotero + ~/.zotero)  not found                             ││                                                             │
+│  ( ) Claude Code (~/.claude + ~/.claude.json)  not found                  ││                                                             │
+│  ( ) GitHub Copilot CLI (~/.copilot)  not found                           ││                                                             │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                         ││                                                             │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
@@ -29,8 +30,6 @@ expression: "render(&proton(140, 40))"
 │  [x] Close running apps first (reopened in the background)                ││                                                             │
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
-│                                                                           ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

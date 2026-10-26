@@ -102,6 +102,15 @@ pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
                 source(&mut fields, "Source lib:  ", "config_path");
                 source(&mut fields, "Source prof: ", "share_path");
             }
+            "CLAUDE" => {
+                fields.push(("Folder:      ".into(), "~/.claude".into()));
+                fields.push(("Settings:    ".into(), "~/.claude.json".into()));
+                source(&mut fields, "Source:      ", "config_path");
+            }
+            "COPILOT" => {
+                fields.push(("Folder:      ".into(), "~/.copilot".into()));
+                source(&mut fields, "Source:      ", "config_path");
+            }
             "HELIUM" => {
                 fields.push(("Folder:      ".into(), "~/.config/net.imput.helium".into()));
                 source(&mut fields, "Source:      ", "config_path");

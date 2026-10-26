@@ -126,6 +126,8 @@ pub fn collect_status() -> StatusReport {
         app_status(11, "fastfetch (~/.config/fastfetch)", "fastfetch"),
         app_status(12, "Scripts (~/.scripts)", "scripts"),
         app_status(13, "Zotero (~/Zotero + ~/.zotero)", "zotero"),
+        app_status(14, "Claude Code (~/.claude + ~/.claude.json)", "claude"),
+        app_status(15, "GitHub Copilot CLI (~/.copilot)", "copilot"),
     ];
 
     let package = ["howdy-next", "howdy-next-bin", "howdy"]

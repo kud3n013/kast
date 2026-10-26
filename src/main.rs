@@ -290,7 +290,7 @@ enum VaultCmd {
     },
 }
 
-const TARGETS: [&str; 32] = [
+const TARGETS: [&str; 34] = [
     "all",
     "beeper",
     "beepertexts",
@@ -310,6 +310,8 @@ const TARGETS: [&str; 32] = [
     "fastfetch",
     "scripts",
     "zotero",
+    "claude",
+    "copilot",
     "howdy",
     "kde",
     "plasma",
@@ -560,7 +562,7 @@ fn run_backup(a: BackupArgs) -> Result<()> {
 struct ImportArgs {
     /// Backup archive (.zip) or standalone face model (.dat)
     file: Option<PathBuf>,
-    /// Only restore one app (beeper, zalo, vesktop, zen, helium, obsidian, fcitx5, antigravity, fdm, fish, fastfetch, scripts, zotero, howdy, kde, hypr, kwallet, gnome-keyring, or keyrings for both)
+    /// Only restore one app (beeper, zalo, vesktop, zen, helium, obsidian, fcitx5, antigravity, fdm, fish, fastfetch, scripts, zotero, claude, copilot, howdy, kde, hypr, kwallet, gnome-keyring, or keyrings for both)
     #[arg(long)]
     app: Option<String>,
     /// Skip the safety snapshot of existing files
