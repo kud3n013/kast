@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **New backup target: `ollama`.** It carries Ollama's model store (`blobs/`, `manifests/` and
+  Ollama 0.40's `manifests-v2/`) from `OLLAMA_MODELS`, `~/.ollama/models` or the store of
+  `ollama.service` (`/var/lib/ollama` on Arch). Not in `all`: models are gigabytes that can be
+  downloaded again. The weights are stored in the zip without compression.
+- `--no-media` leaves the weights out; the restore downloads those models again with
+  `ollama pull`. A restore into the system store goes through sudo and gives the files to the
+  `ollama` user; undo puts the manifests back. The server's key, its caches (`metadata/`,
+  `.ollama/cache`) and unfinished downloads are never backed up.
+
 ## 0.10.3
 
 - **`obsidian` now carries the vault too.** Besides `~/.config/obsidian`, the backup takes

@@ -18,7 +18,7 @@ use crate::tui::job::JobKind;
 use crate::tui::widgets::{Input, block, popup};
 use crate::vault::backup::BackupOpts;
 
-pub const TARGETS: [(&str, &str); 21] = [
+pub const TARGETS: [(&str, &str); 22] = [
     ("all", "All detected apps & Howdy face model"),
     ("beeper", "BeeperTexts (~/.config/BeeperTexts)"),
     ("zalo", "ZaloData (~/.config/ZaloData)"),
@@ -35,6 +35,7 @@ pub const TARGETS: [(&str, &str); 21] = [
     ("zotero", "Zotero (~/Zotero + ~/.zotero)"),
     ("claude", "Claude Code (~/.claude + ~/.claude.json)"),
     ("copilot", "GitHub Copilot CLI (~/.copilot)"),
+    ("ollama", "Ollama models (~/.ollama/models or /var/lib/ollama)"),
     ("howdy", "Howdy face model (/etc/howdy/models)"),
     ("kde", "KDE Plasma settings (curated)"),
     ("hypr", "Hyprland settings (~/.config/hypr)"),
@@ -714,7 +715,7 @@ pub fn view(f: &mut Frame, body: Rect, app: &App, st: &ExportState) {
                 }
                 if t.key == "all" {
                     let found: Vec<&str> =
-                        st.targets.iter().skip(1).filter(|t| t.detected && (st.keyrings || !crate::vault::keyring::is_keyring(t.key))).map(|t| t.key).collect();
+                        st.targets.iter().skip(1).filter(|t| t.detected && crate::vault::in_all(t.key, st.keyrings)).map(|t| t.key).collect();
                     lines.push(Line::raw(format!("Includes: {}", found.join(", "))));
                 }
             }
@@ -790,7 +791,7 @@ mod tests {
         s.stage = Stage::What;
         let mut targets: Vec<TargetInfo> =
             TARGETS.iter().map(|(k, _)| TargetInfo { key: k, detected: false, size: String::new(), location: String::new() }).collect();
-        for (i, size) in [(0, ""), (1, "2.1G"), (4, "512M"), (16, "8.0K"), (17, "96M")] {
+        for (i, size) in [(0, ""), (1, "2.1G"), (4, "512M"), (17, "8.0K"), (18, "96M")] {
             targets[i].detected = true;
             targets[i].size = size.into();
             targets[i].location = format!("/home/p3ter/.config/{}", targets[i].key);
@@ -884,7 +885,7 @@ mod tests {
         let mut a = loaded(80, 24);
         assert_eq!(st(&a).dest.value, "all_backup_2026-10-17_101500.zip");
         // howdy: .dat by default, no media option
-        for _ in 0..16 {
+        for _ in 0..17 {
             update(&mut a, key(KeyCode::Down));
         }
         update(&mut a, key(KeyCode::Char(' ')));

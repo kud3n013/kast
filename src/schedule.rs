@@ -25,7 +25,7 @@ use crate::settings;
 pub const SERVICE: &str = "kast-backup.service";
 pub const TIMER: &str = "kast-backup.timer";
 /// The targets a schedule may cover (the face model needs sudo: never)
-pub const TARGETS: [&str; 18] = [
+pub const TARGETS: [&str; 19] = [
     "all",
     "beeper",
     "zalo",
@@ -42,6 +42,7 @@ pub const TARGETS: [&str; 18] = [
     "zotero",
     "claude",
     "copilot",
+    "ollama",
     "kde",
     "hypr",
 ];

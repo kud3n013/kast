@@ -20,9 +20,9 @@ expression: render(&a)
 │  ( ) Zotero (~/Zotero + ~/.zotero)  not found                                │
 │  ( ) Claude Code (~/.claude + ~/.claude.json)  not found                     │
 │  ( ) GitHub Copilot CLI (~/.copilot)  not found                              │
+│  ( ) Ollama models (~/.ollama/models or /var/lib/ollama)  not found          │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                            │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                    │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                           │
-│  ( ) KDE Wallet (~/.local/share/kwalletd)  not found                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ↑/↓ move  Space select/toggle  s start  Esc back  ? help

@@ -1,5 +1,5 @@
 //! App Vault: backup, export, import & status of app data, KDE Plasma, Hyprland, Howdy face
-//! models and the desktop keyrings (KDE Wallet, GNOME Keyring).
+//! models, Ollama's models and the desktop keyrings (KDE Wallet, GNOME Keyring).
 
 pub mod archive;
 pub mod backup;
@@ -7,6 +7,7 @@ pub mod fix;
 pub mod import;
 pub mod info;
 pub mod keyring;
+pub mod ollama;
 pub mod rehome;
 pub mod status;
 
@@ -53,8 +54,9 @@ pub fn require_vault_tools() -> Result<()> {
     Ok(())
 }
 
-/// Every target. The keyrings are in `all` only when asked for (see [`all_apps`]).
-pub const ALL_APPS: [&str; 20] = [
+/// Every target. The keyrings are in `all` only when asked for (see [`all_apps`]), Ollama's
+/// models (gigabytes that can be downloaded again) never: back them up as `ollama`.
+pub const ALL_APPS: [&str; 21] = [
     "beeper",
     "zalo",
     "vesktop",
@@ -70,6 +72,7 @@ pub const ALL_APPS: [&str; 20] = [
     "zotero",
     "claude",
     "copilot",
+    "ollama",
     "howdy",
     "kde",
     "hypr",
@@ -80,7 +83,12 @@ pub const ALL_APPS: [&str; 20] = [
 /// What `all` covers: every target, the keyrings only with `with_keyrings` (they're the most
 /// sensitive thing kast carries, and `all` also feeds the unattended schedule).
 pub fn all_apps(with_keyrings: bool) -> Vec<String> {
-    ALL_APPS.iter().filter(|a| with_keyrings || !keyring::is_keyring(a)).map(|a| a.to_string()).collect()
+    ALL_APPS.iter().filter(|a| in_all(a, with_keyrings)).map(|a| a.to_string()).collect()
+}
+
+/// Whether `all` backs up `app`.
+pub fn in_all(app: &str, with_keyrings: bool) -> bool {
+    app != "ollama" && (with_keyrings || !keyring::is_keyring(app))
 }
 
 /// A target as the apps it means: `all`, the `keyrings` group, or itself.
@@ -134,6 +142,7 @@ pub fn find_config(app: &str) -> Option<PathBuf> {
         "zotero" => first_dir(&c.target_home, &["Zotero"]),
         "claude" => first_dir(&c.target_home, &[".claude"]),
         "copilot" => first_dir(&c.target_home, &[".copilot"]),
+        "ollama" => ollama::find_store(),
         "zen" => first_dir(cfg, &["zen"]).or_else(|| first_dir(&c.target_home, &[".zen"])),
         "antigravity" => first_dir(cfg, &["Antigravity", "antigravity"]),
         _ => None,
@@ -206,6 +215,11 @@ pub fn howdy_model_path(user: &str) -> PathBuf {
 /// afterwards, so no prompt shows up part-way through a backup or restore. False when sudo
 /// would need a password and there's no terminal to type it in (the answer is remembered).
 pub fn sudo_ready() -> bool {
+    sudo_ready_for("The Howdy face model in /etc/howdy/models needs root access.")
+}
+
+/// [`sudo_ready`], saying `why` before sudo asks for the password.
+pub fn sudo_ready_for(why: &str) -> bool {
     static READY: OnceLock<bool> = OnceLock::new();
     if ctx().is_root {
         return true;
@@ -218,7 +232,7 @@ pub fn sudo_ready() -> bool {
             if !std::io::stdin().is_terminal() || report::owns_terminal() {
                 return false;
             }
-            log_info("The Howdy face model in /etc/howdy/models needs root access.");
+            log_info(why);
             if !std::process::Command::new("sudo").arg("-v").status().is_ok_and(|s| s.success()) {
                 return false;
             }
@@ -458,7 +472,7 @@ pub fn rsync(opts: &[&str], src: &Path, dest: &str) -> Result<()> {
 /// Like [`rsync`], run as the target user when `as_user` and kast is root (through sudo -u),
 /// so everything it creates belongs to that user from the start.
 pub fn rsync_as(as_user: bool, opts: &[&str], src: &Path, dest: &str) -> Result<()> {
-    let mut cmd = if as_user && ctx().is_root {
+    let cmd = if as_user && ctx().is_root {
         let src = src.to_string_lossy();
         let mut args = vec!["rsync"];
         args.extend_from_slice(opts);
@@ -469,6 +483,23 @@ pub fn rsync_as(as_user: bool, opts: &[&str], src: &Path, dest: &str) -> Result<
         c.args(opts).arg(src).arg(dest);
         c
     };
+    run_rsync(cmd, src, dest)
+}
+
+/// Like [`rsync`], as root (through `sudo -n` when kast isn't: ask with [`sudo_ready`] first).
+pub fn rsync_root(opts: &[&str], src: &Path, dest: &str) -> Result<()> {
+    let mut cmd = if ctx().is_root {
+        std::process::Command::new("rsync")
+    } else {
+        let mut c = std::process::Command::new("sudo");
+        c.args(["-n", "rsync"]);
+        c
+    };
+    cmd.args(opts).arg(src).arg(dest);
+    run_rsync(cmd, src, dest)
+}
+
+fn run_rsync(mut cmd: std::process::Command, src: &Path, dest: &str) -> Result<()> {
     if report::owns_terminal() {
         cmd.stdin(std::process::Stdio::null()).stdout(ctx::log_stdio()).stderr(ctx::log_stdio());
     }

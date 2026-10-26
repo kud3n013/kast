@@ -26,6 +26,11 @@ fn system_time(t: zip::DateTime) -> Option<FileTime> {
     Some(FileTime::from_unix_time(local.timestamp(), 0))
 }
 
+/// Ollama's blobs are mostly quantized weights, gigabytes deflate can't shrink: stored as they are.
+fn compression(name: &str) -> CompressionMethod {
+    if name.starts_with("ollama/blobs/") { CompressionMethod::Stored } else { CompressionMethod::Deflated }
+}
+
 /// Zip the contents of `src_dir` (entry names relative to it). The archive holds app
 /// logins and cookies, so it is created 0600.
 pub fn create_zip_archive(src_dir: &Path, zip_file: &Path) -> Result<()> {
@@ -42,7 +47,7 @@ pub fn create_zip_archive(src_dir: &Path, zip_file: &Path) -> Result<()> {
         let name = path.strip_prefix(src_dir)?.to_string_lossy().into_owned();
         let meta = path.symlink_metadata()?;
         let opts = SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Deflated)
+            .compression_method(compression(&name))
             .unix_permissions(meta.mode() & 0o7777)
             .last_modified_time(zip_time(meta.modified().unwrap_or(SystemTime::UNIX_EPOCH)));
         let ft = meta.file_type();

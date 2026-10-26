@@ -75,6 +75,7 @@ pub fn restore_destinations(app: &str) -> Vec<String> {
             keyring::kwalletrc_path().display().to_string(),
         ],
         "gnome-keyring" => vec![format!("GNOME keyrings in {} (the ones in the archive; others are kept)", keyring::gnome_dir().display())],
+        "ollama" => vec![format!("Ollama models in {} (the ones in the archive; others are kept)", ollama::restore_store().display())],
         other => match restore_spec(other) {
             Some(spec) => {
                 let mut v = vec![restore_base(other).join(spec.folder).display().to_string()];
@@ -100,6 +101,7 @@ pub fn snapshot_paths(apps: &[String]) -> Vec<PathBuf> {
             "kde" => out.extend(crate::vault::kde_existing_paths()),
             "kwallet" => out.extend([keyring::kwallet_dir(), keyring::kwalletrc_path()]),
             "gnome-keyring" => out.push(keyring::gnome_dir()),
+            "ollama" => out.extend(ollama::snapshot_paths()),
             other => {
                 if let Some(spec) = restore_spec(other) {
                     out.push(restore_base(other).join(spec.folder));
@@ -436,6 +438,9 @@ fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
     if !o.dry_run && apps.iter().any(|a| a == "howdy") {
         sudo_ready();
     }
+    if !o.dry_run && apps.iter().any(|a| a == "ollama") {
+        ollama::ask_for_root();
+    }
 
     let staging = get_safe_staging_dir("app-vault-sync-restore")?;
     ctx::set_staging(staging.clone());
@@ -445,7 +450,7 @@ fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
 
     if apps.is_empty() {
         let has = |names: &[&str]| names.iter().any(|n| staging.join(n).is_dir());
-        let detect: [(&str, &[&str]); 20] = [
+        let detect: [(&str, &[&str]); 21] = [
             ("beeper", &["BeeperTexts", "beeper"]),
             ("zalo", &["ZaloData", "zalo"]),
             ("vesktop", &["vesktop"]),
@@ -461,6 +466,7 @@ fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
             ("zotero", &["Zotero", "zotero-share"]),
             ("claude", &["claude"]),
             ("copilot", &["copilot"]),
+            ("ollama", &["ollama"]),
             ("howdy", &["howdy"]),
             ("kde", &["kde"]),
             ("hypr", &["hypr"]),
@@ -499,6 +505,7 @@ fn import_with(o: ImportOpts, session: &dyn Session) -> Result<()> {
         match app.as_str() {
             "howdy" => restore_howdy(&staging, &rollback, &manifest, &o)?,
             "kde" => restore_kde(&staging, &rollback, &o, session)?,
+            "ollama" => ollama::restore(&staging, &rollback, &o)?,
             k if keyring::is_keyring(k) => {
                 let r = keyring::RestoreCtx {
                     staging: &staging,
@@ -697,7 +704,7 @@ fn rsync_entries(opts: &[String], src: &Path, dest: &Path) -> Result<()> {
 }
 
 /// A command for the desktop session: through run_as_user when root.
-fn user_cmd(args: &[&str]) -> Command {
+pub(super) fn user_cmd(args: &[&str]) -> Command {
     if ctx().is_root {
         run_as_user(args)
     } else {
@@ -890,6 +897,11 @@ fn undo_with(snapshot: &Path, apps: &[String], fingerprint: Option<&str>, sessio
             }
             k if keyring::is_keyring(k) => {
                 if !keyring::undo(k, snapshot, session)? {
+                    continue;
+                }
+            }
+            "ollama" => {
+                if !ollama::undo(snapshot, intact)? {
                     continue;
                 }
             }
@@ -1318,6 +1330,82 @@ mod tests {
         for gone in [dir.join("cache"), dir.join("shell-snapshots"), dir.join(".credentials.json")] {
             assert!(!gone.exists(), "{} should not be backed up", gone.display());
         }
+    }
+
+    #[test]
+    fn ollama_models_come_back_with_their_manifests_and_without_partial_downloads() {
+        use std::os::unix::fs::symlink;
+        if !have("rsync") {
+            eprintln!("skipped: needs rsync");
+            return;
+        }
+        let _g = crate::perms::HOME_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _staging = ctx::staging_test_lock();
+        let c = crate::ctx::init_for_tests();
+        let store = c.target_home.join(".ollama/models");
+        let (blobs, v1, v2) =
+            (store.join("blobs"), store.join("manifests/registry.ollama.ai/library/tiny"), store.join("manifests-v2/ollama.com/library/tiny"));
+        for d in [&blobs, &v1, &v2] {
+            fs::create_dir_all(d).unwrap();
+        }
+        let manifest = r#"{"schemaVersion":2,"config":{"digest":"sha256:c"},"layers":[{"digest":"sha256:w"}]}"#;
+        fs::write(v1.join("1b"), manifest).unwrap();
+        fs::write(blobs.join("sha256-m"), manifest).unwrap();
+        symlink("../../../../blobs/sha256-m", v2.join("1b")).unwrap();
+        fs::write(blobs.join("sha256-c"), "{}").unwrap();
+        fs::write(blobs.join("sha256-w"), vec![7u8; 2 << 20]).unwrap();
+        fs::write(blobs.join("sha256-z-partial"), "half").unwrap();
+        fs::create_dir_all(store.join("metadata")).unwrap();
+        fs::write(store.join("metadata/sha256-w.json"), "cache").unwrap();
+
+        let t = tempfile::tempdir().unwrap();
+        let backup = |name: &str, include_media: bool| {
+            let zip = t.path().join(name);
+            let o = super::super::backup::BackupOpts { target: "ollama".into(), output: Some(zip.clone()), include_media, force: true, ..Default::default() };
+            super::super::backup::cmd_backup(o).unwrap();
+            zip
+        };
+        let restore = |zip: &Path| {
+            let o = ImportOpts {
+                file: zip.to_path_buf(),
+                app: None,
+                safety_backup: false,
+                kill: false,
+                force: true,
+                confirmed: true,
+                dry_run: false,
+                no_relaunch: true,
+            };
+            cmd_import(o).unwrap();
+        };
+        let full = backup("ollama.zip", true);
+        let lean = backup("ollama-lean.zip", false);
+        assert!(!super::super::expand_target("all", false).contains(&"ollama".to_string()), "gigabytes of models stay out of all");
+        let mut z = zip::ZipArchive::new(fs::File::open(&full).unwrap()).unwrap();
+        assert_eq!(z.by_name("ollama/blobs/sha256-w").unwrap().compression(), zip::CompressionMethod::Stored);
+        assert!(z.by_name("ollama/blobs/sha256-z-partial").is_err());
+        assert!(z.by_name("ollama/metadata/sha256-w.json").is_err(), "only blobs and manifests");
+        let mut z = zip::ZipArchive::new(fs::File::open(&lean).unwrap()).unwrap();
+        assert!(z.by_name("ollama/blobs/sha256-w").is_err(), "no weights without media");
+        assert!(z.by_name("ollama/blobs/sha256-c").is_ok());
+
+        // An empty store stays the one restored to (not the system's /var/lib/ollama)
+        fs::remove_dir_all(&store).unwrap();
+        fs::create_dir_all(store.join("manifests")).unwrap();
+        restore(&full);
+        assert_eq!(fs::read_to_string(v1.join("1b")).unwrap(), manifest);
+        assert_eq!(fs::read_link(v2.join("1b")).unwrap(), Path::new("../../../../blobs/sha256-m"));
+        assert_eq!(fs::read_to_string(v2.join("1b")).unwrap(), manifest);
+        assert_eq!(fs::metadata(blobs.join("sha256-w")).unwrap().len(), 2 << 20);
+        assert!(!blobs.join("sha256-z-partial").exists());
+        assert_eq!(ollama::models(&store).into_keys().collect::<Vec<_>>(), ["tiny:1b"]);
+
+        // Without media, the weights already in the store make the model whole again
+        fs::remove_dir_all(store.join("manifests")).unwrap();
+        fs::remove_dir_all(store.join("manifests-v2")).unwrap();
+        fs::create_dir_all(store.join("manifests")).unwrap();
+        restore(&lean);
+        assert_eq!(fs::read_to_string(v1.join("1b")).unwrap(), manifest);
     }
 
     /// Records what a KDE restore does to the session, with the shortcut file as the daemon

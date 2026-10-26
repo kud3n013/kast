@@ -20,6 +20,7 @@ expression: "render(&opened(140, 40, info(true)))"
 │  [ ] Zotero (~/Zotero + ~/.zotero)                                 ││The Howdy face model isn't included: it needs sudo.                 │
 │  [ ] Claude Code (~/.claude + ~/.claude.json)                      ││Nothing is uploaded when nothing changed. A failure shows a         │
 │  [ ] GitHub Copilot CLI (~/.copilot)                               ││notification.                                                       │
+│  [ ] Ollama models (~/.ollama/models or /var/lib/ollama)           ││                                                                    │
 │  [ ] KDE Plasma settings (curated)                                 ││                                                                    │
 │  [ ] Hyprland settings (~/.config/hypr)                            ││                                                                    │
 │  How often:  daily  (Space switches)                               ││                                                                    │
@@ -28,7 +29,6 @@ expression: "render(&opened(140, 40, info(true)))"
 │  ▶ Save and keep it on                                             ││                                                                    │
 │  ■ Turn it off                                                     ││                                                                    │
 │  ▷ Run a backup now                                                ││                                                                    │
-│                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
 │                                                                    ││                                                                    │
