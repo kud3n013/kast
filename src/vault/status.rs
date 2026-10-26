@@ -4,7 +4,7 @@ use crate::ctx::{ctx, have, ok, output, which};
 use crate::ir::{self, IrState};
 use crate::ui::{C_BOLD, C_CYAN, C_GRAY, C_GREEN, C_RESET, C_YELLOW};
 
-use super::{find_config, find_zalo_flags, format_bytes, howdy_model_path, kde_format_total_size, kde_has_settings, pid_list, process_running, running_pids};
+use super::{find_config, find_zalo_flags, format_bytes, howdy_model_path, kde_format_total_size, kde_has_settings, pid_list, process_running, running_pids, share_dir};
 
 fn installed(label: &str) -> String {
     format!("  Status:      {C_GREEN}{label}{C_RESET}")
@@ -96,6 +96,11 @@ fn app_status(n: u32, title: &'static str, app: &'static str) -> AppStatus {
         if matches!(app, "beeper" | "zalo") {
             media(&cfg, &mut extras);
         }
+        if app == "obsidian"
+            && let Some(vault) = share_dir(app)
+        {
+            extras.push(("Vault:       ".into(), format!("{} ({})", vault.display(), format_bytes(&vault))));
+        }
         (cfg.display().to_string(), format_bytes(&cfg))
     });
     AppStatus { n, title, app, config, extras, pids: running_pids(app) }
@@ -118,7 +123,7 @@ pub fn collect_status() -> StatusReport {
         app_status(3, "Vesktop (~/.config/vesktop)", "vesktop"),
         app_status(4, "Zen Browser (~/.config/zen)", "zen"),
         app_status(5, "Helium (~/.config/net.imput.helium)", "helium"),
-        app_status(6, "Obsidian (~/.config/obsidian)", "obsidian"),
+        app_status(6, "Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)", "obsidian"),
         app_status(7, "Fcitx5 (~/.config/fcitx5)", "fcitx5"),
         app_status(8, "Antigravity (~/.config/Antigravity)", "antigravity"),
         app_status(9, "Free Download Manager (~/.config/Softdeluxe)", "fdm"),

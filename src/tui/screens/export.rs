@@ -25,7 +25,7 @@ pub const TARGETS: [(&str, &str); 21] = [
     ("vesktop", "Vesktop (~/.config/vesktop)"),
     ("zen", "Zen Browser (~/.config/zen)"),
     ("helium", "Helium (~/.config/net.imput.helium)"),
-    ("obsidian", "Obsidian (~/.config/obsidian)"),
+    ("obsidian", "Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)"),
     ("fcitx5", "Fcitx5 (~/.config/fcitx5)"),
     ("antigravity", "Antigravity (~/.config/Antigravity)"),
     ("fdm", "Free Download Manager (~/.config/Softdeluxe)"),

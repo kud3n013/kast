@@ -10,7 +10,7 @@ expression: out
 │  ( ) Vesktop (~/.config/vesktop)  ✓                                       ││fcitx5, antigravity, fdm, fish, fastfetch, scripts, zotero,  │
 │  ( ) Zen Browser (~/.config/zen)  ✓                                       ││claude, copilot, howdy, kde, hypr                            │
 │  ( ) Helium (~/.config/net.imput.helium)  ✓                               ││                                                             │
-│  ( ) Obsidian (~/.config/obsidian)  ✓                                     ││Uploads:                                                     │
+│  ( ) Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)  ✓        ││Uploads:                                                     │
 │  ( ) Fcitx5 (~/.config/fcitx5)  ✓                                         ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
 │  ( ) Antigravity (~/.config/Antigravity)  ✓                               ││ip                                                           │
 │  ( ) Free Download Manager (~/.config/Softdeluxe)  ✓                      ││With a sidecar listing its contents. Keeps the newest 5 of   │

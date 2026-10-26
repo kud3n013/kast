@@ -10,7 +10,7 @@ expression: "render(&proton(140, 40))"
 │  ( ) Vesktop (~/.config/vesktop)  not found                               ││Includes: beeper, zen, howdy, kde                            │
 │  ( ) Zen Browser (~/.config/zen)  ✓ 512M                                  ││                                                             │
 │  ( ) Helium (~/.config/net.imput.helium)  not found                       ││Uploads:                                                     │
-│  ( ) Obsidian (~/.config/obsidian)  not found                             ││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
+│  ( ) Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)  not found││/my-files/kast-backups/archbox/all_backup_2026-10-17_101500.z│
 │  ( ) Fcitx5 (~/.config/fcitx5)  not found                                 ││ip                                                           │
 │  ( ) Antigravity (~/.config/Antigravity)  not found                       ││With a sidecar listing its contents. Keeps the newest 5 of   │
 │  ( ) Free Download Manager (~/.config/Softdeluxe)  not found              ││this kind; older ones go to Proton Drive's trash.            │

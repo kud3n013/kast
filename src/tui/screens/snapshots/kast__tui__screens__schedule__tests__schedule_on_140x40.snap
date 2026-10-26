@@ -10,7 +10,7 @@ expression: "render(&opened(140, 40, info(true)))"
 │  [ ] Vesktop (~/.config/vesktop)                                   ││Last run   2026-10-17 00:12 · uploaded                              │
 │  [ ] Zen Browser (~/.config/zen)                                   ││           apps_backup_2026-10-17_001203.zip                        │
 │  [ ] Helium (~/.config/net.imput.helium)                           ││Left out   zen, beeper (were running)                               │
-│  [ ] Obsidian (~/.config/obsidian)                                 ││                                                                    │
+│  [ ] Obsidian (~/.config/obsidian + ~/Documents/Obsidian Vault)    ││                                                                    │
 │  [ ] Fcitx5 (~/.config/fcitx5)                                     ││Uploads to /my-files/kast-backups/archbox on Proton Drive (signed   │
 │  [ ] Antigravity (~/.config/Antigravity)                           ││in).                                                                │
 │  [ ] Free Download Manager (~/.config/Softdeluxe)                  ││Runs as you, while you're logged in (your keyring is unlocked then).│
