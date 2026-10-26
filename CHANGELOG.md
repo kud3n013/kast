@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.3
 
 - **`obsidian` now carries the vault too.** Besides `~/.config/obsidian`, the backup takes
   `~/Documents/Obsidian Vault` (notes, attachments and the vault's own `.obsidian` settings,
