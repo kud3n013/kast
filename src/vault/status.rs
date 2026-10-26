@@ -133,6 +133,7 @@ pub fn collect_status() -> StatusReport {
         app_status(13, "Zotero (~/Zotero + ~/.zotero)", "zotero"),
         app_status(14, "Claude Code (~/.claude + ~/.claude.json)", "claude"),
         app_status(15, "GitHub Copilot CLI (~/.copilot)", "copilot"),
+        app_status(16, "Ollama models (~/.ollama/models or /var/lib/ollama)", "ollama"),
     ];
 
     let package = ["howdy-next", "howdy-next-bin", "howdy"]

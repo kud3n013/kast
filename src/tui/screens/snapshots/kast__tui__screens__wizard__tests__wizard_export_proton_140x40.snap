@@ -20,6 +20,7 @@ expression: out
 │  ( ) Zotero (~/Zotero + ~/.zotero)  ✓                                     ││unless you keep a copy.                                      │
 │  ( ) Claude Code (~/.claude + ~/.claude.json)  ✓                          ││                                                             │
 │  ( ) GitHub Copilot CLI (~/.copilot)  ✓                                   ││                                                             │
+│  ( ) Ollama models (~/.ollama/models or /var/lib/ollama)  ✓               ││                                                             │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓                              ││                                                             │
 │  ( ) KDE Plasma settings (curated)  ✓                                     ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  ✓                                ││                                                             │
@@ -31,7 +32,6 @@ expression: out
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  [x] Skip the upload if nothing changed since the last one                ││                                                             │
 │  ▶ Use this backup                                                        ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

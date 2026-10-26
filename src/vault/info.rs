@@ -115,6 +115,18 @@ pub fn info_from_manifest(file: String, size: String, m: &Value) -> InfoReport {
                 fields.push(("Settings:    ".into(), "~/.claude.json".into()));
                 source(&mut fields, "Source:      ", "config_path");
             }
+            "OLLAMA" => {
+                fields.push(("Store:       ".into(), "the Ollama model store (~/.ollama/models or /var/lib/ollama)".into()));
+                let models = m
+                    .pointer(&format!("/apps/{key}/models"))
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "));
+                fields.push(("Models:      ".into(), models.filter(|s| !s.is_empty()).unwrap_or_else(|| "none".into())));
+                if field("include_media", "") != "true" {
+                    fields.push(("Weights:     ".into(), "left out (downloaded again on restore)".into()));
+                }
+                source(&mut fields, "Source:      ", "config_path");
+            }
             "COPILOT" => {
                 fields.push(("Folder:      ".into(), "~/.copilot".into()));
                 source(&mut fields, "Source:      ", "config_path");

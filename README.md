@@ -71,6 +71,7 @@ kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
 kast backup all --upload proton   # back up to Proton Drive (see "Proton Drive" below)
 kast backup keyrings  # KDE Wallet + GNOME Keyring (opt-in; see "Keyrings" below)
+kast backup ollama    # Ollama's models (not in all; see "Ollama models" below)
 kast drive login      # sign in to Proton Drive (link + QR code); drive status / logout
 kast schedule enable --targets all --every daily   # back up to Proton Drive on a timer
 kast info ~/all.zip
@@ -369,6 +370,30 @@ default keyring that isn't `login`, is never unlocked by PAM; the backup warns a
 new system only with the matching private key in `~/.gnupg`, which kast doesn't back up. The
 backup warns, the manifest records the key ID, and the restore checks `gpg --list-secret-keys`
 for it.
+
+## Ollama models
+
+`kast backup ollama` carries the models Ollama has downloaded: the store's `blobs/` (weights,
+templates, parameters) and the manifests that name the models (`manifests/`, and Ollama 0.40's
+`manifests-v2/`). It finds the store in kast's own `OLLAMA_MODELS`, then `~/.ollama/models` (an
+`ollama serve` you run yourself), then the store of the installed `ollama.service`
+(`/var/lib/ollama` with Arch's package, `/usr/share/ollama/.ollama/models` with Ollama's own
+installer). The server's key (`id_ed25519`), its caches and unfinished downloads stay out.
+
+Models are gigabytes that can be downloaded again, so they are **not in `all`** (nor in a
+schedule of `all`); name `ollama` to back them up or schedule them. The weights go into the zip
+uncompressed (they don't compress), so a backup takes about as long as copying them.
+
+- `--no-media` leaves the weights out and keeps the manifests and small blobs (a few KB). The
+  restore then runs `ollama pull` for each model whose weights are missing (with the server
+  running), and keeps a manifest only for models that are complete, so `ollama list` never
+  shows a model that can't run.
+- A restore adds the archived models to the store and leaves the others alone. The system store
+  belongs to the `ollama` user: kast writes it through sudo (the password is asked once, as for
+  the face model) and hands the files to that user; without a terminal to ask on, the models are
+  skipped with a warning. The safety snapshot holds the manifests; undo puts them back, and
+  Ollama removes the weights no model uses any more the next time it starts.
+- `kast info` lists the models in an archive and whether their weights are in it.
 
 ## KDE Plasma settings
 

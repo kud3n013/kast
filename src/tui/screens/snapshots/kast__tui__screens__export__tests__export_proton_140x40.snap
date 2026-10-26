@@ -20,6 +20,7 @@ expression: "render(&proton(140, 40))"
 │  ( ) Zotero (~/Zotero + ~/.zotero)  not found                             ││                                                             │
 │  ( ) Claude Code (~/.claude + ~/.claude.json)  not found                  ││                                                             │
 │  ( ) GitHub Copilot CLI (~/.copilot)  not found                           ││                                                             │
+│  ( ) Ollama models (~/.ollama/models or /var/lib/ollama)  not found       ││                                                             │
 │  ( ) Howdy face model (/etc/howdy/models)  ✓ 8.0K                         ││                                                             │
 │  ( ) KDE Plasma settings (curated)  ✓ 96M                                 ││                                                             │
 │  ( ) Hyprland settings (~/.config/hypr)  not found                        ││                                                             │
@@ -30,7 +31,6 @@ expression: "render(&proton(140, 40))"
 │  [x] Close running apps first (reopened in the background)                ││                                                             │
 │  [ ] Also keep a copy in /media/data/backups                              ││                                                             │
 │  ▶ Start backup                                                           ││                                                             │
-│                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │
 │                                                                           ││                                                             │

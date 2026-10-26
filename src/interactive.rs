@@ -248,6 +248,7 @@ pub fn export_data() -> Result<()> {
         ("zotero", "Zotero library & profile (~/Zotero + ~/.zotero)"),
         ("claude", "Claude Code (~/.claude + ~/.claude.json, without the sign-in token)"),
         ("copilot", "GitHub Copilot CLI (~/.copilot)"),
+        ("ollama", "Ollama models (~/.ollama/models or /var/lib/ollama; not in all)"),
         ("howdy", "Howdy Face Recognition Model (/etc/howdy/models)"),
         ("kde", "KDE Plasma settings (curated ~/.config + ~/.local/share)"),
         ("hypr", "Hyprland settings (~/.config/hypr)"),

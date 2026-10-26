@@ -341,6 +341,11 @@ pub fn cmd_backup(o: BackupOpts) -> Result<()> {
                     app_entries.insert("kde".into(), v);
                 }
             }
+            "ollama" => {
+                if let Some(v) = ollama::backup(&staging, &o)? {
+                    app_entries.insert("ollama".into(), v);
+                }
+            }
             k if keyring::is_keyring(k) => {
                 let policy =
                     keyring::Policy { dry_run: o.dry_run, upload: o.upload, allow_plaintext: o.allow_plaintext_keyring, quiet_missing: target == "all" };
