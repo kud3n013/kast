@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 - **New command: `kast charge`** for the battery of a Lenovo IdeaPad. `kast charge` shows the
   level, power, charge mode and overnight charging; `kast charge mode standard|fast|conservation`
