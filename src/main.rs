@@ -1,6 +1,7 @@
 //! kast (Kud3n's Arch Setup Tool) - Arch Linux / CachyOS fast setup TUI with an embedded App Vault
 //! (backup/restore of app data, KDE Plasma, Hyprland and Howdy face models).
 
+mod charge;
 mod ctx;
 mod drive;
 mod interactive;
@@ -133,6 +134,18 @@ enum Cmd {
     },
     /// Show detected applications & Howdy status, paths & sizes
     Status,
+    /// Battery charging on Lenovo IdeaPads: charge mode and overnight charging (status without root)
+    #[command(
+        visible_alias = "battery",
+        after_help = "The charge mode is ideapad_laptop's charge_types; overnight charging, which holds the battery at about\n\
+                      80% while plugged in at night, only the embedded controller knows: kast calls Lenovo's ACPI method\n\
+                      through acpi_call (install acpi_call-dkms), on the Lenovo 83D3 only unless --force.\n\
+                      Without a command: status. Examples:\n  kast charge\n  kast charge mode conservation   (or -c; -s standard, -f fast)\n  kast charge overnight off      (or o9 off)"
+    )]
+    Charge {
+        #[command(subcommand)]
+        cmd: Option<charge::ChargeCmd>,
+    },
     /// The IR emitter of a Windows Hello camera: probe it, switch it on for Howdy (no root needed)
     #[command(
         name = "ir-emitter",
@@ -621,6 +634,7 @@ fn needs_root(cmd: &Option<Cmd>) -> bool {
     match cmd {
         Some(Cmd::Packages(a)) => !a.list,
         Some(Cmd::Partition(a)) => a.needs_root(),
+        Some(Cmd::Charge { cmd }) => cmd.as_ref().is_some_and(charge::ChargeCmd::needs_root),
         // The journal is root's: undo and uninstall run through sudo, listing included; howdy add needs root
         _ => {
             matches!(cmd, None | Some(Cmd::Auto(_) | Cmd::Repo | Cmd::Services | Cmd::Undo(_) | Cmd::Uninstall { .. } | Cmd::AddFace { .. }))
@@ -753,6 +767,7 @@ fn dispatch(cmd: Option<Cmd>, top: ListSource) -> Result<()> {
         }),
         Some(Cmd::Uninstall { pkgs, dry_run }) => undo::cmd_uninstall(&pkgs, dry_run),
         Some(Cmd::Plasma { cmd }) => plasma::cli::run(cmd),
+        Some(Cmd::Charge { cmd }) => charge::run(cmd),
         Some(Cmd::FixPermissions { dry_run, yes }) => vault::fix::cmd_fix_permissions(dry_run, yes),
         Some(Cmd::IrEmitter { cmd }) => std::process::exit(run_ir(cmd).into()),
         Some(Cmd::AddFace { ir: with_ir, user, device }) => {
