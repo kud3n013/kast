@@ -67,6 +67,7 @@ kast undo --list      # what kast changed, run by run; kast undo <run> / --last 
 kast uninstall steam  # remove apps of the list (keeps what something else needs)
 kast status           # detected apps, Howdy and the IR emitter, KDE, Hyprland, keyrings
 kast ir-emitter probe # the IR camera's face-authentication control (read-only; see below)
+kast charge           # battery: charge mode, overnight charging (Lenovo; see "Battery charging" below)
 kast log              # where the log is; --tail 50, --open, --copy
 kast backup all --no-media -o ~/all.zip
 kast backup all --upload proton   # back up to Proton Drive (see "Proton Drive" below)
@@ -281,6 +282,37 @@ model next to the old ones; `howdy remove` / `howdy clear` drop old ones). Witho
 
 Undo (`sudo kast undo --last --step services`, or Undo changes in the menu) puts the PAM
 files, `device_path` and the config modes back as they were, like the rest of the Howdy setup.
+
+## Battery charging (Lenovo IdeaPad)
+
+`kast charge` reads and switches the two charging controls of a Lenovo IdeaPad:
+
+- **Charge mode:** standard, fast (rapid charge) or conservation (stops at about 80%), one at
+  a time. kast writes the kernel's `charge_types` (`ideapad_laptop`), so it works on any
+  laptop whose battery has it and needs nothing else.
+- **Overnight charging** holds the battery at about 80% while it is plugged in at night, on
+  top of whatever charge mode is set. The kernel driver doesn't know about it: a battery that
+  stops at 80% while every Linux setting says it shouldn't ("Not charging", 0 W) is usually
+  this. It lives in the embedded controller, and kast reaches it with Lenovo's ACPI method
+  `VPC0.BNMC` through `acpi_call` (`acpi_call-dkms` on CachyOS kernels, `acpi_call` for the
+  stock `linux` kernel). ACPI methods are model-specific, and these values were confirmed on
+  the Lenovo 83D3 (IdeaPad Pro 5 14AHP9 / XiaoXin Pro 14 AHP9) only: elsewhere kast refuses
+  unless you pass `--force`.
+
+```sh
+kast charge                      # status: level, power, mode; overnight charging with sudo (--json too)
+kast charge mode conservation    # or -c; standard / -s, fast / -f
+kast charge overnight off        # or kast charge o9 off
+```
+
+Switching runs through sudo. kast reads the state back after each write and reports what the
+hardware says, trying again when the embedded controller is busy (on this generation it is
+shared with the USB-C driver, so a write can time out). When a plugged-in battery below 95%
+isn't charging, the status says what is holding it back.
+
+Overnight charging is stored in the embedded controller, so it stays across reboots and
+operating systems: Lenovo Vantage or PC Manager on Windows can switch it on again. After a
+change the controller doesn't start charging again above 95%.
 
 ## Keyrings (KDE Wallet and GNOME Keyring)
 

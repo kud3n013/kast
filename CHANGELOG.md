@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **New command: `kast charge`** for the battery of a Lenovo IdeaPad. `kast charge` shows the
+  level, power, charge mode and overnight charging; `kast charge mode standard|fast|conservation`
+  (`-s`, `-f`, `-c`) switches the charge mode through the kernel's `charge_types`;
+  `kast charge overnight on|off` (`o9`) switches overnight charging, which holds the battery at
+  about 80% at night and which no Linux driver exposes. kast calls Lenovo's ACPI method for it
+  through `acpi_call`, only on the Lenovo 83D3 unless `--force`.
+- Every switch is read back and reported as the hardware has it, with retries when the
+  embedded controller is busy. The status says why a plugged-in battery below 95% isn't
+  charging. Reading overnight charging and switching anything needs root (sudo).
+
 ## 0.10.4
 
 - **New backup target: `ollama`.** It carries Ollama's model store (`blobs/`, `manifests/` and
