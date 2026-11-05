@@ -829,8 +829,24 @@ fn interactive_terminal() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
 }
 
+/// `KEY=value` for the variables in `CARRIED_ENV` that are set.
+fn carried_env() -> Vec<std::ffi::OsString> {
+    CARRIED_ENV
+        .iter()
+        .filter_map(|k| {
+            let v = std::env::var_os(k).filter(|v| !v.is_empty())?;
+            let mut kv = std::ffi::OsString::from(format!("{k}="));
+            kv.push(v);
+            Some(kv)
+        })
+        .collect()
+}
+
 fn main() -> ExitCode {
-    let mut cli = Cli::parse();
+    let mut cli = Cli::try_parse().unwrap_or_else(|e| {
+        charge::notify_usage_error(&e);
+        e.exit()
+    });
 
     // Before anything that needs a terminal, root, the log or the journal
     cli.cmd = match cli.cmd {
@@ -844,6 +860,12 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    if let Some(Cmd::Charge { cmd }) = &cli.cmd
+        && charge::wants_notification(cmd.as_ref())
+    {
+        return charge::run_and_notify(needs_root(&cli.cmd) && !nix::unistd::Uid::effective().is_root(), &carried_env());
+    }
+
     if needs_root(&cli.cmd) && !nix::unistd::Uid::effective().is_root() {
         println!("Privileges required. Re-executing with sudo...");
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from(std::env::args().next().unwrap_or_default()));
@@ -851,15 +873,7 @@ fn main() -> ExitCode {
         // sudo resets the environment; carry over what the app uses: NO_COLOR, the user's
         // pager/editor for `e`/`E`, the session/multiplexer for opening and copying the log, and
         // the proxy for downloading the package list
-        let carried: Vec<std::ffi::OsString> = CARRIED_ENV
-            .iter()
-            .filter_map(|k| {
-                let v = std::env::var_os(k).filter(|v| !v.is_empty())?;
-                let mut kv = std::ffi::OsString::from(format!("{k}="));
-                kv.push(v);
-                Some(kv)
-            })
-            .collect();
+        let carried = carried_env();
         if !carried.is_empty() {
             sudo.arg("env").args(carried);
         }

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **`kast charge` now answers without a terminal.** Started from KRunner or a launcher, it shows
+  its result as a desktop notification: the new state or the status, or what went wrong,
+  including sudo refusing (no password prompt without a terminal, so only face unlock works
+  there) and a mistyped command. Terminals, exit statuses and `--json` stay as they were.
+
 ## 0.11.0
 
 - **New command: `kast charge`** for the battery of a Lenovo IdeaPad. `kast charge` shows the

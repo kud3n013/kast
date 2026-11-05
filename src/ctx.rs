@@ -285,6 +285,29 @@ pub fn run_as_user(args: &[&str]) -> Command {
     cmd
 }
 
+/// A desktop notification through notify-send, when it's there. Root has no session bus of its
+/// own, so root sends it as the target user.
+pub fn notify(critical: bool, icon: &str, title: &str, body: &str) {
+    if !have("notify-send") {
+        return;
+    }
+    let urgency = if critical { "critical" } else { "normal" };
+    let args = ["notify-send", "-a", "kast", "-u", urgency, "-i", icon, title, &notification_markup(body)];
+    let mut cmd = if ctx().is_root {
+        run_as_user(&args)
+    } else {
+        let mut c = Command::new(args[0]);
+        c.args(&args[1..]);
+        c
+    };
+    let _ = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+}
+
+/// Notification bodies may be read as markup: clap's `<MODE>` would vanish.
+fn notification_markup(body: &str) -> String {
+    body.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
 pub fn chown_path(path: &Path, uid: u32, gid: u32) -> bool {
     nix::unistd::chown(path, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid))).is_ok()
 }
