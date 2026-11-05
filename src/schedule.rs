@@ -427,8 +427,8 @@ pub fn run_scheduled(targets: &[String], keep: u32) -> Result<()> {
         ctx::log("WARN", &format!("Could not write {}: {e}", LastRun::path().display()));
     }
     match &result {
-        Err(e) => notify(true, "kast: scheduled backup failed", &failure_text(e)),
-        Ok(()) if s.schedule.notify_success => notify(false, "kast: scheduled backup", &format!("{summary}{skipped}")),
+        Err(e) => ctx::notify(true, "drive-harddisk", "kast: scheduled backup failed", &failure_text(e)),
+        Ok(()) if s.schedule.notify_success => ctx::notify(false, "drive-harddisk", "kast: scheduled backup", &format!("{summary}{skipped}")),
         Ok(()) => {}
     }
     match outcome {
@@ -446,20 +446,6 @@ pub fn failure_text(e: &anyhow::Error) -> String {
         Some(crate::proton::Problem::NotInstalled) => "proton-drive isn't installed. See: kast drive status".into(),
         _ => format!("{e}. Details: kast log"),
     }
-}
-
-/// A desktop notification through notify-send, when it's there.
-fn notify(critical: bool, title: &str, body: &str) {
-    if !ctx::have("notify-send") {
-        return;
-    }
-    let urgency = if critical { "critical" } else { "normal" };
-    let _ = std::process::Command::new("notify-send")
-        .args(["-a", "kast", "-u", urgency, "-i", "drive-harddisk", title, body])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
 }
 
 // --- kast schedule ------------------------------------------------------------------------------

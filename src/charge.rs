@@ -7,14 +7,18 @@
 //! confirmed only on the Lenovo 83D3 (IdeaPad Pro 5 14AHP9 / XiaoXin Pro 14 AHP9): ACPI method
 //! names and arguments are model-specific, so other machines are refused unless forced.
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode, Stdio};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Args, Subcommand, ValueEnum};
 use serde_json::{Value, json};
+
+use crate::ui::{C_RED, C_RESET};
 
 /// (sys_vendor, product_name) where the BNMC values were confirmed.
 const SUPPORTED: [(&str, &str); 1] = [("LENOVO", "83D3")];
@@ -129,6 +133,108 @@ pub fn run(cmd: Option<ChargeCmd>) -> Result<()> {
         ChargeCmd::Mode(a) => cmd_mode(&sys, a.mode()),
         ChargeCmd::Overnight { state, force } => cmd_overnight(&sys, state == OnOff::On, force),
     }
+}
+
+// --- Without a terminal: the result as a notification --------------------------------------
+
+/// Set on the child `run_and_notify` starts: its output comes back to the parent.
+const CHILD_MARK: &str = "KAST_CHARGE_CHILD";
+
+fn no_terminal() -> bool {
+    use std::io::IsTerminal;
+    !std::io::stdin().is_terminal() && !std::io::stdout().is_terminal() && !std::io::stderr().is_terminal()
+}
+
+/// Started from KRunner or a launcher, where nobody sees the output. `--json` is for programs.
+pub fn wants_notification(cmd: Option<&ChargeCmd>) -> bool {
+    !matches!(cmd, Some(ChargeCmd::Status { json: true })) && std::env::var_os(CHILD_MARK).is_none() && no_terminal()
+}
+
+/// Run this same command as a child (through sudo when `elevate`), pass its output and exit
+/// status on, and show the result. The child is what lets a refused sudo be reported at all.
+pub fn run_and_notify(elevate: bool, sudo_env: &[OsString]) -> ExitCode {
+    crate::ctx::init();
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kast"));
+    let args = std::env::args_os().skip(1);
+    let mut child = if elevate {
+        let mut c = Command::new("sudo");
+        c.arg("env").args(sudo_env).arg(format!("{CHILD_MARK}=1")).arg(exe).args(args);
+        c
+    } else {
+        let mut c = Command::new(exe);
+        c.env(CHILD_MARK, "1").args(args);
+        c
+    };
+    let out = match child.stdin(Stdio::null()).output() {
+        Ok(o) => o,
+        Err(e) => {
+            let what = if elevate { "sudo" } else { "kast" };
+            eprintln!("{C_RED}[ERROR]{C_RESET} Could not run {what}: {e}");
+            show(&Note::failure(format!("Could not run {what}: {e}")));
+            return ExitCode::FAILURE;
+        }
+    };
+    let _ = std::io::stdout().write_all(&out.stdout);
+    let _ = std::io::stderr().write_all(&out.stderr);
+    let (stdout, stderr) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    show(&Note::of_run(out.status.success(), elevate, &stdout, &stderr));
+    // Killed by a signal there is no code: still a failure
+    ExitCode::from(out.status.code().and_then(|c| u8::try_from(c).ok()).unwrap_or(1))
+}
+
+/// clap stops at a mistyped command before anything runs: say so when nobody sees its message.
+pub fn notify_usage_error(e: &clap::Error) {
+    let charge = matches!(std::env::args().nth(1).as_deref(), Some("charge" | "battery"));
+    if charge && e.use_stderr() && std::env::var_os(CHILD_MARK).is_none() && no_terminal() {
+        crate::ctx::init();
+        show(&Note::failure(usage_text(&e.render().to_string())));
+    }
+}
+
+/// clap's first paragraph says what's wrong; the rest is about `--help`.
+fn usage_text(rendered: &str) -> String {
+    let text = crate::ui::strip_ansi(rendered);
+    let said = tidy(text.split("\n\n").next().unwrap_or_default());
+    format!("{}\nExamples: kast charge mode conservation, kast charge overnight off", said.trim_start_matches("error: "))
+}
+
+#[derive(Debug, PartialEq)]
+struct Note {
+    critical: bool,
+    title: &'static str,
+    body: String,
+}
+
+impl Note {
+    fn failure(body: String) -> Note {
+        Note { critical: true, title: "kast charge failed", body }
+    }
+
+    /// What a finished run tells the user. Howdy also writes to stderr, so a failure is told
+    /// apart by kast's own `[ERROR]` line and sudo's `sudo:` lines.
+    fn of_run(success: bool, elevated: bool, stdout: &str, stderr: &str) -> Note {
+        if success {
+            return Note { critical: false, title: "kast charge", body: tidy(stdout) };
+        }
+        let stderr = crate::ui::strip_ansi(stderr);
+        if let Some(e) = stderr.lines().find_map(|l| l.strip_prefix("[ERROR] ")) {
+            return Note::failure(e.to_string());
+        }
+        if elevated && stderr.lines().any(|l| l.starts_with("sudo:")) {
+            return Note::failure("sudo refused: without a terminal it can't ask for a password, so only face unlock works here. Nothing was changed; run it in a terminal.".into());
+        }
+        let said = tidy(&stderr);
+        Note::failure(if said.is_empty() { "It stopped without saying why. Run it in a terminal.".into() } else { said })
+    }
+}
+
+/// Terminal output as notification text: the columns' padding means nothing in a proportional font.
+fn tidy(text: &str) -> String {
+    text.lines().map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("\n")
+}
+
+fn show(note: &Note) {
+    crate::ctx::notify(note.critical, if note.critical { "dialog-error" } else { "battery" }, note.title, &note.body);
 }
 
 // --- sysfs -------------------------------------------------------------------------------
@@ -588,6 +694,37 @@ mod tests {
                 _ => bail!("Error: AE_NOT_FOUND"),
             }
         }
+    }
+
+    #[test]
+    fn notes_say_what_happened() {
+        // A switch, with Howdy's line on stderr: what the command printed, and not critical
+        let n = Note::of_run(true, true, "Charge mode: fast (was standard)\n", "Identified face as p3ter\n");
+        assert_eq!((n.critical, n.title, n.body.as_str()), (false, "kast charge", "Charge mode: fast (was standard)"));
+        // The status's columns are closed up
+        let n = Note::of_run(true, false, "Battery:            BAT0: 90%\nCharge mode:        standard  (of fast, standard)\n\nHint\n", "");
+        assert_eq!(n.body, "Battery: BAT0: 90%\nCharge mode: standard (of fast, standard)\nHint");
+    }
+
+    #[test]
+    fn notes_tell_failures_apart() {
+        // kast's own error wins over Howdy's chatter, and doesn't blame sudo
+        let n = Note::of_run(false, true, "", "Identified face as p3ter\n\x1b[31m[ERROR]\x1b[0m this battery has no fast mode\n");
+        assert_eq!((n.critical, n.body.as_str()), (true, "this battery has no fast mode"));
+        // sudo refused: kast never ran
+        let n = Note::of_run(false, true, "", "sudo: a terminal is required to read the password\nsudo: a password is required\n");
+        assert!(n.critical && n.body.contains("Nothing was changed"), "{}", n.body);
+        // A `sudo:` line means nothing when sudo wasn't involved
+        let n = Note::of_run(false, false, "", "sudo: nothing to do with us\n");
+        assert_eq!(n.body, "sudo: nothing to do with us");
+        // A panic or a kill can leave nothing at all
+        assert!(Note::of_run(false, true, "", "").body.contains("without saying why"));
+    }
+
+    #[test]
+    fn usage_errors_keep_what_clap_says_is_wrong() {
+        let t = usage_text("error: the following required arguments were not provided:\n  <MODE|--standard>\n\nUsage: kast charge mode\n\nFor more information, try '--help'.\n");
+        assert_eq!(t, "the following required arguments were not provided:\n<MODE|--standard>\nExamples: kast charge mode conservation, kast charge overnight off");
     }
 
     #[test]

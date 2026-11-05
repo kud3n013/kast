@@ -310,6 +310,12 @@ hardware says, trying again when the embedded controller is busy (on this genera
 shared with the USB-C driver, so a write can time out). When a plugged-in battery below 95%
 isn't charging, the status says what is holding it back.
 
+Started without a terminal (from KRunner or a launcher), `kast charge` shows its result as a
+desktop notification instead: the new state or the status, or what went wrong, including a
+mistyped command. sudo can't ask for a password there, so switching from KRunner needs face
+unlock (Howdy); when sudo refuses, the notification says so and nothing is changed. `--json`
+never notifies.
+
 Overnight charging is stored in the embedded controller, so it stays across reboots and
 operating systems: Lenovo Vantage or PC Manager on Windows can switch it on again. After a
 change the controller doesn't start charging again above 95%.
