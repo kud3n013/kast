@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.1
 
 - **`kast charge` now answers without a terminal.** Started from KRunner or a launcher, it shows
   its result as a desktop notification: the new state or the status, or what went wrong,
